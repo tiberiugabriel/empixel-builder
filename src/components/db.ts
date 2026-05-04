@@ -24,9 +24,10 @@ export function getBuilderLayout(collection: string, entryId: string, enabled?: 
   if (enabled === false) return null;
   try {
     const row = getDb()
-      .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-      .get(collection, entryId) as { sections: string } | undefined;
-    return row ? (JSON.parse(row.sections) as SectionBlock[]) : null;
+      .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+      .get(collection, entryId) as { sections: string; enabled: number } | undefined;
+    if (!row || !row.enabled) return null;
+    return JSON.parse(row.sections) as SectionBlock[];
   } catch {
     return null;
   }

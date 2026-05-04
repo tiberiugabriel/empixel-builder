@@ -32,7 +32,13 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Entry = { id: string; title: string };
+type Entry = {
+  id: string;
+  title: string;
+  created_at: string | null;
+  updated_at: string | null;
+  builder_enabled: boolean;
+};
 
 // ─── Builder State ────────────────────────────────────────────────────────────
 
@@ -229,9 +235,33 @@ function DragGhost({ sections }: { sections: SectionBlock[] }) {
   );
 }
 
+// ─── Toast ───────────────────────────────────────────────────────────────────
+
+type ToastMsg = { id: number; message: string; kind: "success" | "error" };
+
+function ToastContainer({ toasts, onDismiss }: { toasts: ToastMsg[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="epx-toast-container">
+      {toasts.map((t) => (
+        <div key={t.id} className={`epx-toast epx-toast--${t.kind}`} onClick={() => onDismiss(t.id)}>
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Page Selector ────────────────────────────────────────────────────────────
 
 type CollectionTab = { slug: string; label: string };
+
+function formatDate(ts: string | null): string {
+  if (!ts) return "—";
+  const d = new Date(ts.endsWith("Z") ? ts : ts + "Z");
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+let _toastId = 0;
 
 function PageSelector({ onSelect }: { onSelect: (id: string, title: string, collection: string) => void }) {
   const [collections, setCollections] = useState<CollectionTab[]>([]);
@@ -239,13 +269,24 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<Set<string>>(new Set());
+  const [toasts, setToasts] = useState<ToastMsg[]>([]);
+
+  function addToast(msg: Omit<ToastMsg, "id">) {
+    const id = ++_toastId;
+    setToasts((prev) => [...prev, { ...msg, id }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  }
 
   // Load enabled collections from plugin
   useEffect(() => {
     apiFetch("/_emdash/api/plugins/empixel-builder/collections")
       .then((res) => parseApiResponse<{ data: string[] }>(res, "Failed to load collections"))
       .then(({ data }) => {
-        const tabs = (data ?? []).map((slug) => ({ slug, label: slug.charAt(0).toUpperCase() + slug.slice(1) }));
+        const tabs = (data ?? []).map((slug) => ({
+          slug,
+          label: slug.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        }));
         setCollections(tabs);
         if (tabs.length > 0) setCollection(tabs[0].slug);
       })
@@ -264,8 +305,27 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
       .finally(() => setLoading(false));
   }, [collection]);
 
+  async function handleToggleEntry(entry: Entry, checked: boolean) {
+    setToggling((prev) => new Set(prev).add(entry.id));
+    try {
+      const res = await apiFetch("/_emdash/api/plugins/empixel-builder/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId: entry.id, collection, enabled: checked }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setEntries((prev) => prev.map((e) => e.id === entry.id ? { ...e, builder_enabled: checked } : e));
+      addToast({ message: checked ? "Builder enabled" : "Builder disabled", kind: "success" });
+    } catch {
+      addToast({ message: "Failed to update builder status", kind: "error" });
+    } finally {
+      setToggling((prev) => { const s = new Set(prev); s.delete(entry.id); return s; });
+    }
+  }
+
   return (
     <div className="epx-selector">
+      <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
       <div className="epx-selector__header">
         <div className="epx-selector__header-top">
           <span className="epx-topbar__logo">EmPixel Builder</span>
@@ -299,18 +359,58 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
         {collections.length > 0 && !loading && !error && entries.length === 0 && (
           <p className="epx-selector__empty">No entries found in "{collection}".</p>
         )}
-        {collections.length > 0 && !loading && !error && entries.map((entry) => (
-          <button
-            key={entry.id}
-            className="epx-selector__entry"
-            onClick={() => onSelect(entry.id, entry.title, collection)}
-            type="button"
-          >
-            <span className="epx-selector__entry-title">{entry.title}</span>
-            <span className="epx-selector__entry-id">{entry.id}</span>
-            <span className="epx-selector__entry-arrow">→</span>
-          </button>
-        ))}
+        {collections.length > 0 && !loading && !error && entries.length > 0 && (
+          <div className="epx-selector__table-wrap"><table className="epx-selector__table">
+            <thead>
+              <tr>
+                <th className="epx-selector__th">Name &amp; ID</th>
+                <th className="epx-selector__th">Date created</th>
+                <th className="epx-selector__th">Last modified</th>
+                <th className="epx-selector__th epx-selector__th--center">Enable Builder</th>
+                <th className="epx-selector__th epx-selector__th--center">View</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="epx-selector__row">
+                  <td
+                    className="epx-selector__td epx-selector__td--name"
+                    onClick={() => onSelect(entry.id, entry.title, collection)}
+                  >
+                    <span className="epx-selector__entry-title">{entry.title}</span>
+                    <span className="epx-selector__entry-id">{entry.id}</span>
+                  </td>
+                  <td className="epx-selector__td">{formatDate(entry.created_at)}</td>
+                  <td className="epx-selector__td">{formatDate(entry.updated_at)}</td>
+                  <td className="epx-selector__td epx-selector__td--center">
+                    <input
+                      type="checkbox"
+                      className="epx-selector__toggle"
+                      checked={entry.builder_enabled}
+                      disabled={toggling.has(entry.id)}
+                      onChange={(e) => handleToggleEntry(entry, e.currentTarget.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td className="epx-selector__td epx-selector__td--center">
+                    <a
+                      className="epx-selector__view-link"
+                      href={`/${collection}/${entry.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="View page"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 256 256" fill="currentColor">
+                        <path d="M224,104a8,8,0,0,1-16,0V59.32l-82.34,82.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/>
+                      </svg>
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        )}
       </div>
     </div>
   );
@@ -877,6 +977,8 @@ function BuilderStyles() {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
       }
       .epx-selector__settings-link {
         font-size: 13px;
@@ -895,7 +997,11 @@ function BuilderStyles() {
       .epx-selector__tabs {
         display: flex;
         gap: 0;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
       }
+      .epx-selector__tabs::-webkit-scrollbar { display: none; }
       .epx-selector__tab {
         padding: 10px 20px;
         border: none;
@@ -906,16 +1012,13 @@ function BuilderStyles() {
         cursor: pointer;
         border-bottom: 2px solid transparent;
         transition: color 0.15s, border-color 0.15s;
+        white-space: nowrap;
       }
       .epx-selector__tab.is-active { color: var(--epx-accent); border-bottom-color: var(--epx-accent); }
       .epx-selector__tab:hover:not(.is-active) { color: var(--epx-text-2); }
 
       .epx-selector__body {
         padding: 24px 40px;
-        max-width: 720px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
       }
       .epx-selector__loading {
         display: flex;
@@ -926,23 +1029,101 @@ function BuilderStyles() {
       }
       .epx-selector__empty { color: var(--epx-text-faint); font-size: 14px; }
 
-      .epx-selector__entry {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 14px 16px;
-        background: var(--epx-surface);
-        border: 1px solid var(--epx-border);
-        border-radius: 8px;
-        cursor: pointer;
-        text-align: left;
-        width: 100%;
-        transition: border-color 0.15s, box-shadow 0.15s;
+      .epx-selector__table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }
-      .epx-selector__entry:hover { border-color: var(--epx-accent-light); box-shadow: 0 0 0 3px var(--epx-accent-bg-hover); }
-      .epx-selector__entry-title { font-size: 14px; font-weight: 600; color: var(--epx-text); flex: 1; }
-      .epx-selector__entry-id { font-size: 12px; color: var(--epx-text-faint); font-family: monospace; }
-      .epx-selector__entry-arrow { color: var(--epx-accent-light); font-size: 16px; }
+      @media (min-width: 1000px) {
+        .epx-selector__table-wrap { overflow-x: visible; }
+      }
+      .epx-selector__table {
+        width: 100%;
+        min-width: 640px;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      .epx-selector__th {
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--epx-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0 12px 10px;
+        border-bottom: 1px solid var(--epx-border);
+      }
+      .epx-selector__th--center { text-align: center; }
+      .epx-selector__row:hover .epx-selector__td { background: var(--epx-hover-bg); }
+      .epx-selector__td {
+        padding: 12px;
+        border-bottom: 1px solid var(--epx-border);
+        color: var(--epx-text-muted);
+        font-size: 13px;
+        white-space: nowrap;
+        vertical-align: middle;
+      }
+      .epx-selector__td--name {
+        cursor: pointer;
+        min-width: 200px;
+      }
+      .epx-selector__td--center { text-align: center; }
+      .epx-selector__entry-title {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--epx-text);
+        margin-bottom: 2px;
+      }
+      .epx-selector__entry-id {
+        display: block;
+        font-size: 11px;
+        color: var(--epx-text-faint);
+        font-family: monospace;
+      }
+      .epx-selector__toggle {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--epx-accent);
+      }
+      .epx-selector__toggle:disabled { opacity: 0.4; cursor: wait; }
+      .epx-selector__view-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--epx-text-faint);
+        border-radius: 5px;
+        padding: 4px;
+        transition: color 0.15s, background 0.15s;
+      }
+      .epx-selector__view-link:hover { color: var(--epx-accent); background: var(--epx-hover-bg); }
+
+      .epx-toast-container {
+        position: fixed;
+        bottom: 1.25rem;
+        right: 1.25rem;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        pointer-events: none;
+      }
+      .epx-toast {
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        pointer-events: auto;
+        cursor: pointer;
+        animation: epx-toast-in 0.2s ease;
+      }
+      @keyframes epx-toast-in {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .epx-toast--success { background: #166534; color: #dcfce7; }
+      .epx-toast--error   { background: #991b1b; color: #fee2e2; }
 
       /* ── Builder ── */
       .epx-builder {

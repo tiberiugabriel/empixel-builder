@@ -14,6 +14,7 @@ const _require = createRequire(import.meta.url);
 
 interface SqliteStatement {
   get(...args: unknown[]): unknown;
+  all(...args: unknown[]): unknown[];
   run(...args: unknown[]): void;
 }
 
@@ -35,9 +36,15 @@ function getDb(): SqliteDb {
       sections   TEXT NOT NULL DEFAULT '[]',
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp),
+      enabled    INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (collection, entry_id)
     )
   `);
+  try {
+    _db.exec("ALTER TABLE empixel_builder_layouts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // column already exists
+  }
   return _db;
 }
 
@@ -139,12 +146,47 @@ export function createPlugin() {
           }
 
           const result = await ctx.content.list(collection, { limit });
+          const db = getDb();
+          const rows = db
+            .prepare("SELECT entry_id, created_at, updated_at, enabled FROM empixel_builder_layouts WHERE collection = ?")
+            .all(collection) as { entry_id: string; created_at: string; updated_at: string; enabled: number }[];
+          const meta = Object.fromEntries(rows.map((r) => [r.entry_id, r]));
+
           const items = result.items.map((entry: { id: string; data?: { title?: string } }) => ({
             id: entry.id,
             title: entry.data?.title ?? entry.id,
+            created_at: meta[entry.id]?.created_at ?? null,
+            updated_at: meta[entry.id]?.updated_at ?? null,
+            builder_enabled: (meta[entry.id]?.enabled ?? 0) === 1,
           }));
 
           return { data: items, collection };
+        },
+      },
+
+      // POST { entryId, collection, enabled } → toggle builder on/off for a specific entry
+      toggle: {
+        handler: async (ctx: RouteCtx) => {
+          if (ctx.request.method !== "POST") {
+            return new Response("Method Not Allowed", { status: 405 });
+          }
+          const body = ctx.input as { entryId?: string; collection?: string; enabled?: boolean } | undefined;
+          if (!body?.entryId || !body?.collection) {
+            return new Response(
+              JSON.stringify({ error: { message: "entryId and collection are required" } }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          getDb()
+            .prepare(`
+              INSERT INTO empixel_builder_layouts (collection, entry_id, sections, enabled, updated_at)
+              VALUES (?, ?, '[]', ?, current_timestamp)
+              ON CONFLICT(collection, entry_id) DO UPDATE SET
+                enabled = excluded.enabled,
+                updated_at = current_timestamp
+            `)
+            .run(body.collection, body.entryId, body.enabled ? 1 : 0);
+          return { success: true };
         },
       },
     },
