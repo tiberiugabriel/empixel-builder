@@ -212,64 +212,55 @@ function ThemeToggle() {
 
 const BpIconDesktop = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-    <path d="M5.5 14H10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    <path d="M8 11V14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-  </svg>
-);
-
-const BpIconWidescreen = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0.5" y="3" width="15" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-    <path d="M5 13.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    <path d="M8 11V13.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <path d="M5.5 14H10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <path d="M8 11V14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
   </svg>
 );
 
 const BpIconLaptop = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="2" y="2.5" width="12" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
-    <path d="M0.5 13.5H15.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    <path d="M5.5 13.5L6 11H10L10.5 13.5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+    <rect x="2" y="2.5" width="12" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
+    <path d="M0.5 13.5H15.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <path d="M5.5 13.5L6 11H10L10.5 13.5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
   </svg>
 );
 
 const BpIconTabletLandscape = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="4" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-    <circle cx="13.5" cy="8.5" r="0.8" fill="currentColor"/>
+    <rect x="1" y="2" width="14" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="13.5" cy="8" r="0.8" fill="currentColor" />
   </svg>
 );
 
 const BpIconTabletPortrait = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="4" y="1" width="8" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-    <circle cx="8" cy="13" r="0.8" fill="currentColor"/>
+    <rect x="2" y="1" width="12" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="8" cy="13" r="0.8" fill="currentColor" />
   </svg>
 );
 
 const BpIconMobileLandscape = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="5" width="14" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
-    <circle cx="13.3" cy="8.5" r="0.7" fill="currentColor"/>
+    <rect x="1" y="4" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="13.5" cy="8.5" r="0.8" fill="currentColor" />
   </svg>
 );
 
 const BpIconMobilePortrait = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="5" y="1" width="6" height="14" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
-    <circle cx="8" cy="13.2" r="0.7" fill="currentColor"/>
+    <rect x="4" y="1" width="8" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="8" cy="13" r="0.8" fill="currentColor" />
   </svg>
 );
 
 const BP_ICONS: Record<string, React.ReactNode> = {
-  desktop:          <BpIconDesktop />,
-  widescreen:       <BpIconWidescreen />,
-  laptop:           <BpIconLaptop />,
+  desktop: <BpIconDesktop />,
+  laptop: <BpIconLaptop />,
   "tablet-landscape": <BpIconTabletLandscape />,
-  "tablet-portrait":  <BpIconTabletPortrait />,
+  "tablet-portrait": <BpIconTabletPortrait />,
   "mobile-landscape": <BpIconMobileLandscape />,
-  "mobile-portrait":  <BpIconMobilePortrait />,
+  "mobile-portrait": <BpIconMobilePortrait />,
 };
 
 function BreakpointSwitcher({
@@ -288,7 +279,7 @@ function BreakpointSwitcher({
           key={bp.id}
           type="button"
           className={`epx-bp-btn${active === bp.id ? " is-active" : ""}`}
-          title={bp.label + (bp.defaultPx ? ` (${bp.defaultPx}px)` : "")}
+          data-tooltip={bp.label + (bp.defaultPx ? ` (${bp.defaultPx}px)` : "")}
           onClick={() => onChange(bp.id)}
         >
           {BP_ICONS[bp.id]}
@@ -501,7 +492,7 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
                       title="View page"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 256 256" fill="currentColor">
-                        <path d="M224,104a8,8,0,0,1-16,0V59.32l-82.34,82.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/>
+                        <path d="M224,104a8,8,0,0,1-16,0V59.32l-82.34,82.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z" />
                       </svg>
                     </a>
                   </td>
@@ -538,13 +529,22 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
   // Panel resize
   const [leftWidth, setLeftWidth] = useState(220);
   const [rightWidth, setRightWidth] = useState(280);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const prevLeftWidth = useRef(220);
+  const prevRightWidth = useRef(280);
 
   // Structure panel state
   const [structureHeight, setStructureHeight] = useState(240);
   const [structureCollapsed, setStructureCollapsed] = useState(false);
 
   // Breakpoints
-  const [activeBreakpoint, setActiveBreakpoint] = useState<BreakpointId>("desktop");
+  const [activeBreakpoint, setActiveBreakpoint_] = useState<BreakpointId>("desktop");
+  const [liveCanvasWidth, setLiveCanvasWidth] = useState<number | null>(null);
+  const setActiveBreakpoint = useCallback((id: BreakpointId) => {
+    setActiveBreakpoint_(id);
+    setLiveCanvasWidth(null);
+  }, []);
   const [breakpointsConfig, setBreakpointsConfig] = useState<BreakpointsConfig>(DEFAULT_BREAKPOINTS_CONFIG);
   const [isBreakpointsDirty, setIsBreakpointsDirty] = useState(false);
 
@@ -554,6 +554,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
   }, []);
 
   const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
+    if (leftCollapsed) return;
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = leftWidth;
@@ -568,9 +569,20 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [leftWidth]);
+  }, [leftWidth, leftCollapsed]);
+
+  const handleLeftDoubleClick = useCallback(() => {
+    if (leftCollapsed) {
+      setLeftCollapsed(false);
+      setLeftWidth(prevLeftWidth.current);
+    } else {
+      prevLeftWidth.current = leftWidth;
+      setLeftCollapsed(true);
+    }
+  }, [leftCollapsed, leftWidth]);
 
   const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
+    if (rightCollapsed) return;
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = rightWidth;
@@ -585,7 +597,17 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [rightWidth]);
+  }, [rightWidth, rightCollapsed]);
+
+  const handleRightDoubleClick = useCallback(() => {
+    if (rightCollapsed) {
+      setRightCollapsed(false);
+      setRightWidth(prevRightWidth.current);
+    } else {
+      prevRightWidth.current = rightWidth;
+      setRightCollapsed(true);
+    }
+  }, [rightCollapsed, rightWidth]);
 
   const handleStructureResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -628,7 +650,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
           });
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleDragStart = useCallback((_: DragStartEvent) => {
@@ -680,14 +702,16 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       if (position === "before" || position === "after") {
         const path = findPath(targetId, sections);
         if (!path) return;
-        dispatch({ type: "MOVE_BLOCK", sourceId,
+        dispatch({
+          type: "MOVE_BLOCK", sourceId,
           targetContainerId: path.level === "container" ? path.containerId : null,
           targetSlotIndex: path.level === "container" ? path.slotIndex : null,
           targetIndex: position === "before" ? path.index : path.index + 1,
         });
       } else {
         const container = findBlockById(targetId, sections);
-        dispatch({ type: "MOVE_BLOCK", sourceId,
+        dispatch({
+          type: "MOVE_BLOCK", sourceId,
           targetContainerId: targetId, targetSlotIndex: null,
           targetIndex: container?.children?.length ?? 0,
         });
@@ -908,9 +932,9 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     return override?.px ?? def.defaultPx;
   })();
 
-  // Resize bounds: null for desktop/widescreen; [nextSmaller, currentMax] for others
+  // Resize bounds: null for desktop; [nextSmaller, currentMax] for others
   const resizeBounds: { min: number; max: number } | null = (() => {
-    if (activeBreakpoint === "desktop" || activeBreakpoint === "widescreen") return null;
+    if (activeBreakpoint === "desktop") return null;
     const enabledWithPx = BREAKPOINT_DEFS
       .filter((d) => d.defaultPx !== null && (breakpointsConfig.enabled ?? DEFAULT_BREAKPOINTS_CONFIG.enabled).includes(d.id))
       .map((d) => ({
@@ -957,13 +981,30 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
               ← Back
             </button>
             <ThemeToggle />
-            <span className="epx-topbar__page-id">{pageTitle}</span>
+            <a
+              className="epx-topbar__page-id"
+              href={`/${collection}/${pageId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {pageTitle}
+              <svg className="epx-topbar__page-id-icon" width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M8 1h3v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M11 1 6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+            </a>
           </div>
           <div className="epx-topbar__center">
             {(state.isDirty || isBreakpointsDirty) && <span className="epx-topbar__unsaved">Unsaved changes</span>}
             {state.saveError && <span className="epx-topbar__error">Error: {state.saveError}</span>}
           </div>
           <div className="epx-topbar__right">
+            {activeBreakpoint !== "desktop" && (
+              <span className="epx-canvas__size-label">
+                {liveCanvasWidth ?? previewWidth}px
+              </span>
+            )}
             <BreakpointSwitcher
               breakpoints={enabledBreakpoints}
               active={activeBreakpoint}
@@ -979,13 +1020,17 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
           </div>
         </header>
 
-        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftWidth}px 4px 1fr 4px ${rightWidth}px` }}>
+        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftCollapsed ? 0 : leftWidth}px 4px 1fr 4px ${rightCollapsed ? 0 : rightWidth}px` }}>
           <LeftPanel
             onAddBlock={addBlock}
             breakpointsConfig={breakpointsConfig}
             onBreakpointsChange={handleBreakpointsChange}
           />
-          <div className="epx-resize-handle" onMouseDown={handleLeftResizeStart} />
+          <div
+            className={`epx-resize-handle${leftCollapsed ? " is-collapsed" : ""}`}
+            onMouseDown={handleLeftResizeStart}
+            onDoubleClick={handleLeftDoubleClick}
+          />
           <Canvas
             sections={state.sections}
             selectedId={state.selectedId}
@@ -996,8 +1041,13 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             onAddAfter={addAfterBlock}
             previewWidth={previewWidth}
             resizeBounds={resizeBounds}
+            onWidthChange={setLiveCanvasWidth}
           />
-          <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
+          <div
+            className={`epx-resize-handle${rightCollapsed ? " is-collapsed" : ""}`}
+            onMouseDown={handleRightResizeStart}
+            onDoubleClick={handleRightDoubleClick}
+          />
           <div className="epx-right-column">
             {selectedBlock && (
               <>
@@ -1090,7 +1140,7 @@ export function BuilderPage() {
         setSelected({ id: initialPageId, title: initialPageId, collection: initialCollection });
       })
       .finally(() => setResolving(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1322,7 +1372,14 @@ function BuilderStyles() {
       }
       .epx-topbar__left { display: flex; align-items: center; gap: 12px; }
       .epx-topbar__logo { font-weight: 700; font-size: 15px; }
-      .epx-topbar__page-id { color: var(--epx-text-muted); font-size: 13px; }
+      .epx-topbar__page-id {
+        display: flex; align-items: center; gap: 4px;
+        color: var(--epx-text-muted); font-size: 13px;
+        text-decoration: none;
+      }
+      .epx-topbar__page-id:hover { color: var(--epx-text); }
+      .epx-topbar__page-id-icon { opacity: 0; transition: opacity 0.15s; flex-shrink: 0; }
+      .epx-topbar__page-id:hover .epx-topbar__page-id-icon { opacity: 1; }
       .epx-topbar__center { flex: 1; text-align: center; }
       .epx-topbar__unsaved { font-size: 13px; color: #f59e0b; }
       .epx-topbar__error { font-size: 13px; color: #ef4444; }
@@ -1361,15 +1418,16 @@ function BuilderStyles() {
         transition: background 0.15s;
         position: relative;
         z-index: 10;
+        flex-shrink: 0;
       }
       .epx-resize-handle::after {
         content: '';
         position: absolute;
         inset: 0 -3px;
       }
-      .epx-resize-handle:hover {
-        background: var(--epx-accent);
-      }
+      .epx-resize-handle:hover { background: var(--epx-accent); }
+      .epx-resize-handle.is-collapsed { cursor: col-resize; background: var(--epx-border); }
+      .epx-resize-handle.is-collapsed:hover { background: var(--epx-accent); }
 
       .epx-btn {
         padding: 7px 16px;
@@ -1443,7 +1501,7 @@ function BuilderStyles() {
 
       .epx-left-panel {
         background: var(--epx-surface);
-        overflow-y: auto; display: flex; flex-direction: column;
+        overflow: hidden; display: flex; flex-direction: column;
       }
       .epx-left-panel__tabs { display: flex; border-bottom: 1px solid var(--epx-border); }
       .epx-left-panel__tab { flex: 1; padding: 9px 0; border: none; background: none; color: var(--epx-text-faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; }
@@ -1471,7 +1529,7 @@ function BuilderStyles() {
       .epx-block-card__label { font-weight: 500; color: var(--epx-text-strong); }
 
       /* ── Canvas ── */
-      .epx-canvas { overflow-y: auto; background: var(--epx-bg); }
+      .epx-canvas { overflow-y: auto; background: var(--epx-bg); min-width: 0; width: 100%; }
       .epx-canvas--empty { display: flex; align-items: center; justify-content: center; }
       .epx-canvas__empty-state { text-align: center; color: var(--epx-text-faint); }
       .epx-canvas__empty-icon { font-size: 48px; margin-bottom: 12px; }
@@ -2473,6 +2531,7 @@ function BuilderStyles() {
         align-items: stretch;
         overflow-x: auto;
         margin: 0 auto;
+        justify-content: center;
       }
       .epx-canvas__side-handle {
         flex: 1;
@@ -2514,11 +2573,13 @@ function BuilderStyles() {
         transition: background 0.15s;
         flex-shrink: 0;
       }
-      .epx-canvas__side-label {
-        font-size: 10px;
+      .epx-canvas__size-label {
+        font-size: 11px;
         color: var(--epx-text-muted);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
+        display: flex;
+        align-items: center;
       }
 
       /* ── Settings panel (left panel page tab) ── */
@@ -2530,49 +2591,72 @@ function BuilderStyles() {
         overflow-y: auto;
         flex: 1;
       }
-      .epx-settings-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
       .epx-settings-label {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--epx-text-muted);
-        padding-bottom: 2px;
-        border-bottom: 1px solid var(--epx-border);
-      }
-      .epx-bp-toggles {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-      .epx-bp-toggle {
         display: flex;
         align-items: center;
-        gap: 7px;
-        font-size: 12px;
-        color: var(--epx-text);
-        padding: 3px 0;
+        justify-content: space-between;
+        height: 27px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--epx-border-subtle);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--epx-text-faint);
+        opacity: 0.65;
+      }
+      .epx-settings-reset-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        background: transparent;
+        border: none;
+        border-radius: 3px;
         cursor: pointer;
+        color: var(--epx-text-muted);
+        flex-shrink: 0;
+      }
+      .epx-settings-reset-btn:hover { color: var(--epx-accent); }
+      .epx-bp-row {
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        border-top: 1px solid var(--epx-border-subtle);
+        padding: 0 8px 0 0;
+      }
+      .epx-bp-row:first-child { border-top: none; }
+      .epx-bp-row__label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+        font-size: 11px;
+        color: var(--epx-text);
+        padding: 4px 8px;
+        cursor: ew-resize;
         user-select: none;
       }
-      .epx-bp-toggle input[type="checkbox"] {
+      .epx-bp-row__label:hover .epx-bp-row__name { color: var(--epx-accent); }
+      .epx-bp-row__name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .epx-bp-row__check-wrap { display: flex; align-items: center; cursor: pointer; }
+      .epx-bp-row__check {
         accent-color: var(--epx-accent);
-        width: 13px;
-        height: 13px;
+        width: 12px;
+        height: 12px;
         cursor: pointer;
         flex-shrink: 0;
       }
-      .epx-bp-values {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        padding-top: 4px;
-        border-top: 1px solid var(--epx-border);
-        margin-top: 4px;
+      .epx-bp-row__check-spacer { width: 12px; flex-shrink: 0; }
+      .epx-bp-row .epx-side-input__num { width: 52px; flex-shrink: 0; }
+      .epx-bp-row .epx-side-input__num:disabled { color: var(--epx-text-faint); }
+      @container (max-width: 280px) {
+        .epx-bp-row { flex-wrap: wrap; padding-right: 0; }
+        .epx-bp-row__label { width: 100%; cursor: ew-resize; }
+        .epx-bp-row .epx-side-input__num { width: 100%; border-top: 1px solid var(--epx-border-subtle); }
       }
     `}</style>
   );

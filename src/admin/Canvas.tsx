@@ -179,6 +179,7 @@ interface CanvasProps {
   onAddAfter: (afterId: string, type: BlockType) => void;
   previewWidth?: number | null;
   resizeBounds?: { min: number; max: number } | null;
+  onWidthChange?: (w: number | null) => void;
 }
 
 // ─── Hover CSS injection ──────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ export function Canvas({
   onAddAfter,
   previewWidth,
   resizeBounds,
+  onWidthChange,
 }: CanvasProps) {
   const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROP_ID });
 
@@ -218,6 +220,10 @@ export function Canvas({
   }
 
   const effectiveWidth = localWidth ?? previewWidth;
+
+  useEffect(() => {
+    onWidthChange?.(localWidth);
+  }, [localWidth, onWidthChange]);
 
   useEffect(() => {
     let el = document.getElementById("epx-canvas-hover-css") as HTMLStyleElement | null;
@@ -256,7 +262,7 @@ export function Canvas({
   const showHandles = !!resizeBounds && !!effectiveWidth;
   const frameStyle = effectiveWidth
     ? showHandles
-      ? { width: effectiveWidth, flexShrink: 0 as const }
+      ? { width: "100%", maxWidth: effectiveWidth, flexShrink: 0 as const }
       : { maxWidth: effectiveWidth, width: "100%", margin: "0 auto" }
     : undefined;
 
@@ -315,7 +321,6 @@ export function Canvas({
       {showHandles && (
         <div className="epx-canvas__side-handle epx-canvas__side-handle--left" onMouseDown={handleResizeDragStart("left")}>
           <div className="epx-canvas__side-grip" />
-          <span className="epx-canvas__side-label">{effectiveWidth}px</span>
         </div>
       )}
       <div className="epx-canvas__preview-frame" style={frameStyle}>

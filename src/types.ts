@@ -90,7 +90,6 @@ export interface SpacerConfig {
 
 export type BreakpointId =
   | "desktop"
-  | "widescreen"
   | "laptop"
   | "tablet-landscape"
   | "tablet-portrait"
@@ -106,7 +105,6 @@ export interface BreakpointDef {
 
 export const BREAKPOINT_DEFS: BreakpointDef[] = [
   { id: "desktop",          label: "Desktop",          defaultPx: null, removable: false },
-  { id: "widescreen",       label: "Widescreen",       defaultPx: 2000, removable: true  },
   { id: "laptop",           label: "Laptop",           defaultPx: 1440, removable: true  },
   { id: "tablet-landscape", label: "Tablet Landscape", defaultPx: 1240, removable: true  },
   { id: "tablet-portrait",  label: "Tablet Portrait",  defaultPx: 992,  removable: false },

@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { BLOCK_DEFINITIONS } from "./blockDefinitions.js";
-import type { BlockType, BreakpointsConfig } from "../types.js";
-import { BREAKPOINT_DEFS } from "../types.js";
-import { NumberRow } from "./controls/FieldRow.js";
+import type { BlockType, BreakpointsConfig, BreakpointDef } from "../types.js";
+import { BREAKPOINT_DEFS, DEFAULT_BREAKPOINTS_CONFIG } from "../types.js";
+import { IconReset } from "./controls/SpacingControl.js";
 
 interface Props {
   onAddBlock: (type: BlockType) => void;
@@ -60,6 +60,63 @@ function DraggableBlockCard({
   );
 }
 
+function BpRow({ def, currentPx, isEnabled, onToggle, onChangePx }: {
+  def: BreakpointDef;
+  currentPx: number;
+  isEnabled: boolean;
+  onToggle?: (checked: boolean) => void;
+  onChangePx: (v: number) => void;
+}) {
+  const handleScrub = (e: React.MouseEvent) => {
+    if (!isEnabled) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startPx = currentPx;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => onChangePx(Math.round(startPx + (ev.clientX - startX) / 2));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div className="epx-bp-row">
+      <div className="epx-bp-row__label" onMouseDown={handleScrub} title={isEnabled ? "Drag to adjust" : undefined}>
+        {def.removable ? (
+          <label className="epx-bp-row__check-wrap" onMouseDown={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              className="epx-bp-row__check"
+              checked={isEnabled}
+              onChange={(e) => onToggle?.(e.target.checked)}
+            />
+          </label>
+        ) : (
+          <span className="epx-bp-row__check-spacer" />
+        )}
+        <span className="epx-bp-row__name">{def.label}</span>
+      </div>
+      <input
+        type="number"
+        className="epx-side-input__num"
+        value={currentPx}
+        step={1}
+        disabled={!isEnabled}
+        onChange={(e) => {
+          const n = parseInt(e.target.value, 10);
+          if (!isNaN(n)) onChangePx(n);
+        }}
+      />
+    </div>
+  );
+}
+
 type Tab = "blocks" | "page";
 
 export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }: Props) {
@@ -77,14 +134,20 @@ export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }
     onBreakpointsChange({ ...breakpointsConfig, enabled });
   };
 
-  const setBreakpointPx = (id: string, px: number | undefined, defaultPx: number) => {
-    const value = px ?? defaultPx;
+  const setBreakpointPx = (id: string, px: number, defaultPx: number) => {
     const otherOverrides = breakpointsConfig.overrides.filter((o) => o.id !== id);
-    const overrides = value === defaultPx
+    const overrides = px === defaultPx
       ? otherOverrides
-      : [...otherOverrides, { id: id as typeof breakpointsConfig.overrides[number]["id"], px: value }];
+      : [...otherOverrides, { id: id as typeof breakpointsConfig.overrides[number]["id"], px }];
     onBreakpointsChange({ ...breakpointsConfig, overrides });
   };
+
+  const resetBreakpoints = () => onBreakpointsChange(DEFAULT_BREAKPOINTS_CONFIG);
+
+  const isBreakpointsDirty =
+    breakpointsConfig.overrides.length > 0 ||
+    breakpointsConfig.enabled.slice().sort().join(",") !==
+      DEFAULT_BREAKPOINTS_CONFIG.enabled.slice().sort().join(",");
 
   return (
     <aside className="epx-left-panel">
@@ -120,36 +183,30 @@ export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }
 
       {activeTab === "page" && (
         <div className="epx-settings-panel">
-          <div className="epx-settings-section">
-            <span className="epx-settings-label">Breakpoints</span>
-            <div className="epx-bp-toggles">
-              {BREAKPOINT_DEFS.filter((d) => d.removable).map((def) => (
-                <label key={def.id} className="epx-bp-toggle">
-                  <input
-                    type="checkbox"
-                    checked={breakpointsConfig.enabled.includes(def.id)}
-                    onChange={(e) => toggleBreakpoint(def.id, e.target.checked)}
-                  />
-                  {def.label}
-                </label>
-              ))}
+          <div className="epx-bg-ctrl__card" style={{ containerType: "inline-size" } as React.CSSProperties}>
+            <div className="epx-settings-label">
+              <span>Breakpoints</span>
+              {isBreakpointsDirty && (
+                <button type="button" className="epx-settings-reset-btn" onClick={resetBreakpoints} title="Reset to defaults">
+                  <IconReset />
+                </button>
+              )}
             </div>
-            <div className="epx-bp-values">
-              {BREAKPOINT_DEFS
-                .filter((d) => d.id !== "desktop" && breakpointsConfig.enabled.includes(d.id))
-                .map((def) => {
-                  const override = breakpointsConfig.overrides.find((o) => o.id === def.id);
-                  const currentPx = override?.px ?? def.defaultPx!;
-                  return (
-                    <NumberRow
-                      key={def.id}
-                      label={def.label}
-                      value={currentPx}
-                      onChange={(v) => setBreakpointPx(def.id, v, def.defaultPx!)}
-                    />
-                  );
-                })}
-            </div>
+            {BREAKPOINT_DEFS.filter((d) => d.id !== "desktop").map((def) => {
+              const isEnabled = breakpointsConfig.enabled.includes(def.id);
+              const override = breakpointsConfig.overrides.find((o) => o.id === def.id);
+              const currentPx = override?.px ?? def.defaultPx!;
+              return (
+                <BpRow
+                  key={def.id}
+                  def={def}
+                  currentPx={currentPx}
+                  isEnabled={isEnabled}
+                  onToggle={def.removable ? (checked) => toggleBreakpoint(def.id, checked) : undefined}
+                  onChangePx={(px) => setBreakpointPx(def.id, px, def.defaultPx!)}
+                />
+              );
+            })}
           </div>
         </div>
       )}
