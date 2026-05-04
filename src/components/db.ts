@@ -23,9 +23,34 @@ function getDb(): SqliteDb {
 export function getBuilderLayout(collection: string, entryId: string, enabled?: boolean): SectionBlock[] | null {
   if (enabled === false) return null;
   try {
-    const row = getDb()
+    const db = getDb();
+    
+    // Attempt 1: Direct lookup (could be ULID or slug depending on what was passed)
+    let row = db
       .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
       .get(collection, entryId) as { sections: string; enabled: number } | undefined;
+      
+    // Attempt 2: If not found, try to resolve to the other ID type
+    if (!row) {
+      if (entryId.startsWith("01")) {
+        // It's a ULID, maybe the layout was saved with a slug?
+        const slugRow = db.prepare(`SELECT slug FROM ec_${collection} WHERE id = ?`).get(entryId) as { slug: string } | undefined;
+        if (slugRow && slugRow.slug) {
+          row = db
+            .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+            .get(collection, slugRow.slug) as { sections: string; enabled: number } | undefined;
+        }
+      } else {
+        // It's a slug, maybe the layout was saved with a ULID?
+        const idRow = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(entryId) as { id: string } | undefined;
+        if (idRow && idRow.id) {
+          row = db
+            .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+            .get(collection, idRow.id) as { sections: string; enabled: number } | undefined;
+        }
+      }
+    }
+
     if (!row || !row.enabled) return null;
     return JSON.parse(row.sections) as SectionBlock[];
   } catch {

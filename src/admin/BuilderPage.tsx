@@ -12,8 +12,8 @@ import {
 } from "@dnd-kit/core";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
 import { epxVars } from "./epxVars.js";
-import type { SectionBlock, PageLayout, BlockType } from "../types.js";
-import { isContainerType } from "../types.js";
+import type { SectionBlock, PageLayout, BlockType, BreakpointId, BreakpointsConfig, BreakpointDef } from "../types.js";
+import { isContainerType, BREAKPOINT_DEFS, DEFAULT_BREAKPOINTS_CONFIG } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { LeftPanel } from "./LeftPanel.js";
 import { Canvas, CANVAS_DROP_ID, type BlockDragData, type EmptyZoneData } from "./Canvas.js";
@@ -208,6 +208,96 @@ function ThemeToggle() {
   );
 }
 
+// ─── BreakpointSwitcher ───────────────────────────────────────────────────────
+
+const BpIconDesktop = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+    <path d="M5.5 14H10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    <path d="M8 11V14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+  </svg>
+);
+
+const BpIconWidescreen = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0.5" y="3" width="15" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+    <path d="M5 13.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    <path d="M8 11V13.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+  </svg>
+);
+
+const BpIconLaptop = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2" y="2.5" width="12" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
+    <path d="M0.5 13.5H15.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    <path d="M5.5 13.5L6 11H10L10.5 13.5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+  </svg>
+);
+
+const BpIconTabletLandscape = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="4" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+    <circle cx="13.5" cy="8.5" r="0.8" fill="currentColor"/>
+  </svg>
+);
+
+const BpIconTabletPortrait = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="4" y="1" width="8" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+    <circle cx="8" cy="13" r="0.8" fill="currentColor"/>
+  </svg>
+);
+
+const BpIconMobileLandscape = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="5" width="14" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
+    <circle cx="13.3" cy="8.5" r="0.7" fill="currentColor"/>
+  </svg>
+);
+
+const BpIconMobilePortrait = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="5" y="1" width="6" height="14" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
+    <circle cx="8" cy="13.2" r="0.7" fill="currentColor"/>
+  </svg>
+);
+
+const BP_ICONS: Record<string, React.ReactNode> = {
+  desktop:          <BpIconDesktop />,
+  widescreen:       <BpIconWidescreen />,
+  laptop:           <BpIconLaptop />,
+  "tablet-landscape": <BpIconTabletLandscape />,
+  "tablet-portrait":  <BpIconTabletPortrait />,
+  "mobile-landscape": <BpIconMobileLandscape />,
+  "mobile-portrait":  <BpIconMobilePortrait />,
+};
+
+function BreakpointSwitcher({
+  breakpoints,
+  active,
+  onChange,
+}: {
+  breakpoints: BreakpointDef[];
+  active: BreakpointId;
+  onChange: (id: BreakpointId) => void;
+}) {
+  return (
+    <div className="epx-bp-switcher">
+      {breakpoints.map((bp) => (
+        <button
+          key={bp.id}
+          type="button"
+          className={`epx-bp-btn${active === bp.id ? " is-active" : ""}`}
+          title={bp.label + (bp.defaultPx ? ` (${bp.defaultPx}px)` : "")}
+          onClick={() => onChange(bp.id)}
+        >
+          {BP_ICONS[bp.id]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── DragGhost ────────────────────────────────────────────────────────────────
 // Reads from dnd-kit's own context to avoid React state timing issues
 
@@ -265,6 +355,7 @@ let _toastId = 0;
 
 function PageSelector({ onSelect }: { onSelect: (id: string, title: string, collection: string) => void }) {
   const [collections, setCollections] = useState<CollectionTab[]>([]);
+  const [collectionsError, setCollectionsError] = useState<string | null>(null);
   const [collection, setCollection] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -290,7 +381,10 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
         setCollections(tabs);
         if (tabs.length > 0) setCollection(tabs[0].slug);
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.error("[empixel-builder] collections error:", err);
+        setCollectionsError(String(err));
+      });
   }, []);
 
   useEffect(() => {
@@ -300,7 +394,9 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
     setError(null);
     apiFetch(`/_emdash/api/plugins/empixel-builder/entries?collection=${collection}`)
       .then((res) => parseApiResponse<{ data: Entry[] }>(res, "Failed to load entries"))
-      .then(({ data }) => setEntries(data ?? []))
+      .then(({ data }) => {
+        setEntries(data ?? []);
+      })
       .catch((err: unknown) => setError(String(err)))
       .finally(() => setLoading(false));
   }, [collection]);
@@ -349,7 +445,10 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
       </div>
 
       <div className="epx-selector__body">
-        {collections.length === 0 && (
+        {collectionsError && (
+          <p className="epx-error">Collections error: {collectionsError}</p>
+        )}
+        {!collectionsError && collections.length === 0 && (
           <p className="epx-selector__empty">
             No collections enabled. Go to <a href="/_emdash/admin/plugins/empixel-builder/settings">Settings</a> to enable the builder on a collection.
           </p>
@@ -444,6 +543,16 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
   const [structureHeight, setStructureHeight] = useState(240);
   const [structureCollapsed, setStructureCollapsed] = useState(false);
 
+  // Breakpoints
+  const [activeBreakpoint, setActiveBreakpoint] = useState<BreakpointId>("desktop");
+  const [breakpointsConfig, setBreakpointsConfig] = useState<BreakpointsConfig>(DEFAULT_BREAKPOINTS_CONFIG);
+  const [isBreakpointsDirty, setIsBreakpointsDirty] = useState(false);
+
+  const handleBreakpointsChange = useCallback((config: BreakpointsConfig) => {
+    setBreakpointsConfig(config);
+    setIsBreakpointsDirty(true);
+  }, []);
+
   const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -507,6 +616,20 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       .then(({ data }) => dispatch({ type: "LOAD_SUCCESS", sections: data?.sections ?? [] }))
       .catch((err: unknown) => dispatch({ type: "LOAD_ERROR", error: String(err) }));
   }, [pageId, collection]);
+
+  useEffect(() => {
+    apiFetch("/_emdash/api/plugins/empixel-builder/breakpoints")
+      .then((res) => parseApiResponse<{ data: BreakpointsConfig }>(res, "Failed to load breakpoints"))
+      .then(({ data }) => {
+        if (data) {
+          setBreakpointsConfig({
+            enabled: Array.isArray(data.enabled) ? data.enabled : DEFAULT_BREAKPOINTS_CONFIG.enabled,
+            overrides: Array.isArray(data.overrides) ? data.overrides : [],
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleDragStart = useCallback((_: DragStartEvent) => {
     // ghost is rendered via DragGhost which reads from useDndContext directly
@@ -734,28 +857,40 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       });
       if (!res.ok) {
         dispatch({ type: "SAVE_ERROR", error: await res.text() || "Save failed" });
-      } else {
-        dispatch({ type: "SAVE_SUCCESS" });
+        return;
       }
+      if (isBreakpointsDirty) {
+        const bpRes = await apiFetch("/_emdash/api/plugins/empixel-builder/breakpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(breakpointsConfig),
+        });
+        if (!bpRes.ok) {
+          dispatch({ type: "SAVE_ERROR", error: await bpRes.text() || "Save failed" });
+          return;
+        }
+        setIsBreakpointsDirty(false);
+      }
+      dispatch({ type: "SAVE_SUCCESS" });
     } catch (err) {
       dispatch({ type: "SAVE_ERROR", error: String(err) });
     }
-  }, [pageId, collection, state.sections]);
+  }, [pageId, collection, state.sections, isBreakpointsDirty, breakpointsConfig]);
 
   useEffect(() => {
-    if (!state.isDirty) return;
+    if (!state.isDirty && !isBreakpointsDirty) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [state.isDirty]);
+  }, [state.isDirty, isBreakpointsDirty]);
 
   const doNavigateBack = useCallback(() => {
     if (backUrl) { window.location.href = backUrl; } else { onBack(); }
   }, [backUrl, onBack]);
 
   const handleBackClick = useCallback(() => {
-    if (state.isDirty) { setShowBackWarning(true); } else { doNavigateBack(); }
-  }, [state.isDirty, doNavigateBack]);
+    if (state.isDirty || isBreakpointsDirty) { setShowBackWarning(true); } else { doNavigateBack(); }
+  }, [state.isDirty, isBreakpointsDirty, doNavigateBack]);
 
   const handleSaveAndBack = useCallback(async () => {
     await save();
@@ -763,6 +898,32 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
   }, [save, doNavigateBack]);
 
   const selectedBlock = state.selectedId ? findBlockById(state.selectedId, state.sections) : null;
+
+  const enabledBreakpoints = BREAKPOINT_DEFS.filter((d) => (breakpointsConfig.enabled ?? DEFAULT_BREAKPOINTS_CONFIG.enabled).includes(d.id));
+
+  const previewWidth: number | null = (() => {
+    if (activeBreakpoint === "desktop") return null;
+    const override = (breakpointsConfig.overrides ?? []).find((o) => o.id === activeBreakpoint);
+    const def = BREAKPOINT_DEFS.find((d) => d.id === activeBreakpoint)!;
+    return override?.px ?? def.defaultPx;
+  })();
+
+  // Resize bounds: null for desktop/widescreen; [nextSmaller, currentMax] for others
+  const resizeBounds: { min: number; max: number } | null = (() => {
+    if (activeBreakpoint === "desktop" || activeBreakpoint === "widescreen") return null;
+    const enabledWithPx = BREAKPOINT_DEFS
+      .filter((d) => d.defaultPx !== null && (breakpointsConfig.enabled ?? DEFAULT_BREAKPOINTS_CONFIG.enabled).includes(d.id))
+      .map((d) => ({
+        id: d.id,
+        px: (breakpointsConfig.overrides ?? []).find((o) => o.id === d.id)?.px ?? d.defaultPx!,
+      }))
+      .sort((a, b) => b.px - a.px); // largest to smallest
+    const currentIdx = enabledWithPx.findIndex((d) => d.id === activeBreakpoint);
+    const max = currentIdx >= 0 ? enabledWithPx[currentIdx].px : previewWidth ?? 992;
+    const nextSmaller = enabledWithPx[currentIdx + 1];
+    const min = nextSmaller ? nextSmaller.px : 320;
+    return { min, max };
+  })();
 
   if (state.isLoading) {
     return (
@@ -799,14 +960,19 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             <span className="epx-topbar__page-id">{pageTitle}</span>
           </div>
           <div className="epx-topbar__center">
-            {state.isDirty && <span className="epx-topbar__unsaved">Unsaved changes</span>}
+            {(state.isDirty || isBreakpointsDirty) && <span className="epx-topbar__unsaved">Unsaved changes</span>}
             {state.saveError && <span className="epx-topbar__error">Error: {state.saveError}</span>}
           </div>
           <div className="epx-topbar__right">
+            <BreakpointSwitcher
+              breakpoints={enabledBreakpoints}
+              active={activeBreakpoint}
+              onChange={setActiveBreakpoint}
+            />
             <button
               className="epx-btn epx-btn--primary"
               onClick={save}
-              disabled={state.isSaving || !state.isDirty}
+              disabled={state.isSaving || (!state.isDirty && !isBreakpointsDirty)}
             >
               {state.isSaving ? "Saving…" : "Save"}
             </button>
@@ -814,7 +980,11 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
         </header>
 
         <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftWidth}px 4px 1fr 4px ${rightWidth}px` }}>
-          <LeftPanel onAddBlock={addBlock} />
+          <LeftPanel
+            onAddBlock={addBlock}
+            breakpointsConfig={breakpointsConfig}
+            onBreakpointsChange={handleBreakpointsChange}
+          />
           <div className="epx-resize-handle" onMouseDown={handleLeftResizeStart} />
           <Canvas
             sections={state.sections}
@@ -824,6 +994,8 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             onAddToContainer={addToContainerByType}
             dropIndicatorId={overBlockId}
             onAddAfter={addAfterBlock}
+            previewWidth={previewWidth}
+            resizeBounds={resizeBounds}
           />
           <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
           <div className="epx-right-column">
@@ -2250,6 +2422,158 @@ function BuilderStyles() {
       }
       @keyframes epx-spin { to { transform: rotate(360deg); } }
       .epx-error { color: #ef4444; }
+
+      /* ── Breakpoint switcher ── */
+      .epx-bp-switcher {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        background: var(--epx-input-bg);
+        border: 1px solid var(--epx-input-border);
+        border-radius: 6px;
+        padding: 2px;
+      }
+      .epx-bp-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 26px;
+        padding: 0;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--epx-text-muted);
+        transition: background 0.1s, color 0.1s, border-color 0.1s;
+        flex-shrink: 0;
+      }
+      .epx-bp-btn:hover {
+        background: var(--epx-hover-bg);
+        color: var(--epx-text);
+      }
+      .epx-bp-btn.is-active {
+        background: var(--epx-accent);
+        border-color: var(--epx-accent);
+        color: #fff;
+      }
+
+      /* ── Canvas preview frame ── */
+      .epx-canvas--preview {
+        overflow-x: auto;
+      }
+      .epx-canvas__preview-frame {
+        min-height: 100%;
+      }
+
+      /* ── Canvas resizable (side drag handles) ── */
+      .epx-canvas--resizable {
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        overflow-x: auto;
+        margin: 0 auto;
+      }
+      .epx-canvas__side-handle {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        cursor: ew-resize;
+        min-width: 18px;
+        max-width: 18px;
+        padding: 0 6px;
+        position: relative;
+        user-select: none;
+      }
+      .epx-canvas__side-handle--left {
+        align-items: flex-end;
+        border-right: 2px solid var(--epx-border);
+      }
+      .epx-canvas__side-handle--right {
+        align-items: flex-start;
+        border-left: 2px solid var(--epx-border);
+      }
+      .epx-canvas__side-handle:hover {
+        background: var(--epx-hover-bg);
+      }
+      .epx-canvas__side-handle:hover .epx-canvas__side-grip {
+        background: var(--epx-accent);
+      }
+      .epx-canvas__side-handle:hover + .epx-canvas__preview-frame,
+      .epx-canvas__preview-frame + .epx-canvas__side-handle:hover {
+        border-color: var(--epx-accent);
+      }
+      .epx-canvas__side-grip {
+        width: 3px;
+        height: 32px;
+        background: var(--epx-border);
+        border-radius: 2px;
+        transition: background 0.15s;
+        flex-shrink: 0;
+      }
+      .epx-canvas__side-label {
+        font-size: 10px;
+        color: var(--epx-text-muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      /* ── Settings panel (left panel page tab) ── */
+      .epx-settings-panel {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .epx-settings-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .epx-settings-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--epx-text-muted);
+        padding-bottom: 2px;
+        border-bottom: 1px solid var(--epx-border);
+      }
+      .epx-bp-toggles {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .epx-bp-toggle {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        color: var(--epx-text);
+        padding: 3px 0;
+        cursor: pointer;
+        user-select: none;
+      }
+      .epx-bp-toggle input[type="checkbox"] {
+        accent-color: var(--epx-accent);
+        width: 13px;
+        height: 13px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .epx-bp-values {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding-top: 4px;
+        border-top: 1px solid var(--epx-border);
+        margin-top: 4px;
+      }
     `}</style>
   );
 }

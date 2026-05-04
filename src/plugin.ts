@@ -1,15 +1,14 @@
 import { definePlugin } from "emdash";
-import type { PluginContext } from "emdash";
-
-interface RouteCtx extends PluginContext {
-  request: Request;
-  input?: unknown;
-}
+import type { RouteContext } from "emdash";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import type { SectionBlock } from "./types.js";
+import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
+import { DEFAULT_BREAKPOINTS_CONFIG } from "./types.js";
 
 const KV_ENABLED = "settings:enabledCollections";
+const KV_BREAKPOINTS = "settings:breakpoints";
+
+const NON_REMOVABLE_BREAKPOINTS: BreakpointId[] = ["desktop", "tablet-portrait", "mobile-portrait"];
 const _require = createRequire(import.meta.url);
 
 interface SqliteStatement {
@@ -57,12 +56,12 @@ export function createPlugin() {
       // GET  ?pageId=&collection=  → load layout
       // POST { pageId, collection, sections } → save layout
       layout: {
-        handler: async (ctx: RouteCtx) => {
+        handler: async (ctx: RouteContext) => {
           const method = ctx.request.method;
           const url = new URL(ctx.request.url);
 
           if (method === "GET") {
-            const pageId = url.searchParams.get("pageId");
+            let pageId = url.searchParams.get("pageId");
             const collection = url.searchParams.get("collection");
             if (!pageId || !collection) {
               return new Response(
@@ -70,22 +69,57 @@ export function createPlugin() {
                 { status: 400, headers: { "Content-Type": "application/json" } }
               );
             }
-            const row = getDb()
+
+            const db = getDb();
+            // Resolve slug to ULID if it doesn't look like a ULID (doesn't start with 01)
+            let originalSlug = pageId;
+            if (!pageId.startsWith("01")) {
+              try {
+                const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(pageId) as { id: string } | undefined;
+                if (row && row.id) pageId = row.id;
+              } catch { /* ignore */ }
+            } else {
+              try {
+                const slugRow = db.prepare(`SELECT slug FROM ec_${collection} WHERE id = ?`).get(pageId) as { slug: string } | undefined;
+                if (slugRow && slugRow.slug) originalSlug = slugRow.slug;
+              } catch { /* ignore */ }
+            }
+
+            const row = db
               .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
               .get(collection, pageId) as { sections: string } | undefined;
+              
+            // Fallback for old layouts saved by slug
+            if (!row && originalSlug !== pageId) {
+               const fallbackRow = db
+                 .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+                 .get(collection, originalSlug) as { sections: string } | undefined;
+               if (fallbackRow) return { data: { sections: JSON.parse(fallbackRow.sections) } };
+            }
+
             return { data: row ? { sections: JSON.parse(row.sections) } : null };
           }
 
           if (method === "POST") {
             const body = ctx.input as { pageId?: string; collection?: string; sections?: SectionBlock[] } | undefined;
-            const { pageId, collection, sections } = body ?? {};
+            let { pageId } = body ?? {};
+            const { collection, sections } = body ?? {};
             if (!pageId || !collection || !sections) {
               return new Response(
                 JSON.stringify({ error: { message: "pageId, collection and sections are required" } }),
                 { status: 400, headers: { "Content-Type": "application/json" } }
               );
             }
-            getDb()
+
+            const db = getDb();
+            if (!pageId.startsWith("01")) {
+              try {
+                const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(pageId) as { id: string } | undefined;
+                if (row && row.id) pageId = row.id;
+              } catch { /* ignore */ }
+            }
+
+            db
               .prepare(`
                 INSERT INTO empixel_builder_layouts (collection, entry_id, sections, updated_at)
                 VALUES (?, ?, ?, current_timestamp)
@@ -103,7 +137,7 @@ export function createPlugin() {
 
       // GET → returns list of collections with builder enabled
       collections: {
-        handler: async (ctx: RouteCtx) => {
+        handler: async (ctx: RouteContext) => {
           const enabled = await ctx.kv.get<string[]>(KV_ENABLED) ?? [];
           return { data: enabled };
         },
@@ -111,7 +145,7 @@ export function createPlugin() {
 
       // POST { collection, enabled } → toggle builder on/off for a collection
       settings: {
-        handler: async (ctx: RouteCtx) => {
+        handler: async (ctx: RouteContext) => {
           if (ctx.request.method !== "POST") {
             return new Response("Method Not Allowed", { status: 405 });
           }
@@ -133,32 +167,61 @@ export function createPlugin() {
 
       // GET ?collection=pages&limit=50 → list entries for page selector
       entries: {
-        handler: async (ctx: RouteCtx) => {
+        handler: async (ctx: RouteContext) => {
           const url = new URL(ctx.request.url);
           const collection = url.searchParams.get("collection") ?? "pages";
           const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10), 200);
 
-          if (!ctx.content) {
-            return new Response(
-              JSON.stringify({ error: { message: "read:content capability required" } }),
-              { status: 500, headers: { "Content-Type": "application/json" } }
-            );
+          if (!/^[a-z0-9_]+$/.test(collection)) {
+            return { error: "Invalid collection name" };
           }
 
-          const result = await ctx.content.list(collection, { limit });
           const db = getDb();
           const rows = db
             .prepare("SELECT entry_id, created_at, updated_at, enabled FROM empixel_builder_layouts WHERE collection = ?")
-            .all(collection) as { entry_id: string; created_at: string; updated_at: string; enabled: number }[];
-          const meta = Object.fromEntries(rows.map((r) => [r.entry_id, r]));
+            .all(collection);
+          const meta = Object.fromEntries((rows as { entry_id: string; created_at: string; updated_at: string; enabled: number }[]).map((r) => [r.entry_id, r]));
 
-          const items = result.items.map((entry: { id: string; data?: { title?: string } }) => ({
-            id: entry.id,
-            title: entry.data?.title ?? entry.id,
-            created_at: meta[entry.id]?.created_at ?? null,
-            updated_at: meta[entry.id]?.updated_at ?? null,
-            builder_enabled: (meta[entry.id]?.enabled ?? 0) === 1,
-          }));
+          let items: { id: string; slug?: string; title?: string; created_at: string; updated_at: string; builder_enabled: boolean }[] = [];
+          try {
+            const table = `ec_${collection}`;
+            const contentRows = db
+              .prepare(`SELECT * FROM ${table} ORDER BY created_at DESC LIMIT ?`)
+              .all(limit);
+
+            items = (contentRows as { id: string; slug?: string; title?: string; name?: string; data?: string; created_at: string; updated_at: string }[]).map((entry) => {
+              const id = entry.id; // Use real database ID
+              const slug = entry.slug ?? id;
+              let title = slug;
+              
+              if (entry.title) {
+                title = entry.title;
+              } else if (entry.name) {
+                title = entry.name;
+              } else if (entry.data) {
+                try {
+                  const dataObj = JSON.parse(entry.data);
+                  if (dataObj && dataObj.title) {
+                    title = dataObj.title;
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+
+              return {
+                id,
+                slug,
+                title,
+                created_at: meta[id]?.created_at ?? entry.created_at,
+                updated_at: meta[id]?.updated_at ?? entry.updated_at,
+                builder_enabled: (meta[id]?.enabled ?? 0) === 1,
+              };
+            });
+          } catch (e: unknown) {
+            console.error(`[empixel-builder] Failed to fetch entries from ec_${collection}:`, e instanceof Error ? e.message : String(e));
+            // Return empty array if table doesn't exist
+          }
 
           return { data: items, collection };
         },
@@ -166,18 +229,27 @@ export function createPlugin() {
 
       // POST { entryId, collection, enabled } → toggle builder on/off for a specific entry
       toggle: {
-        handler: async (ctx: RouteCtx) => {
+        handler: async (ctx: RouteContext) => {
           if (ctx.request.method !== "POST") {
-            return new Response("Method Not Allowed", { status: 405 });
+            return { error: "Method Not Allowed" };
           }
           const body = ctx.input as { entryId?: string; collection?: string; enabled?: boolean } | undefined;
-          if (!body?.entryId || !body?.collection) {
-            return new Response(
-              JSON.stringify({ error: { message: "entryId and collection are required" } }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
-            );
+          let entryId = body?.entryId;
+          const collection = body?.collection;
+          
+          if (!entryId || !collection) {
+            return { error: "entryId and collection are required" };
           }
-          getDb()
+
+          const db = getDb();
+          if (!entryId.startsWith("01")) {
+            try {
+              const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(entryId) as { id: string } | undefined;
+              if (row && row.id) entryId = row.id;
+            } catch { /* ignore */ }
+          }
+
+          db
             .prepare(`
               INSERT INTO empixel_builder_layouts (collection, entry_id, sections, enabled, updated_at)
               VALUES (?, ?, '[]', ?, current_timestamp)
@@ -185,8 +257,48 @@ export function createPlugin() {
                 enabled = excluded.enabled,
                 updated_at = current_timestamp
             `)
-            .run(body.collection, body.entryId, body.enabled ? 1 : 0);
+            .run(collection, entryId, body?.enabled ? 1 : 0);
+
+          // Try to sync the value back to the document table if the column exists
+          try {
+            db.prepare(`UPDATE ec_${collection} SET empixel_builder = ? WHERE id = ?`).run(body?.enabled ? 1 : 0, entryId);
+          } catch {
+            // column might not exist or be named differently, ignore
+          }
+
           return { success: true };
+        },
+      },
+
+      // GET → returns breakpoints config; POST { enabled, overrides } → saves it
+      breakpoints: {
+        handler: async (ctx: RouteContext) => {
+          if (ctx.request.method === "GET") {
+            const stored = await ctx.kv.get<BreakpointsConfig>(KV_BREAKPOINTS);
+            const config: BreakpointsConfig = {
+              enabled: Array.isArray(stored?.enabled) ? stored!.enabled : DEFAULT_BREAKPOINTS_CONFIG.enabled,
+              overrides: Array.isArray(stored?.overrides) ? stored!.overrides : [],
+            };
+            return { data: config };
+          }
+          if (ctx.request.method === "POST") {
+            const body = ctx.input as Partial<BreakpointsConfig> | undefined;
+            if (!body || !Array.isArray(body.enabled)) {
+              return new Response(
+                JSON.stringify({ error: { message: "enabled array is required" } }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
+              );
+            }
+            // Non-removable breakpoints are always included
+            const enabled = Array.from(new Set([...NON_REMOVABLE_BREAKPOINTS, ...body.enabled])) as BreakpointId[];
+            const config: BreakpointsConfig = {
+              enabled,
+              overrides: Array.isArray(body.overrides) ? body.overrides : [],
+            };
+            await ctx.kv.set(KV_BREAKPOINTS, config);
+            return { success: true, data: config };
+          }
+          return new Response("Method Not Allowed", { status: 405 });
         },
       },
     },

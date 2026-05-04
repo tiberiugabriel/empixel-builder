@@ -86,6 +86,49 @@ export interface SpacerConfig {
   showDivider?: boolean;
 }
 
+// ─── Breakpoints ──────────────────────────────────────────────────────────────
+
+export type BreakpointId =
+  | "desktop"
+  | "widescreen"
+  | "laptop"
+  | "tablet-landscape"
+  | "tablet-portrait"
+  | "mobile-landscape"
+  | "mobile-portrait";
+
+export interface BreakpointDef {
+  id: BreakpointId;
+  label: string;
+  defaultPx: number | null; // null = Desktop (current screen)
+  removable: boolean;
+}
+
+export const BREAKPOINT_DEFS: BreakpointDef[] = [
+  { id: "desktop",          label: "Desktop",          defaultPx: null, removable: false },
+  { id: "widescreen",       label: "Widescreen",       defaultPx: 2000, removable: true  },
+  { id: "laptop",           label: "Laptop",           defaultPx: 1440, removable: true  },
+  { id: "tablet-landscape", label: "Tablet Landscape", defaultPx: 1240, removable: true  },
+  { id: "tablet-portrait",  label: "Tablet Portrait",  defaultPx: 992,  removable: false },
+  { id: "mobile-landscape", label: "Mobile Landscape", defaultPx: 767,  removable: true  },
+  { id: "mobile-portrait",  label: "Mobile Portrait",  defaultPx: 575,  removable: false },
+];
+
+export interface BreakpointOverride {
+  id: BreakpointId;
+  px: number;
+}
+
+export interface BreakpointsConfig {
+  enabled: BreakpointId[];
+  overrides: BreakpointOverride[];
+}
+
+export const DEFAULT_BREAKPOINTS_CONFIG: BreakpointsConfig = {
+  enabled: ["desktop", "tablet-portrait", "mobile-portrait"],
+  overrides: [],
+};
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 export function parseItems<T>(json: unknown, fallback: T[] = []): T[] {

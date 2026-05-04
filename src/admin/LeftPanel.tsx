@@ -1,10 +1,14 @@
 import React, { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { BLOCK_DEFINITIONS } from "./blockDefinitions.js";
-import type { BlockType } from "../types.js";
+import type { BlockType, BreakpointsConfig } from "../types.js";
+import { BREAKPOINT_DEFS } from "../types.js";
+import { NumberRow } from "./controls/FieldRow.js";
 
 interface Props {
   onAddBlock: (type: BlockType) => void;
+  breakpointsConfig: BreakpointsConfig;
+  onBreakpointsChange: (c: BreakpointsConfig) => void;
 }
 
 function IconBlocks() {
@@ -18,7 +22,7 @@ function IconBlocks() {
   );
 }
 
-function IconPageSettings() {
+function IconSettings() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeLinecap="square" strokeMiterlimit="10" strokeWidth="2"/>
@@ -58,13 +62,29 @@ function DraggableBlockCard({
 
 type Tab = "blocks" | "page";
 
-export function LeftPanel({ onAddBlock }: Props) {
+export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("blocks");
 
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
     { id: "blocks", icon: <IconBlocks />, title: "Blocks" },
-    { id: "page", icon: <IconPageSettings />, title: "Page Settings" },
+    { id: "page", icon: <IconSettings />, title: "Settings" },
   ];
+
+  const toggleBreakpoint = (id: string, checked: boolean) => {
+    const enabled = checked
+      ? [...breakpointsConfig.enabled, id as typeof breakpointsConfig.enabled[number]]
+      : breakpointsConfig.enabled.filter((e) => e !== id);
+    onBreakpointsChange({ ...breakpointsConfig, enabled });
+  };
+
+  const setBreakpointPx = (id: string, px: number | undefined, defaultPx: number) => {
+    const value = px ?? defaultPx;
+    const otherOverrides = breakpointsConfig.overrides.filter((o) => o.id !== id);
+    const overrides = value === defaultPx
+      ? otherOverrides
+      : [...otherOverrides, { id: id as typeof breakpointsConfig.overrides[number]["id"], px: value }];
+    onBreakpointsChange({ ...breakpointsConfig, overrides });
+  };
 
   return (
     <aside className="epx-left-panel">
@@ -99,7 +119,39 @@ export function LeftPanel({ onAddBlock }: Props) {
       )}
 
       {activeTab === "page" && (
-        <div className="epx-left-panel__empty" />
+        <div className="epx-settings-panel">
+          <div className="epx-settings-section">
+            <span className="epx-settings-label">Breakpoints</span>
+            <div className="epx-bp-toggles">
+              {BREAKPOINT_DEFS.filter((d) => d.removable).map((def) => (
+                <label key={def.id} className="epx-bp-toggle">
+                  <input
+                    type="checkbox"
+                    checked={breakpointsConfig.enabled.includes(def.id)}
+                    onChange={(e) => toggleBreakpoint(def.id, e.target.checked)}
+                  />
+                  {def.label}
+                </label>
+              ))}
+            </div>
+            <div className="epx-bp-values">
+              {BREAKPOINT_DEFS
+                .filter((d) => d.id !== "desktop" && breakpointsConfig.enabled.includes(d.id))
+                .map((def) => {
+                  const override = breakpointsConfig.overrides.find((o) => o.id === def.id);
+                  const currentPx = override?.px ?? def.defaultPx!;
+                  return (
+                    <NumberRow
+                      key={def.id}
+                      label={def.label}
+                      value={currentPx}
+                      onChange={(v) => setBreakpointPx(def.id, v, def.defaultPx!)}
+                    />
+                  );
+                })}
+            </div>
+          </div>
+        </div>
       )}
     </aside>
   );

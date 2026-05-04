@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useCallback, useEffect, useState } from "react";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -177,6 +177,8 @@ interface CanvasProps {
   onAddToContainer: (containerId: string, slotIndex: number | null, type: BlockType) => void;
   dropIndicatorId: string | null;
   onAddAfter: (afterId: string, type: BlockType) => void;
+  previewWidth?: number | null;
+  resizeBounds?: { min: number; max: number } | null;
 }
 
 // ─── Hover CSS injection ──────────────────────────────────────────────────────
@@ -202,8 +204,20 @@ export function Canvas({
   onAddToContainer,
   dropIndicatorId,
   onAddAfter,
+  previewWidth,
+  resizeBounds,
 }: CanvasProps) {
   const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROP_ID });
+
+  // Local drag-resize width — resets whenever the active breakpoint changes (previewWidth changes)
+  const [localWidth, setLocalWidth] = useState<number | null>(null);
+  const [prevPreviewWidth, setPrevPreviewWidth] = useState(previewWidth);
+  if (prevPreviewWidth !== previewWidth) {
+    setPrevPreviewWidth(previewWidth);
+    setLocalWidth(null);
+  }
+
+  const effectiveWidth = localWidth ?? previewWidth;
 
   useEffect(() => {
     let el = document.getElementById("epx-canvas-hover-css") as HTMLStyleElement | null;
@@ -216,53 +230,102 @@ export function Canvas({
     return () => { el?.remove(); };
   }, [sections]);
 
-  if (sections.length === 0) {
-    return (
-      <main ref={setCanvasRef} className="epx-canvas epx-canvas--empty" onClick={() => onSelect(null)}>
-        <div className="epx-canvas__empty-state">
-          <h3>Start building your page</h3>
-          <p>Click or drag a block from the left panel</p>
-        </div>
-      </main>
-    );
-  }
+  const handleResizeDragStart = useCallback((side: "left" | "right") => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!resizeBounds) return;
+    const startX = e.clientX;
+    const startWidth = effectiveWidth ?? resizeBounds.max;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      const raw = side === "right" ? startWidth + delta : startWidth - delta;
+      setLocalWidth(Math.round(Math.max(resizeBounds.min, Math.min(resizeBounds.max, raw))));
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [resizeBounds, effectiveWidth]);
 
-  return (
-    <main ref={setCanvasRef} className="epx-canvas" onClick={() => onSelect(null)}>
-      <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-        <div className="epx-canvas__list">
-          {sections.map((section) => {
-            if (isContainerType(section.type)) {
-              return (
-                <ContainerBlock
-                  key={section.id}
-                  section={section}
-                  selectedId={selectedId}
-                  onSelect={onSelect}
-                  onRemove={onRemove}
-                  onAddToContainer={onAddToContainer}
-                  dropIndicatorId={dropIndicatorId}
-                  onAddAfter={onAddAfter}
-                  containerId={null}
-                />
-              );
-            }
+  const showHandles = !!resizeBounds && !!effectiveWidth;
+  const frameStyle = effectiveWidth
+    ? showHandles
+      ? { width: effectiveWidth, flexShrink: 0 as const }
+      : { maxWidth: effectiveWidth, width: "100%", margin: "0 auto" }
+    : undefined;
+
+  const isEmpty = sections.length === 0;
+  const canvasClass = [
+    "epx-canvas",
+    isEmpty ? "epx-canvas--empty" : null,
+    effectiveWidth ? "epx-canvas--preview" : null,
+    showHandles ? "epx-canvas--resizable" : null,
+  ].filter(Boolean).join(" ");
+
+  const frameContent = isEmpty ? (
+    <div className="epx-canvas__empty-state">
+      <h3>Start building your page</h3>
+      <p>Click or drag a block from the left panel</p>
+    </div>
+  ) : (
+    <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+      <div className="epx-canvas__list">
+        {sections.map((section) => {
+          if (isContainerType(section.type)) {
             return (
-              <SortableBlock
+              <ContainerBlock
                 key={section.id}
                 section={section}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onRemove={onRemove}
+                onAddToContainer={onAddToContainer}
+                dropIndicatorId={dropIndicatorId}
+                onAddAfter={onAddAfter}
                 containerId={null}
-                slotIndex={null}
-                isSelected={section.id === selectedId}
-                onSelect={() => onSelect(section.id)}
-                onRemove={() => onRemove(section.id)}
-                isDropTarget={section.id === dropIndicatorId}
-                onAddAfter={(type) => onAddAfter(section.id, type)}
               />
             );
-          })}
+          }
+          return (
+            <SortableBlock
+              key={section.id}
+              section={section}
+              containerId={null}
+              slotIndex={null}
+              isSelected={section.id === selectedId}
+              onSelect={() => onSelect(section.id)}
+              onRemove={() => onRemove(section.id)}
+              isDropTarget={section.id === dropIndicatorId}
+              onAddAfter={(type) => onAddAfter(section.id, type)}
+            />
+          );
+        })}
+      </div>
+    </SortableContext>
+  );
+
+  return (
+    <main ref={setCanvasRef} className={canvasClass} onClick={() => onSelect(null)}>
+      {showHandles && (
+        <div className="epx-canvas__side-handle epx-canvas__side-handle--left" onMouseDown={handleResizeDragStart("left")}>
+          <div className="epx-canvas__side-grip" />
+          <span className="epx-canvas__side-label">{effectiveWidth}px</span>
         </div>
-      </SortableContext>
+      )}
+      <div className="epx-canvas__preview-frame" style={frameStyle}>
+        {frameContent}
+      </div>
+      {showHandles && (
+        <div className="epx-canvas__side-handle epx-canvas__side-handle--right" onMouseDown={handleResizeDragStart("right")}>
+          <div className="epx-canvas__side-grip" />
+        </div>
+      )}
     </main>
   );
 }
