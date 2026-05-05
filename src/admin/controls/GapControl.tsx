@@ -48,9 +48,10 @@ function IconRowGap() {
 
 const ZERO: SideValue = { num: 0, unit: "px" };
 
-export function GapControl({ value, onChange }: {
+export function GapControl({ value, onChange, breakpointIndicator }: {
   value: GapValue;
   onChange: (v: GapValue) => void;
+  breakpointIndicator?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -74,9 +75,9 @@ export function GapControl({ value, onChange }: {
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {isMixed ? (
-              <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Gaps</span>
+              <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Gaps{breakpointIndicator}</span>
             ) : (
-              <SideInput sideKey="" labelOverride="Gaps" value={col} onChange={handleCollapsedChange} />
+              <SideInput sideKey="" labelOverride="Gaps" value={col} onChange={handleCollapsedChange} labelSuffix={breakpointIndicator} />
             )}
             {isMixed && <span className="epx-border-mixed">Mixed</span>}
             <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(true)}>▾</button>
@@ -90,7 +91,7 @@ export function GapControl({ value, onChange }: {
       ) : (
         <div className="epx-spacing-ctrl__expanded">
           <div className="epx-spacing-ctrl__exp-header">
-            <span className="epx-spacing-ctrl__label">Gaps</span>
+            <span className="epx-spacing-ctrl__label">Gaps{breakpointIndicator}</span>
             <div className="epx-spacing-ctrl__exp-actions">
               {isDirty && (
                 <button type="button" className="epx-reset-btn" onClick={handleReset} title="Reset">

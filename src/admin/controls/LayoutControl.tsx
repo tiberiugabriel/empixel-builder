@@ -20,7 +20,7 @@ export type LayoutConfig = {
 const DEFAULTS: Required<LayoutConfig> = {
   layout:         "flex",
   flexWrap:       "nowrap",
-  flexDirection:  "column",
+  flexDirection:  "row",
   justifyContent: "flex-start",
   flexAlignItems: "stretch",
   gridFlow:       "row",
@@ -328,9 +328,10 @@ const ALIGN_OPTIONS = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function LayoutControl({ value, onChange }: {
+export function LayoutControl({ value, onChange, breakpointIndicator }: {
   value: LayoutConfig;
   onChange: (patch: Partial<LayoutConfig>) => void;
+  breakpointIndicator?: React.ReactNode;
 }) {
   const layout         = value.layout         ?? DEFAULTS.layout;
   const flexWrap       = value.flexWrap       ?? DEFAULTS.flexWrap;
@@ -358,7 +359,7 @@ export function LayoutControl({ value, onChange }: {
 
         {/* Header */}
         <div className="epx-spacing-ctrl__exp-header">
-          <span className="epx-spacing-ctrl__label">Layout</span>
+          <span className="epx-spacing-ctrl__label">Layout{breakpointIndicator}</span>
           {dirty && (
             <div className="epx-spacing-ctrl__exp-actions">
               <button type="button" className="epx-reset-btn" onClick={handleReset} title="Reset">

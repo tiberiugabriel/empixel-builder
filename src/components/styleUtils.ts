@@ -306,13 +306,19 @@ export function buildBreakpointHoverCss(config: Record<string, unknown>, blockId
 
 // ─── Per-breakpoint CSS (Radius + Border + Shadow overrides) ─────────────────
 
-const BP_STYLE_PROPS = [
+const BP_VISUAL_PROPS = [
   "borderTopLeftRadius", "borderTopRightRadius",
   "borderBottomRightRadius", "borderBottomLeftRadius",
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
 ] as const;
 
-export function buildBreakpointCss(config: Record<string, unknown>, blockId: string): string {
+// layoutSelector: when provided (e.g. for video containers), layout+gap rules target
+// that selector instead of the block root selector.
+export function buildBreakpointCss(
+  config: Record<string, unknown>,
+  blockId: string,
+  layoutSelector?: string,
+): string {
   const styleBreakpoints = config.styleBreakpoints as Record<string, Record<string, unknown>> | undefined;
   if (!styleBreakpoints || !blockId) return "";
 
@@ -320,21 +326,26 @@ export function buildBreakpointCss(config: Record<string, unknown>, blockId: str
     .filter(([, s]) => typeof (s as Record<string, unknown>)._px === "number")
     .sort(([, a], [, b]) => ((b as Record<string, unknown>)._px as number) - ((a as Record<string, unknown>)._px as number));
 
+  const rootSel   = `[data-epx-block="${blockId}"]`;
+  const layoutSel = layoutSelector ?? rootSel;
+
   let css = "";
   for (const [, bpStyle] of entries) {
     const px = (bpStyle as Record<string, unknown>)._px as number;
-    const parts: string[] = [];
+
+    // Visual properties — always on root selector
+    const visualParts: string[] = [];
 
     const borderSt = cssStr(bpStyle.borderStyle);
     if (borderSt && borderSt !== "none") {
       const color = (bpStyle.borderColor as string) ?? "#000000";
       const alpha = (bpStyle.borderAlpha as number) ?? 1;
-      parts.push(`border-style:${borderSt}`, `border-color:${hexToRgba(color, alpha)}`);
+      visualParts.push(`border-style:${borderSt}`, `border-color:${hexToRgba(color, alpha)}`);
     }
 
-    for (const prop of BP_STYLE_PROPS) {
+    for (const prop of BP_VISUAL_PROPS) {
       const v = cssStr(bpStyle[prop]);
-      if (v) parts.push(`${camelToKebab(prop)}:${v}`);
+      if (v) visualParts.push(`${camelToKebab(prop)}:${v}`);
     }
 
     const sx = cssStr(bpStyle.shadowX);
@@ -345,12 +356,31 @@ export function buildBreakpointCss(config: Record<string, unknown>, blockId: str
       const inset = bpStyle.shadowType === "inset" ? "inset " : "";
       const sc = (bpStyle.shadowColor as string) ?? "#000000";
       const sa = (bpStyle.shadowAlpha as number) ?? 1;
-      parts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(sc, sa)}`);
+      visualParts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(sc, sa)}`);
     }
 
-    if (parts.length) {
-      css += `@media(max-width:${px}px){[data-epx-block="${blockId}"]{${parts.join(";")}}}`;
+    // Layout + gap properties — on layoutSel (may differ from rootSel for video containers)
+    const layoutParts: string[] = [];
+
+    const colGap = cssStr(bpStyle.columnGap);   if (colGap) layoutParts.push(`column-gap:${colGap}`);
+    const rowGap = cssStr(bpStyle.rowGap);       if (rowGap) layoutParts.push(`row-gap:${rowGap}`);
+    const flexDir = cssStr(bpStyle.flexDirection);   if (flexDir) layoutParts.push(`flex-direction:${flexDir}`);
+    const flexWrap = cssStr(bpStyle.flexWrap);       if (flexWrap) layoutParts.push(`flex-wrap:${flexWrap}`);
+    const justifyC = cssStr(bpStyle.justifyContent); if (justifyC) layoutParts.push(`justify-content:${justifyC}`);
+    const alignI   = cssStr(bpStyle.flexAlignItems); if (alignI)   layoutParts.push(`align-items:${alignI}`);
+
+    if (!visualParts.length && !layoutParts.length) continue;
+
+    let mq = "";
+    if (layoutSel === rootSel) {
+      // Same selector — merge into one rule
+      const all = [...visualParts, ...layoutParts];
+      mq = `${rootSel}{${all.join(";")}}`;
+    } else {
+      if (visualParts.length) mq += `${rootSel}{${visualParts.join(";")}}`;
+      if (layoutParts.length) mq += `${layoutSel}{${layoutParts.join(";")}}`;
     }
+    css += `@media(max-width:${px}px){${mq}}`;
   }
   return css;
 }

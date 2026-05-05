@@ -444,7 +444,7 @@ export function BuilderStyles() {
       .epx-container-block:hover::before { border-color: var(--epx-selected); }
       .epx-container-block.is-selected::before { border-color: var(--epx-selected); }
       .epx-container-block__children {
-        display: flex; flex-direction: column; min-height: 48px;
+        display: flex; flex-direction: column; min-height: 48px; height: 100%;
       }
       .epx-container__empty-zone {
         display: flex; align-items: center; justify-content: center; min-height: 56px;

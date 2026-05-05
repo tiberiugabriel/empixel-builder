@@ -599,20 +599,22 @@ const ContainerBlock = memo(function ContainerBlock({
           style={(() => {
             const layout = (section.config.layout as string) ?? "flex";
             const configStyle = (section.config.style as Record<string, unknown> | undefined) ?? {};
+            const bpOverride = getBpOverride(section.config, activeBreakpoint) ?? {};
             const isGrid = layout === "grid";
             const resolveTrack = (raw: unknown): string | undefined => {
               if (typeof raw !== "string" || !raw) return undefined;
               if (raw.startsWith("@@")) return raw.slice(2) || undefined;
               return raw;
             };
+            const bp = bpOverride as Record<string, unknown>;
             return {
               display:               isGrid ? "grid" : "flex",
-              columnGap:             configStyle.columnGap as string | undefined,
-              rowGap:                configStyle.rowGap    as string | undefined,
-              flexWrap:              !isGrid ? ((section.config.flexWrap       as string) ?? "nowrap")     as React.CSSProperties["flexWrap"]       : undefined,
-              flexDirection:         !isGrid ? ((section.config.flexDirection  as string) ?? "row")        as React.CSSProperties["flexDirection"]  : undefined,
-              justifyContent:        !isGrid ? ((section.config.justifyContent as string) ?? "flex-start") as React.CSSProperties["justifyContent"] : undefined,
-              alignItems:            !isGrid ? ((section.config.flexAlignItems as string) ?? "stretch")    as React.CSSProperties["alignItems"]
+              columnGap:             (bp.columnGap ?? configStyle.columnGap) as string | undefined,
+              rowGap:                (bp.rowGap    ?? configStyle.rowGap)    as string | undefined,
+              flexWrap:              !isGrid ? (((bp.flexWrap       ?? section.config.flexWrap)       as string) ?? "nowrap")     as React.CSSProperties["flexWrap"]       : undefined,
+              flexDirection:         !isGrid ? (((bp.flexDirection  ?? section.config.flexDirection)  as string) ?? "row")        as React.CSSProperties["flexDirection"]  : undefined,
+              justifyContent:        !isGrid ? (((bp.justifyContent ?? section.config.justifyContent) as string) ?? "flex-start") as React.CSSProperties["justifyContent"] : undefined,
+              alignItems:            !isGrid ? (((bp.flexAlignItems ?? section.config.flexAlignItems) as string) ?? "stretch")    as React.CSSProperties["alignItems"]
                                              : ((section.config.alignItems    as string) ?? "stretch"),
               gridAutoFlow:          isGrid  ? ((section.config.gridFlow       as string) ?? "row")        : undefined,
               justifyItems:          isGrid  ? ((section.config.justifyItems   as string) ?? "stretch")    : undefined,

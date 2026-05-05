@@ -537,9 +537,14 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
     }
   };
 
-  const gapValue: GapValue = parseGap(style);
+  const gapSource = isNonDesktop ? { ...style, ...bpStyleRaw } : style;
+  const gapValue: GapValue = parseGap(gapSource);
   const handleGap = (val: GapValue) => {
-    onChange({ style: { ...style, ...serializeGap(val) } });
+    if (isNonDesktop) {
+      writeBpStyle(serializeGap(val));
+    } else {
+      onChange({ style: { ...style, ...serializeGap(val) } });
+    }
   };
 
   const overflowValue: OverflowValue = parseOverflow(style);
@@ -591,12 +596,16 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
           ))}
           {block.type === "container" && (
             <LayoutControl
-              value={parseLayout(block.config)}
-              onChange={(patch) => onChange(patch as Record<string, unknown>)}
+              value={parseLayout(isNonDesktop ? { ...block.config, ...bpStyleRaw } : block.config)}
+              onChange={(patch) => {
+                if (isNonDesktop) writeBpStyle(patch as Record<string, unknown>);
+                else onChange(patch as Record<string, unknown>);
+              }}
+              breakpointIndicator={breakpointIndicator}
             />
           )}
           {block.type === "container" && (
-            <GapControl value={gapValue} onChange={handleGap} />
+            <GapControl value={gapValue} onChange={handleGap} breakpointIndicator={breakpointIndicator} />
           )}
           {block.type === "container" && (
             <>

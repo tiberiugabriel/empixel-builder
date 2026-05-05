@@ -83,12 +83,18 @@ const extraId    = getBlockId(value);
 const extraClass = getBlockClass(value);
 const customCss  = blockId ? getCustomCss(value, blockId) : "";
 const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
-const breakpointCss = blockId ? buildBreakpointCss(value, blockId) : "";
+const videoLayoutSel = videoInfo && blockId ? `[data-epx-block="${blockId}"]>div` : undefined;
+const breakpointCss = blockId ? buildBreakpointCss(value, blockId, videoLayoutSel) : "";
 const breakpointHoverCss = blockId ? buildBreakpointHoverCss(value, blockId) : "";
 const videoExtraCss = videoInfo ? "position:relative;overflow:hidden" : "";
-const fullStyleStr  = [inlineStyle, videoExtraCss, layoutStyle].filter(Boolean).join(";");
+const fullStyleStr  = videoInfo
+  ? [inlineStyle, videoExtraCss].filter(Boolean).join(";")
+  : [inlineStyle, videoExtraCss, layoutStyle].filter(Boolean).join(";");
 const blockCss      = wrapBlockCss(fullStyleStr, blockId);
-const allCss        = [blockCss, hoverCss, customCss, breakpointCss, breakpointHoverCss].filter(Boolean).join("");
+const videoChildCss = videoInfo && blockId && layoutStyle
+  ? `[data-epx-block="${blockId}"]>div{${layoutStyle}}`
+  : "";
+const allCss        = [blockCss, videoChildCss, hoverCss, customCss, breakpointCss, breakpointHoverCss].filter(Boolean).join("");
 
 // Video options — read from style (where serializeBackground stores them)
 const videoPlayOnce    = (style.backgroundVideoPlayOnce    as boolean) ?? false;
@@ -211,7 +217,7 @@ if (linkCustomAttr) {
   )}
 
   {videoInfo ? (
-    <div style="position:relative;z-index:1">
+    <div style="position:relative;z-index:1;height: 100%;">
       {children.map((child) =>
         child.type === "container"
           ? <Astro.self value={child.config} children={child.children ?? []} blockId={child.id} />
