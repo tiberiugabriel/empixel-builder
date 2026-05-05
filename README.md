@@ -1,4 +1,4 @@
-[![npm](https://img.shields.io/npm/v/empixel-builder)](https://www.npmjs.com/package/empixel-builder)
+[![npm](https://img.shields.io/npm/v/empixel-builder)](https://www.npmjs.com/package/empixel-builder) [![EmDash](https://img.shields.io/badge/EmDash-v0.9.0%20✅-90EE90)](https://github.com/emdash-cms/emdash)
 
 # EmPixel Builder
 
