@@ -99,12 +99,14 @@ function UnitDropdown({ unit, onSelect, onClose, anchorRef }: {
 
 // ─── SideInput ────────────────────────────────────────────────────────────────
 
-export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
+export function SideInput({ sideKey, value, onChange, labelOverride, icon, allowNegative, labelSuffix }: {
   sideKey: string;
   value: SideValue;
   onChange: (sv: SideValue) => void;
   labelOverride?: string;
   icon?: React.ReactNode;
+  allowNegative?: boolean;
+  labelSuffix?: React.ReactNode;
 }) {
   const [unitOpen, setUnitOpen] = useState(false);
   const unitBtnRef = useRef<HTMLButtonElement>(null);
@@ -117,8 +119,8 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
     document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
     const onMove = (ev: MouseEvent) => {
-      const next = Math.max(0, Math.round(startNum + (ev.clientX - startX) / 2));
-      onChange({ ...value, num: next });
+      const next = Math.round(startNum + (ev.clientX - startX) / 2);
+      onChange({ ...value, num: allowNegative ? next : Math.max(0, next) });
     };
     const onUp = () => {
       document.body.style.cursor = "";
@@ -133,11 +135,12 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
   return (
     <div className="epx-side-input">
       <span
-        className={`epx-side-input__label${labelOverride ? " epx-side-input__label--full" : ""}${icon ? " epx-side-input__label--icon" : ""}`}
+        className={`epx-side-input__label${labelOverride ? " epx-side-input__label--full" : ""}${icon ? " epx-side-input__label--icon" : ""}${labelSuffix ? " epx-side-input__label--has-suffix" : ""}`}
         onMouseDown={handleScrubDown}
         title="Drag to adjust"
       >
         {icon ?? labelOverride ?? sideKey}
+        {labelSuffix}
       </span>
       {value.unit === "custom" ? (
         <input
@@ -154,7 +157,7 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
           value={value.unit === "auto" ? "" : value.num}
           placeholder={value.unit === "auto" ? "auto" : "0"}
           disabled={value.unit === "auto"}
-          min={0}
+          min={allowNegative ? undefined : 0}
           step={1}
           onChange={(e) => {
             const n = parseFloat(e.target.value);

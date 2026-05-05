@@ -600,6 +600,7 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
             resizeBounds={resizeBounds}
             onWidthChange={setLiveCanvasWidth}
             onBlockContextMenu={showContextMenu}
+            activeBreakpoint={activeBreakpoint}
           />
           <div
             className={`epx-resize-handle${rightCollapsed ? " is-collapsed" : ""}`}
@@ -619,6 +620,8 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
                   <RightPanel
                     block={selectedBlock}
                     onChange={(config) => updateBlock(selectedBlock.id, config)}
+                    activeBreakpoint={activeBreakpoint}
+                    breakpointsConfig={breakpointsConfig}
                   />
                 </div>
                 {!structureCollapsed && (

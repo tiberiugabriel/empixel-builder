@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { SectionBlock } from "../types.js";
+import type { SectionBlock, BreakpointId, BreakpointsConfig } from "../types.js";
+import { BREAKPOINT_DEFS } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
+import { getBpIcon } from "./components/BreakpointIcons.js";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
 import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideValue, type SpacingKeys } from "./controls/SpacingControl.js";
 import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
+import { BoxShadowControl, parseShadow, serializeShadow, type BoxShadowConfig } from "./controls/BoxShadowControl.js";
 import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl } from "./controls/FieldRow.js";
 import { BackgroundControl, parseBackground, serializeBackground } from "./controls/BackgroundControl.js";
 import { GapControl, parseGap, serializeGap, type GapValue } from "./controls/GapControl.js";
@@ -17,6 +20,14 @@ interface Props {
   block: SectionBlock | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange: (config: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+  breakpointsConfig: BreakpointsConfig;
+}
+
+function getEffectiveBpPx(bpId: BreakpointId, config: BreakpointsConfig): number {
+  const override = config.overrides.find((o) => o.id === bpId);
+  if (override) return override.px;
+  return BREAKPOINT_DEFS.find((b) => b.id === bpId)?.defaultPx ?? 992;
 }
 
 // ─── Tab icons (inline SVG) ───────────────────────────────────────────────────
@@ -366,10 +377,11 @@ function AdvancedTab({
 
 type Tab = "fields" | "style" | "advanced";
 
-export function RightPanel({ block, onChange }: Props) {
+export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfig }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("fields");
   const [radiusMode, setRadiusMode] = useState<"normal" | "hover">("normal");
   const [borderMode, setBorderMode] = useState<"normal" | "hover">("normal");
+  const [shadowMode, setShadowMode] = useState<"normal" | "hover">("normal");
   const [bgMode, setBgMode] = useState<"normal" | "hover">("normal");
   const [trackedId, setTrackedId] = useState(block?.id);
 
@@ -377,6 +389,7 @@ export function RightPanel({ block, onChange }: Props) {
     setTrackedId(block?.id);
     setRadiusMode("normal");
     setBorderMode("normal");
+    setShadowMode("normal");
     setBgMode("normal");
   }
 
@@ -445,22 +458,73 @@ export function RightPanel({ block, onChange }: Props) {
   };
 
   const styleHover = (block.config.styleHover ?? {}) as Record<string, unknown>;
+  const styleBreakpoints = (block.config.styleBreakpoints ?? {}) as Record<string, Record<string, unknown>>;
+  const styleHoverBreakpoints = (block.config.styleHoverBreakpoints ?? {}) as Record<string, Record<string, unknown>>;
+  const isNonDesktop = activeBreakpoint !== "desktop";
+  const bpStyleRaw = isNonDesktop ? (styleBreakpoints[activeBreakpoint] ?? {}) : {};
+  const bpHoverRaw = isNonDesktop ? (styleHoverBreakpoints[activeBreakpoint] ?? {}) : {};
 
-  const radiusValue: RadiusValue = parseRadius(radiusMode === "hover" ? styleHover : activeStyle);
+  const breakpointIndicator = (
+    <span className="epx-bp-label-icon" title={activeBreakpoint}>{getBpIcon(activeBreakpoint)}</span>
+  );
+
+  const writeBpStyle = (patch: Record<string, unknown>) => {
+    const px = getEffectiveBpPx(activeBreakpoint, breakpointsConfig);
+    const current = styleBreakpoints[activeBreakpoint] ?? {};
+    onChange({ styleBreakpoints: { ...styleBreakpoints, [activeBreakpoint]: { ...current, _px: px, ...patch } } });
+  };
+
+  const writeBpHoverStyle = (patch: Record<string, unknown>) => {
+    const px = getEffectiveBpPx(activeBreakpoint, breakpointsConfig);
+    const current = styleHoverBreakpoints[activeBreakpoint] ?? {};
+    onChange({ styleHoverBreakpoints: { ...styleHoverBreakpoints, [activeBreakpoint]: { ...current, _px: px, ...patch } } });
+  };
+
+  const radiusSource = isNonDesktop
+    ? (radiusMode === "hover" ? { ...styleHover, ...bpHoverRaw } : { ...activeStyle, ...bpStyleRaw })
+    : (radiusMode === "hover" ? styleHover : activeStyle);
+  const radiusValue: RadiusValue = parseRadius(radiusSource);
   const handleRadius = (val: RadiusValue) => {
-    if (radiusMode === "hover") {
+    if (isNonDesktop && radiusMode === "hover") {
+      writeBpHoverStyle(serializeRadius(val));
+    } else if (isNonDesktop) {
+      writeBpStyle(serializeRadius(val));
+    } else if (radiusMode === "hover") {
       onChange({ styleHover: { ...styleHover, ...serializeRadius(val) } });
     } else {
       onChange({ [activeStyleKey]: { ...activeStyle, ...serializeRadius(val) } });
     }
   };
 
-  const borderValue: BorderConfig = parseBorder(borderMode === "hover" ? styleHover : activeStyle);
+  const borderSource = isNonDesktop
+    ? (borderMode === "hover" ? { ...styleHover, ...bpHoverRaw } : { ...activeStyle, ...bpStyleRaw })
+    : (borderMode === "hover" ? styleHover : activeStyle);
+  const borderValue: BorderConfig = parseBorder(borderSource);
   const handleBorder = (val: BorderConfig) => {
-    if (borderMode === "hover") {
+    if (isNonDesktop && borderMode === "hover") {
+      writeBpHoverStyle(serializeBorder(val));
+    } else if (isNonDesktop) {
+      writeBpStyle(serializeBorder(val));
+    } else if (borderMode === "hover") {
       onChange({ styleHover: { ...styleHover, ...serializeBorder(val) } });
     } else {
       onChange({ [activeStyleKey]: { ...activeStyle, ...serializeBorder(val) } });
+    }
+  };
+
+  const shadowSource = isNonDesktop
+    ? (shadowMode === "hover" ? { ...styleHover, ...bpHoverRaw } : { ...activeStyle, ...bpStyleRaw })
+    : (shadowMode === "hover" ? styleHover : activeStyle);
+  const shadowValue: BoxShadowConfig = parseShadow(shadowSource);
+  const handleShadow = (val: BoxShadowConfig) => {
+    if (isNonDesktop && shadowMode === "hover") {
+      writeBpHoverStyle(serializeShadow(val));
+    } else if (isNonDesktop) {
+      writeBpStyle(serializeShadow(val));
+    } else if (shadowMode === "hover") {
+      onChange({ styleHover: { ...styleHover, ...serializeShadow(val) } });
+    } else {
+      onChange({ [activeStyleKey]: { ...activeStyle, ...serializeShadow(val) } });
     }
   };
 
@@ -594,7 +658,7 @@ export function RightPanel({ block, onChange }: Props) {
                 <IconStateHover />
               </button>
             </div>
-            <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
+            <BorderRadiusControl value={radiusValue} onChange={handleRadius} breakpointIndicator={breakpointIndicator} />
           </div>
           <div className="epx-stateful-ctrl">
             <div className="epx-state-toggle">
@@ -605,7 +669,18 @@ export function RightPanel({ block, onChange }: Props) {
                 <IconStateHover />
               </button>
             </div>
-            <BorderControl value={borderValue} onChange={handleBorder} />
+            <BorderControl value={borderValue} onChange={handleBorder} breakpointIndicator={breakpointIndicator} />
+          </div>
+          <div className="epx-stateful-ctrl">
+            <div className="epx-state-toggle">
+              <button type="button" className={`epx-state-toggle__btn${shadowMode === "normal" ? " is-active" : ""}`} onClick={() => setShadowMode("normal")} data-tooltip="Normal">
+                <IconStateNormal />
+              </button>
+              <button type="button" className={`epx-state-toggle__btn${shadowMode === "hover" ? " is-active" : ""}`} onClick={() => setShadowMode("hover")} data-tooltip="Hover">
+                <IconStateHover />
+              </button>
+            </div>
+            <BoxShadowControl value={shadowValue} onChange={handleShadow} breakpointIndicator={breakpointIndicator} />
           </div>
         </div>
       )}

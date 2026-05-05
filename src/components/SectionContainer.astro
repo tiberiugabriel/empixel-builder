@@ -1,7 +1,7 @@
 ---
 import type { SectionBlock } from "../types.js";
 import BlockRenderer from "./BlockRenderer.astro";
-import { buildBlockStyle, wrapBlockCss, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
+import { buildBlockStyle, wrapBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getVideoInfo, buildYouTubeEmbedUrl, buildVimeoEmbedUrl, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,23 +78,35 @@ if (isGrid) {
 }
 const layoutStyle = layoutParts.join(";");
 
-const videoSrc   = getVideoBackground(value);
+const videoInfo  = getVideoInfo(value);
 const extraId    = getBlockId(value);
 const extraClass = getBlockClass(value);
 const customCss  = blockId ? getCustomCss(value, blockId) : "";
 const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
-const videoExtraCss = videoSrc ? "position:relative;overflow:hidden" : "";
+const breakpointCss = blockId ? buildBreakpointCss(value, blockId) : "";
+const breakpointHoverCss = blockId ? buildBreakpointHoverCss(value, blockId) : "";
+const videoExtraCss = videoInfo ? "position:relative;overflow:hidden" : "";
 const fullStyleStr  = [inlineStyle, videoExtraCss, layoutStyle].filter(Boolean).join(";");
 const blockCss      = wrapBlockCss(fullStyleStr, blockId);
-const allCss        = [blockCss, hoverCss, customCss].filter(Boolean).join("");
+const allCss        = [blockCss, hoverCss, customCss, breakpointCss, breakpointHoverCss].filter(Boolean).join("");
 
-// Video options
-const videoPlayOnce  = (value.backgroundVideoPlayOnce  as boolean) ?? false;
-const videoStartTime = value.backgroundVideoStartTime as number | undefined;
-const videoEndTime   = value.backgroundVideoEndTime   as number | undefined;
-const videoFallbackKey = value.backgroundVideoFallbackStorageKey as string | undefined;
-const videoPoster    = videoFallbackKey ? `/_emdash/api/media/file/${videoFallbackKey}` : undefined;
-const hasVideoTiming = videoStartTime !== undefined || videoEndTime !== undefined || videoPlayOnce;
+// Video options — read from style (where serializeBackground stores them)
+const videoPlayOnce    = (style.backgroundVideoPlayOnce    as boolean) ?? false;
+const videoSize        = (style.backgroundVideoSize        as string)  || "cover";
+const videoPosition    = (style.backgroundVideoPosition    as string)  || "center";
+const videoStartTime   = style.backgroundVideoStartTime   as number | undefined;
+const videoEndTime     = style.backgroundVideoEndTime     as number | undefined;
+const videoFallbackKey = style.backgroundVideoFallbackStorageKey as string | undefined;
+const videoPoster      = videoFallbackKey ? `/_emdash/api/media/file/${videoFallbackKey}` : undefined;
+const hasVideoTiming   = videoInfo?.type === "html5" && (videoStartTime !== undefined || videoEndTime !== undefined);
+
+// Build embed URLs for YouTube / Vimeo
+const youtubeEmbedUrl = videoInfo?.type === "youtube" && videoInfo.videoId
+  ? buildYouTubeEmbedUrl(videoInfo.videoId, { startTime: videoStartTime, endTime: videoEndTime, loop: !videoPlayOnce })
+  : null;
+const vimeoEmbedUrl = videoInfo?.type === "vimeo" && videoInfo.videoId
+  ? buildVimeoEmbedUrl(videoInfo.videoId, { startTime: videoStartTime, loop: !videoPlayOnce })
+  : null;
 const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTMLTag;
 
 // Link attributes (only relevant when Tag === "a")
@@ -131,21 +143,23 @@ if (linkCustomAttr) {
   rel={linkRel}
   {...linkCustomAttrs}
 >
-  {videoSrc && (
+  {/* ── HTML5 video (mp4, webm, mov, ogv) ── */}
+  {videoInfo?.type === "html5" && (
     <video
       autoplay
       muted
       loop={!videoPlayOnce || undefined}
       playsinline
+      disablepictureinpicture
       poster={videoPoster}
       data-epx-start={videoStartTime !== undefined ? String(videoStartTime) : undefined}
       data-epx-end={videoEndTime !== undefined ? String(videoEndTime) : undefined}
       data-epx-once={videoPlayOnce ? "1" : undefined}
-      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;"
-      src={videoSrc}
+      style={`position:absolute;inset:0;width:100%;height:100%;object-fit:${videoSize};object-position:${videoPosition};z-index:0;pointer-events:none;`}
+      src={videoInfo.rawUrl}
     />
   )}
-  {videoSrc && hasVideoTiming && (
+  {hasVideoTiming && (
     <script is:inline>{`
       (function(){
         var v = document.currentScript.previousElementSibling;
@@ -154,18 +168,49 @@ if (linkCustomAttr) {
         var start = v.dataset.epxStart !== undefined ? parseFloat(v.dataset.epxStart) : null;
         var end   = v.dataset.epxEnd   !== undefined ? parseFloat(v.dataset.epxEnd)   : null;
         var once  = v.dataset.epxOnce === '1';
-        if(start !== null) { v.addEventListener('loadedmetadata', function(){ v.currentTime = start; }, {once:true}); }
-        if(end !== null || once) {
+        if(start !== null) {
+          if(v.readyState >= 1) { v.currentTime = start; }
+          else { v.addEventListener('loadedmetadata', function(){ v.currentTime = start; }, {once:true}); }
+        }
+        if(end !== null) {
           v.addEventListener('timeupdate', function(){
-            if(end !== null && v.currentTime >= end) {
-              if(once) { v.pause(); } else { v.currentTime = start !== null ? start : 0; }
+            if(v.currentTime >= end) {
+              if(once) { v.pause(); }
+              else { v.currentTime = start !== null ? start : 0; }
             }
           });
         }
       })();
     `}</script>
   )}
-  {videoSrc ? (
+
+  {/* ── YouTube embed ── */}
+  {youtubeEmbedUrl && (
+    <div style="position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none;">
+      <iframe
+        src={youtubeEmbedUrl}
+        allow="autoplay; encrypted-media"
+        tabindex="-1"
+        style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:max(100%,calc(100% * 16 / 9));height:max(100%,calc(100% * 9 / 16));border:none;"
+        referrerpolicy="strict-origin-when-cross-origin"
+      />
+    </div>
+  )}
+
+  {/* ── Vimeo embed ── */}
+  {vimeoEmbedUrl && (
+    <div style="position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none;">
+      <iframe
+        src={vimeoEmbedUrl}
+        allow="autoplay; encrypted-media"
+        tabindex="-1"
+        style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:max(100%,calc(100% * 16 / 9));height:max(100%,calc(100% * 9 / 16));border:none;"
+        referrerpolicy="strict-origin-when-cross-origin"
+      />
+    </div>
+  )}
+
+  {videoInfo ? (
     <div style="position:relative;z-index:1">
       {children.map((child) =>
         child.type === "container"
@@ -181,3 +226,13 @@ if (linkCustomAttr) {
 </Tag>
 
 {allCss && <style set:html={allCss} is:global />}
+{videoInfo?.type === "html5" && (
+  <style is:global>{`
+    [data-epx-block="${blockId}"] video::-webkit-media-controls,
+    [data-epx-block="${blockId}"] video::-webkit-media-controls-panel,
+    [data-epx-block="${blockId}"] video::-webkit-media-controls-overlay-play-button,
+    [data-epx-block="${blockId}"] video::-webkit-media-controls-start-playback-button {
+      display: none !important;
+    }
+  `}</style>
+)}

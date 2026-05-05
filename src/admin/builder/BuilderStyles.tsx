@@ -728,7 +728,14 @@ export function BuilderStyles() {
         flex: 1; width: auto; justify-content: flex-start; padding: 0 8px;
         font-size: 10px; letter-spacing: 0.06em; border-right: none;
       }
+      .epx-side-input__label--has-suffix { gap: 4px; }
       .epx-side-input__label--icon { color: var(--epx-text-muted); }
+      .epx-bp-label-icon {
+        display: inline-flex; align-items: center; flex-shrink: 0;
+        opacity: 0.5; color: #fff;
+      }
+      .epx-bp-label-icon svg { width: 10px; height: 10px; }
+      .epx-spacing-ctrl__label { display: flex; align-items: center; gap: 5px; }
       .epx-side-input__num {
         flex: 1; min-width: 0; border: none; background: transparent;
         color: var(--epx-text); font-size: 12px; padding: 0 4px;
@@ -790,8 +797,9 @@ export function BuilderStyles() {
       .epx-field.is-dirty .epx-field__label {
         color: color-mix(in srgb, var(--epx-text-faint), white 45%);
       }
-      .epx-spacing-ctrl.is-dirty .epx-side-input__label--full:hover,
-      .epx-field-group.is-dirty .epx-side-input__label--scrub:hover { color: var(--epx-accent); }
+      .epx-spacing-ctrl.is-dirty .epx-side-input__label:hover {
+        color: color-mix(in srgb, var(--epx-text-faint), white 45%);
+      }
       .epx-field-row__select-wrap { flex: 1; min-width: 0; position: relative; }
       .epx-field-row__select-btn {
         width: 100%; height: 28px; border: none; background: transparent;
@@ -830,6 +838,7 @@ export function BuilderStyles() {
       .epx-border-color-hex {
         font-size: 10px; color: var(--epx-text-muted); font-family: monospace;
       }
+
 
       /* ── Stateful control wrapper (toggle + control grouped) ── */
       .epx-stateful-ctrl { display: flex; flex-direction: column; gap: 1px; }
@@ -1166,7 +1175,7 @@ export function BuilderStyles() {
       }
       .epx-bg-ctrl__url-input {
         flex: 1; border: none; background: transparent; color: var(--epx-text);
-        font-size: 12px; outline: none; min-width: 0;
+        font-size: 12px; outline: none; min-width: 0; text-align: right;
       }
       .epx-bg-ctrl__url-input::placeholder { color: var(--epx-text-faint); font-style: italic; }
 
@@ -1517,7 +1526,7 @@ export function BuilderStyles() {
       @container (max-width: 280px) {
         .epx-bp-row { flex-wrap: wrap; padding-right: 0; }
         .epx-bp-row__label { width: 100%; cursor: ew-resize; }
-        .epx-bp-row .epx-side-input__num { width: 100%; border-top: 1px solid var(--epx-border-subtle); }
+        .epx-bp-row .epx-side-input__num { max-width: 50px; }
       }
     `}</style>
   );

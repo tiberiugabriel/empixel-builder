@@ -152,9 +152,10 @@ function BorderStyleRow({ borderStyle, color, alpha, onStyleChange, onColorChang
 
 // ─── BorderControl ────────────────────────────────────────────────────────────
 
-export function BorderControl({ value, onChange }: {
+export function BorderControl({ value, onChange, breakpointIndicator }: {
   value: BorderConfig;
   onChange: (v: BorderConfig) => void;
+  breakpointIndicator?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const mixed = !sidesEqual(value.widths);
@@ -185,9 +186,9 @@ export function BorderControl({ value, onChange }: {
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {mixed ? (
-              <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Border</span>
+              <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Border{breakpointIndicator}</span>
             ) : (
-              <SideInput sideKey="" labelOverride="Border" value={collapsed} onChange={handleCollapsedChange} />
+              <SideInput sideKey="" labelOverride="Border" value={collapsed} onChange={handleCollapsedChange} labelSuffix={breakpointIndicator} />
             )}
             {mixed && <span className="epx-border-mixed">Mixed</span>}
             <button type="button" className="epx-spacing-ctrl__caret"
@@ -202,7 +203,7 @@ export function BorderControl({ value, onChange }: {
       ) : (
         <div className="epx-spacing-ctrl__expanded">
           <div className="epx-spacing-ctrl__exp-header">
-            <span className="epx-spacing-ctrl__label">Border</span>
+            <span className="epx-spacing-ctrl__label">Border{breakpointIndicator}</span>
             <div className="epx-spacing-ctrl__exp-actions">
               {isDirty && (
                 <button type="button" className="epx-reset-btn" onClick={handleReset} title="Reset">

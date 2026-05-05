@@ -6,7 +6,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import type { SectionBlock, BlockType } from "../types.js";
+import type { SectionBlock, BlockType, BreakpointId } from "../types.js";
 import { isContainerType } from "../types.js";
 import { PREVIEW_COMPONENTS } from "./previews/index.js";
 import { BlockOverlay } from "./BlockOverlay.js";
@@ -84,8 +84,16 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   }
 
   if (type === "video") {
+    const vSize = (style.backgroundVideoSize     as string) || "cover";
+    const vPos  = (style.backgroundVideoPosition as string) || "center";
     const fkey = style.backgroundVideoFallbackStorageKey as string | undefined;
-    if (fkey) return { backgroundImage: `url(/_emdash/api/media/file/${fkey})`, backgroundSize: "cover", backgroundPosition: "center" };
+    if (fkey) return { backgroundImage: `url(/_emdash/api/media/file/${fkey})`, backgroundSize: vSize, backgroundPosition: vPos };
+    // YouTube thumbnail preview
+    const url = style.backgroundVideoUrl as string | undefined;
+    if (url) {
+      const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (yt) return { backgroundImage: `url(https://img.youtube.com/vi/${yt[1]}/hqdefault.jpg)`, backgroundSize: vSize, backgroundPosition: vPos };
+    }
     return { background: "#0f172a" };
   }
 
@@ -102,13 +110,20 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   return {};
 }
 
-function resolveBlockStyle(config: Record<string, unknown>): {
+function getBpOverride(config: Record<string, unknown>, activeBreakpoint: BreakpointId): Record<string, unknown> | undefined {
+  if (activeBreakpoint === "desktop") return undefined;
+  const styleBreakpoints = config.styleBreakpoints as Record<string, Record<string, unknown>> | undefined;
+  return styleBreakpoints?.[activeBreakpoint];
+}
+
+function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<string, unknown>): {
   outerStyle: React.CSSProperties;
   innerStyle: React.CSSProperties;
 } {
   const base = (config.style ?? {}) as Record<string, unknown>;
   const dark = (config.styleDark ?? {}) as Record<string, unknown>;
-  const style = (config.theme as string) === "dark" ? { ...base, ...dark } : base;
+  const resolved = (config.theme as string) === "dark" ? { ...base, ...dark } : base;
+  const style = bpStyle ? { ...resolved, ...bpStyle } : resolved;
   const outerStyle: React.CSSProperties = {};
   const innerStyle: React.CSSProperties = {};
   if (css(style.marginTop) !== undefined)    innerStyle.marginTop    = css(style.marginTop)    as string | number;
@@ -163,6 +178,20 @@ function resolveBlockStyle(config: Record<string, unknown>): {
   if (css(style.overflowX)) (innerStyle as any).overflowX = css(style.overflowX);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (css(style.overflowY)) (innerStyle as any).overflowY = css(style.overflowY);
+  if (style.shadowX || style.shadowY || style.shadowBlur || style.shadowSpread) {
+    const sc = typeof style.shadowColor === "string" ? style.shadowColor : "#000000";
+    const sa = typeof style.shadowAlpha === "number" ? style.shadowAlpha : 1;
+    const hex = sc.replace("#", "").padEnd(6, "0");
+    const n = parseInt(hex.slice(0, 6), 16);
+    const rgba = `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${sa})`;
+    const inset = style.shadowType === "inset" ? "inset " : "";
+    const sx = css(style.shadowX) ?? "0px";
+    const sy = css(style.shadowY) ?? "0px";
+    const sb = css(style.shadowBlur) ?? "0px";
+    const ss = css(style.shadowSpread) ?? "0px";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (innerStyle as any).boxShadow = `${inset}${sx} ${sy} ${sb} ${ss} ${rgba}`;
+  }
   Object.assign(innerStyle, getBgStyle(style));
   return { outerStyle, innerStyle };
 }
@@ -181,17 +210,27 @@ interface CanvasProps {
   resizeBounds?: { min: number; max: number } | null;
   onWidthChange?: (w: number | null) => void;
   onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
+  activeBreakpoint: BreakpointId;
 }
 
 // ─── Hover CSS injection ──────────────────────────────────────────────────────
 
-function collectHoverCss(sections: SectionBlock[]): string {
+function collectHoverCss(sections: SectionBlock[], activeBreakpoint: BreakpointId): string {
   let css = "";
   for (const block of sections) {
     const config = block.config as Record<string, unknown>;
-    css += buildHoverCss(config, block.id);
-    if (block.children) css += collectHoverCss(block.children);
-    if (block.slots) block.slots.forEach(slot => { css += collectHoverCss(slot); });
+    const configForHover = activeBreakpoint !== "desktop"
+      ? {
+          ...config,
+          styleHover: {
+            ...(config.styleHover as Record<string, unknown> ?? {}),
+            ...((config.styleHoverBreakpoints as Record<string, Record<string, unknown>> | undefined)?.[activeBreakpoint] ?? {}),
+          },
+        }
+      : config;
+    css += buildHoverCss(configForHover, block.id);
+    if (block.children) css += collectHoverCss(block.children, activeBreakpoint);
+    if (block.slots) block.slots.forEach(slot => { css += collectHoverCss(slot, activeBreakpoint); });
   }
   return css;
 }
@@ -210,6 +249,7 @@ export function Canvas({
   resizeBounds,
   onWidthChange,
   onBlockContextMenu,
+  activeBreakpoint,
 }: CanvasProps) {
   const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROP_ID });
 
@@ -234,9 +274,9 @@ export function Canvas({
       el.id = "epx-canvas-hover-css";
       document.head.appendChild(el);
     }
-    el.textContent = collectHoverCss(sections);
+    el.textContent = collectHoverCss(sections, activeBreakpoint);
     return () => { el?.remove(); };
-  }, [sections]);
+  }, [sections, activeBreakpoint]);
 
   const handleResizeDragStart = useCallback((side: "left" | "right") => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -298,6 +338,7 @@ export function Canvas({
                 onAddAfter={onAddAfter}
                 containerId={null}
                 onBlockContextMenu={onBlockContextMenu}
+                activeBreakpoint={activeBreakpoint}
               />
             );
           }
@@ -313,6 +354,7 @@ export function Canvas({
               isDropTarget={section.id === dropIndicatorId}
               onAddAfter={(type) => onAddAfter(section.id, type)}
               onBlockContextMenu={onBlockContextMenu}
+              activeBreakpoint={activeBreakpoint}
             />
           );
         })}
@@ -351,6 +393,7 @@ interface SortableBlockProps {
   isDropTarget: boolean;
   onAddAfter: (type: BlockType) => void;
   onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
+  activeBreakpoint: BreakpointId;
 }
 
 function SortableBlock({
@@ -363,6 +406,7 @@ function SortableBlock({
   isDropTarget,
   onAddAfter,
   onBlockContextMenu,
+  activeBreakpoint,
 }: SortableBlockProps) {
   const [hovered, setHovered] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -375,7 +419,7 @@ function SortableBlock({
     } satisfies BlockDragData,
   });
 
-  const { outerStyle, innerStyle } = resolveBlockStyle(section.config);
+  const { outerStyle, innerStyle } = resolveBlockStyle(section.config, getBpOverride(section.config, activeBreakpoint));
 
   const adv = (section.config.advanced ?? {}) as Record<string, unknown>;
   if (adv.position) outerStyle.position = adv.position as React.CSSProperties["position"];
@@ -482,6 +526,7 @@ interface ContainerBlockProps {
   onAddAfter: (afterId: string, type: BlockType) => void;
   containerId: string | null;
   onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
+  activeBreakpoint: BreakpointId;
 }
 
 const ContainerBlock = memo(function ContainerBlock({
@@ -494,6 +539,7 @@ const ContainerBlock = memo(function ContainerBlock({
   onAddAfter,
   containerId,
   onBlockContextMenu,
+  activeBreakpoint,
 }: ContainerBlockProps) {
   const [hovered, setHovered] = useState(false);
   const isSelected = section.id === selectedId;
@@ -509,7 +555,7 @@ const ContainerBlock = memo(function ContainerBlock({
     } satisfies BlockDragData,
   });
 
-  const { innerStyle: containerBgStyle } = resolveBlockStyle(section.config);
+  const { innerStyle: containerBgStyle } = resolveBlockStyle(section.config, getBpOverride(section.config, activeBreakpoint));
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -589,6 +635,7 @@ const ContainerBlock = memo(function ContainerBlock({
                   onAddAfter={onAddAfter}
                   containerId={section.id}
                   onBlockContextMenu={onBlockContextMenu}
+                  activeBreakpoint={activeBreakpoint}
                 />
               ) : (
                 <SortableBlock
@@ -602,6 +649,7 @@ const ContainerBlock = memo(function ContainerBlock({
                   isDropTarget={child.id === dropIndicatorId}
                   onAddAfter={(type) => onAddAfter(child.id, type)}
                   onBlockContextMenu={onBlockContextMenu}
+                  activeBreakpoint={activeBreakpoint}
                 />
               )
             )

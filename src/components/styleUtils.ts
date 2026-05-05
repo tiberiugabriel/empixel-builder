@@ -119,6 +119,18 @@ export function buildBlockStyle(config: Record<string, unknown>): string {
     if (v) parts.push(`${camelToKebab(prop)}:${v}`);
   }
 
+  // Box shadow
+  const shadowColor = (style.shadowColor as string) ?? "#000000";
+  const shadowAlpha = (style.shadowAlpha as number) ?? 1;
+  const sx = cssStr(style.shadowX);
+  const sy = cssStr(style.shadowY);
+  const sblur   = cssStr(style.shadowBlur);
+  const sspread = cssStr(style.shadowSpread);
+  if (sx || sy || sblur || sspread) {
+    const inset = style.shadowType === "inset" ? "inset " : "";
+    parts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(shadowColor, shadowAlpha)}`);
+  }
+
   // Advanced: position + inset
   const pos = cssStr(advanced.position);
   if (pos) {
@@ -149,6 +161,46 @@ export function getVideoBackground(config: Record<string, unknown>): string | nu
   return key ? `/_emdash/api/media/file/${key}` : null;
 }
 
+export type VideoType = "youtube" | "vimeo" | "html5";
+
+export interface VideoInfo {
+  type: VideoType;
+  rawUrl: string;
+  videoId?: string;
+}
+
+export function getVideoInfo(config: Record<string, unknown>): VideoInfo | null {
+  const rawUrl = getVideoBackground(config);
+  if (!rawUrl) return null;
+
+  const yt = rawUrl.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (yt) return { type: "youtube", rawUrl, videoId: yt[1] };
+
+  const vi = rawUrl.match(/(?:vimeo\.com\/(?:video\/)?|player\.vimeo\.com\/video\/)(\d+)/);
+  if (vi) return { type: "vimeo", rawUrl, videoId: vi[1] };
+
+  return { type: "html5", rawUrl };
+}
+
+export function buildYouTubeEmbedUrl(videoId: string, opts: { startTime?: number; endTime?: number; loop: boolean }): string {
+  const p = new URLSearchParams({
+    autoplay: "1", mute: "1", controls: "0",
+    disablekb: "1", fs: "0", cc_load_policy: "0",
+    rel: "0", iv_load_policy: "3", modestbranding: "1", playsinline: "1",
+  });
+  if (opts.loop) { p.set("loop", "1"); p.set("playlist", videoId); }
+  if (opts.startTime !== undefined) p.set("start", String(Math.floor(opts.startTime)));
+  if (opts.endTime   !== undefined) p.set("end",   String(Math.floor(opts.endTime)));
+  return `https://www.youtube.com/embed/${videoId}?${p}`;
+}
+
+export function buildVimeoEmbedUrl(videoId: string, opts: { startTime?: number; loop: boolean }): string {
+  const p = new URLSearchParams({ autoplay: "1", muted: "1", background: "1", autopause: "0" });
+  if (!opts.loop) p.set("loop", "0");
+  const url = `https://player.vimeo.com/video/${videoId}?${p}`;
+  return opts.startTime !== undefined ? `${url}#t=${Math.floor(opts.startTime)}` : url;
+}
+
 // ─── Hover CSS ────────────────────────────────────────────────────────────────
 
 const HOVER_STYLE_PROPS = [
@@ -174,6 +226,18 @@ export function buildHoverCss(config: Record<string, unknown>, blockId: string):
     parts.push(`border-color:${hexToRgba(color, alpha)} !important`);
   }
 
+  // Box shadow
+  const hShadowColor = (styleHover.shadowColor as string) ?? "#000000";
+  const hShadowAlpha = (styleHover.shadowAlpha as number) ?? 1;
+  const hsx = cssStr(styleHover.shadowX);
+  const hsy = cssStr(styleHover.shadowY);
+  const hsblur   = cssStr(styleHover.shadowBlur);
+  const hsspread = cssStr(styleHover.shadowSpread);
+  if (hsx || hsy || hsblur || hsspread) {
+    const inset = styleHover.shadowType === "inset" ? "inset " : "";
+    parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(hShadowColor, hShadowAlpha)} !important`);
+  }
+
   // Border widths + radius
   for (const prop of HOVER_STYLE_PROPS) {
     const v = cssStr(styleHover[prop]);
@@ -193,6 +257,102 @@ export function wrapBlockCss(styleStr: string, blockId: string): string {
 
 export function buildBlockCss(config: Record<string, unknown>, blockId: string): string {
   return wrapBlockCss(buildBlockStyle(config), blockId);
+}
+
+// ─── Per-breakpoint Hover CSS ─────────────────────────────────────────────────
+
+export function buildBreakpointHoverCss(config: Record<string, unknown>, blockId: string): string {
+  const styleHoverBreakpoints = config.styleHoverBreakpoints as Record<string, Record<string, unknown>> | undefined;
+  if (!styleHoverBreakpoints || !blockId) return "";
+
+  const entries = Object.entries(styleHoverBreakpoints)
+    .filter(([, s]) => typeof (s as Record<string, unknown>)._px === "number")
+    .sort(([, a], [, b]) => ((b as Record<string, unknown>)._px as number) - ((a as Record<string, unknown>)._px as number));
+
+  let css = "";
+  for (const [, bpHover] of entries) {
+    const px = (bpHover as Record<string, unknown>)._px as number;
+    const parts: string[] = [];
+
+    const borderSt = cssStr(bpHover.borderStyle);
+    if (borderSt && borderSt !== "none") {
+      const color = (bpHover.borderColor as string) ?? "#000000";
+      const alpha = (bpHover.borderAlpha as number) ?? 1;
+      parts.push(`border-style:${borderSt} !important`, `border-color:${hexToRgba(color, alpha)} !important`);
+    }
+
+    for (const prop of HOVER_STYLE_PROPS) {
+      const v = cssStr(bpHover[prop]);
+      if (v) parts.push(`${camelToKebab(prop)}:${v} !important`);
+    }
+
+    const hsx = cssStr(bpHover.shadowX);
+    const hsy = cssStr(bpHover.shadowY);
+    const hsblur   = cssStr(bpHover.shadowBlur);
+    const hsspread = cssStr(bpHover.shadowSpread);
+    if (hsx || hsy || hsblur || hsspread) {
+      const inset = bpHover.shadowType === "inset" ? "inset " : "";
+      const sc = (bpHover.shadowColor as string) ?? "#000000";
+      const sa = (bpHover.shadowAlpha as number) ?? 1;
+      parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(sc, sa)} !important`);
+    }
+
+    if (parts.length) {
+      css += `@media(max-width:${px}px){[data-epx-block="${blockId}"]:hover{${parts.join(";")}}}`;
+    }
+  }
+  return css;
+}
+
+// ─── Per-breakpoint CSS (Radius + Border + Shadow overrides) ─────────────────
+
+const BP_STYLE_PROPS = [
+  "borderTopLeftRadius", "borderTopRightRadius",
+  "borderBottomRightRadius", "borderBottomLeftRadius",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+] as const;
+
+export function buildBreakpointCss(config: Record<string, unknown>, blockId: string): string {
+  const styleBreakpoints = config.styleBreakpoints as Record<string, Record<string, unknown>> | undefined;
+  if (!styleBreakpoints || !blockId) return "";
+
+  const entries = Object.entries(styleBreakpoints)
+    .filter(([, s]) => typeof (s as Record<string, unknown>)._px === "number")
+    .sort(([, a], [, b]) => ((b as Record<string, unknown>)._px as number) - ((a as Record<string, unknown>)._px as number));
+
+  let css = "";
+  for (const [, bpStyle] of entries) {
+    const px = (bpStyle as Record<string, unknown>)._px as number;
+    const parts: string[] = [];
+
+    const borderSt = cssStr(bpStyle.borderStyle);
+    if (borderSt && borderSt !== "none") {
+      const color = (bpStyle.borderColor as string) ?? "#000000";
+      const alpha = (bpStyle.borderAlpha as number) ?? 1;
+      parts.push(`border-style:${borderSt}`, `border-color:${hexToRgba(color, alpha)}`);
+    }
+
+    for (const prop of BP_STYLE_PROPS) {
+      const v = cssStr(bpStyle[prop]);
+      if (v) parts.push(`${camelToKebab(prop)}:${v}`);
+    }
+
+    const sx = cssStr(bpStyle.shadowX);
+    const sy = cssStr(bpStyle.shadowY);
+    const sblur   = cssStr(bpStyle.shadowBlur);
+    const sspread = cssStr(bpStyle.shadowSpread);
+    if (sx || sy || sblur || sspread) {
+      const inset = bpStyle.shadowType === "inset" ? "inset " : "";
+      const sc = (bpStyle.shadowColor as string) ?? "#000000";
+      const sa = (bpStyle.shadowAlpha as number) ?? 1;
+      parts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(sc, sa)}`);
+    }
+
+    if (parts.length) {
+      css += `@media(max-width:${px}px){[data-epx-block="${blockId}"]{${parts.join(";")}}}`;
+    }
+  }
+  return css;
 }
 
 // ─── HTML attribute helpers ───────────────────────────────────────────────────

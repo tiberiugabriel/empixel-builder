@@ -72,9 +72,10 @@ const CORNER_ICONS: Record<RadiusKeys, React.ReactNode> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BorderRadiusControl({ value, onChange }: {
+export function BorderRadiusControl({ value, onChange, breakpointIndicator }: {
   value: RadiusValue;
   onChange: (v: RadiusValue) => void;
+  breakpointIndicator?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -104,9 +105,9 @@ export function BorderRadiusControl({ value, onChange }: {
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {isMixed ? (
-              <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Radius</span>
+              <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Radius{breakpointIndicator}</span>
             ) : (
-              <SideInput sideKey="" labelOverride="Radius" value={collapsedValue} onChange={handleCollapsedChange} />
+              <SideInput sideKey="" labelOverride="Radius" value={collapsedValue} onChange={handleCollapsedChange} labelSuffix={breakpointIndicator} />
             )}
             {isMixed && <span className="epx-border-mixed">Mixed</span>}
             <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(true)}>▾</button>
@@ -120,7 +121,7 @@ export function BorderRadiusControl({ value, onChange }: {
       ) : (
         <div className="epx-spacing-ctrl__expanded">
           <div className="epx-spacing-ctrl__exp-header">
-            <span className="epx-spacing-ctrl__label">Radius</span>
+            <span className="epx-spacing-ctrl__label">Radius{breakpointIndicator}</span>
             <div className="epx-spacing-ctrl__exp-actions">
               {isDirty && (
                 <button type="button" className="epx-reset-btn" onClick={handleReset} title="Reset">

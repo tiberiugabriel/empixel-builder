@@ -45,6 +45,8 @@ export interface BackgroundConfig {
   videoSrc?: "media" | "url";
   videoMedia?: MediaRef;
   videoUrl?: string;
+  videoSize?: string;
+  videoPosition?: string;
   videoStartTime?: number;
   videoEndTime?: number;
   videoPlayOnce?: boolean;
@@ -80,7 +82,9 @@ export function parseBackground(style: Record<string, unknown>): BackgroundConfi
     const vid    = style.backgroundVideoMediaId           as string | undefined;
     const vkey   = style.backgroundVideoMediaStorageKey   as string | undefined;
     if (vid && vkey) cfg.videoMedia = { id: vid, storageKey: vkey, filename: style.backgroundVideoMediaFilename as string | undefined };
-    cfg.videoUrl       = style.backgroundVideoUrl as string | undefined;
+    cfg.videoUrl      = style.backgroundVideoUrl      as string | undefined;
+    cfg.videoSize     = (style.backgroundVideoSize     as string) ?? "";
+    cfg.videoPosition = (style.backgroundVideoPosition as string) ?? "";
     if (style.backgroundVideoStartTime !== undefined) cfg.videoStartTime = style.backgroundVideoStartTime as number;
     if (style.backgroundVideoEndTime   !== undefined) cfg.videoEndTime   = style.backgroundVideoEndTime   as number;
     cfg.videoPlayOnce  = (style.backgroundVideoPlayOnce as boolean) ?? false;
@@ -106,7 +110,7 @@ const CLEARED: Record<string, undefined> = {
   backgroundImageRepeat: undefined, backgroundImageAttachment: undefined,
   backgroundVideoSrc: undefined, backgroundVideoMediaId: undefined,
   backgroundVideoMediaStorageKey: undefined, backgroundVideoMediaFilename: undefined,
-  backgroundVideoUrl: undefined,
+  backgroundVideoUrl: undefined, backgroundVideoSize: undefined, backgroundVideoPosition: undefined,
   backgroundVideoStartTime: undefined, backgroundVideoEndTime: undefined,
   backgroundVideoPlayOnce: undefined,
   backgroundVideoFallbackId: undefined, backgroundVideoFallbackStorageKey: undefined,
@@ -143,7 +147,9 @@ export function serializeBackground(cfg: BackgroundConfig): Record<string, unkno
       out.backgroundVideoMediaStorageKey   = cfg.videoMedia.storageKey;
       out.backgroundVideoMediaFilename     = cfg.videoMedia.filename;
     }
-    out.backgroundVideoUrl       = cfg.videoUrl;
+    out.backgroundVideoUrl      = cfg.videoUrl;
+    out.backgroundVideoSize     = cfg.videoSize     ?? "";
+    out.backgroundVideoPosition = cfg.videoPosition ?? "";
     if (cfg.videoStartTime !== undefined) out.backgroundVideoStartTime = cfg.videoStartTime;
     if (cfg.videoEndTime   !== undefined) out.backgroundVideoEndTime   = cfg.videoEndTime;
     out.backgroundVideoPlayOnce  = cfg.videoPlayOnce ?? false;
@@ -832,12 +838,14 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
                     type="url"
                     className="epx-bg-ctrl__url-input"
                     value={value.videoUrl ?? ""}
-                    placeholder="https://youtube.com/watch?v=..."
+                    placeholder="YouTube|Vimeo|.mp4|.webm|.mov"
                     onChange={e => onChange({ ...value, videoUrl: e.target.value })}
                   />
                 </div>
               )}
 
+              <BgOptionRow label="Size"       value={value.videoSize     ?? ""} options={IMG_SIZE_OPTIONS}     onChange={v => onChange({ ...value, videoSize: v })} />
+              <BgOptionRow label="Position"   value={value.videoPosition ?? ""} options={IMG_POSITION_OPTIONS} onChange={v => onChange({ ...value, videoPosition: v })} />
               <BgNumRow    label="Start Time" value={value.videoStartTime} onChange={v => onChange({ ...value, videoStartTime: v })} />
               <BgNumRow    label="End Time"   value={value.videoEndTime}   onChange={v => onChange({ ...value, videoEndTime: v })} />
               <BgToggleRow label="Play Once"  value={value.videoPlayOnce ?? false} onChange={v => onChange({ ...value, videoPlayOnce: v })} />
