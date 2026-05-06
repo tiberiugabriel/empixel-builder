@@ -2,6 +2,8 @@ import Testimonials from "./Testimonials.astro";
 import FaqSection from "./FaqSection.astro";
 import PricingSection from "./PricingSection.astro";
 import SpacerSection from "./SpacerSection.astro";
+import Text from "./Text.astro";
+import ImageBlock from "./Image.astro";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
 export { getBuilderLayout } from "./db.js";
@@ -13,4 +15,6 @@ export const blockComponents: Record<string, unknown> = {
   faq: FaqSection,
   pricing: PricingSection,
   spacer: SpacerSection,
+  text: Text,
+  image: ImageBlock,
 };

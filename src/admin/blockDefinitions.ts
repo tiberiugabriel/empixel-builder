@@ -5,10 +5,13 @@ import type { BlockType } from "../types.js";
 export interface FieldDef {
   key: string;
   label: string;
-  type: "text" | "textarea" | "url" | "select" | "toggle" | "number" | "json-array";
+  type: "text" | "textarea" | "url" | "select" | "toggle" | "number" | "json-array" | "link";
   options?: Array<{ value: string; label: string }>;
   placeholder?: string;
   required?: boolean;
+  labelClassName?: string;
+  /** Show this field only when another field's value matches */
+  showWhen?: { key: string; value: string };
   /** For json-array: schema of each item's sub-fields */
   itemFields?: FieldDef[];
 }
@@ -34,6 +37,30 @@ export interface BlockDef {
 // ─── Block Definitions ────────────────────────────────────────────────────────
 
 export const BLOCK_DEFINITIONS: BlockDef[] = [
+  {
+    type: "text",
+    label: "Text",
+    icon: "📝",
+    description: "A text block with custom CSS control",
+    category: "general",
+    defaultConfig: { content: "", theme: "light" },
+    fields: [
+      { key: "content", label: "Content", type: "textarea", placeholder: "Enter text...", labelClassName: "epx-row-label--section" },
+    ],
+  },
+
+  {
+    type: "image",
+    label: "Image",
+    icon: "🖼️",
+    description: "An image with optional caption and link",
+    category: "general",
+    defaultConfig: { theme: "light", resolution: "full" },
+    fields: [
+      { key: "caption", label: "Caption", type: "textarea", placeholder: "Optional caption…", labelClassName: "epx-row-label--section" },
+    ],
+  },
+
   {
     type: "testimonials",
     label: "Testimonials",

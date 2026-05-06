@@ -116,7 +116,7 @@ function getBpOverride(config: Record<string, unknown>, activeBreakpoint: Breakp
   return styleBreakpoints?.[activeBreakpoint];
 }
 
-function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<string, unknown>): {
+function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<string, unknown>, opts?: { imgScoped?: boolean }): {
   outerStyle: React.CSSProperties;
   innerStyle: React.CSSProperties;
 } {
@@ -124,6 +124,7 @@ function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<str
   const dark = (config.styleDark ?? {}) as Record<string, unknown>;
   const resolved = (config.theme as string) === "dark" ? { ...base, ...dark } : base;
   const style = bpStyle ? { ...resolved, ...bpStyle } : resolved;
+  const imgScoped = !!opts?.imgScoped;
   const outerStyle: React.CSSProperties = {};
   const innerStyle: React.CSSProperties = {};
   if (css(style.marginTop) !== undefined)    innerStyle.marginTop    = css(style.marginTop)    as string | number;
@@ -139,19 +140,19 @@ function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<str
   if (css(style.paddingRight) !== undefined) innerStyle.paddingRight = css(style.paddingRight) as string | number;
   if (css(style.paddingBottom) !== undefined) innerStyle.paddingBottom = css(style.paddingBottom) as string | number;
   if (css(style.paddingLeft) !== undefined) innerStyle.paddingLeft = css(style.paddingLeft) as string | number;
-  if (style.borderRadius && BORDER_RADIUS_MAP[style.borderRadius as string]) {
+  if (!imgScoped && style.borderRadius && BORDER_RADIUS_MAP[style.borderRadius as string]) {
     innerStyle.borderRadius = BORDER_RADIUS_MAP[style.borderRadius as string];
   }
-  if (css(style.borderTopLeftRadius))     innerStyle.borderTopLeftRadius     = css(style.borderTopLeftRadius)     as string;
-  if (css(style.borderTopRightRadius))    innerStyle.borderTopRightRadius    = css(style.borderTopRightRadius)    as string;
-  if (css(style.borderBottomRightRadius)) innerStyle.borderBottomRightRadius = css(style.borderBottomRightRadius) as string;
-  if (css(style.borderBottomLeftRadius))  innerStyle.borderBottomLeftRadius  = css(style.borderBottomLeftRadius)  as string;
-  if (css(style.borderTopWidth))    innerStyle.borderTopWidth    = css(style.borderTopWidth)    as string;
-  if (css(style.borderRightWidth))  innerStyle.borderRightWidth  = css(style.borderRightWidth)  as string;
-  if (css(style.borderBottomWidth)) innerStyle.borderBottomWidth = css(style.borderBottomWidth) as string;
-  if (css(style.borderLeftWidth))   innerStyle.borderLeftWidth   = css(style.borderLeftWidth)   as string;
-  if (css(style.borderStyle))       innerStyle.borderStyle       = css(style.borderStyle)       as string;
-  if (css(style.borderColor)) {
+  if (!imgScoped && css(style.borderTopLeftRadius))     innerStyle.borderTopLeftRadius     = css(style.borderTopLeftRadius)     as string;
+  if (!imgScoped && css(style.borderTopRightRadius))    innerStyle.borderTopRightRadius    = css(style.borderTopRightRadius)    as string;
+  if (!imgScoped && css(style.borderBottomRightRadius)) innerStyle.borderBottomRightRadius = css(style.borderBottomRightRadius) as string;
+  if (!imgScoped && css(style.borderBottomLeftRadius))  innerStyle.borderBottomLeftRadius  = css(style.borderBottomLeftRadius)  as string;
+  if (!imgScoped && css(style.borderTopWidth))    innerStyle.borderTopWidth    = css(style.borderTopWidth)    as string;
+  if (!imgScoped && css(style.borderRightWidth))  innerStyle.borderRightWidth  = css(style.borderRightWidth)  as string;
+  if (!imgScoped && css(style.borderBottomWidth)) innerStyle.borderBottomWidth = css(style.borderBottomWidth) as string;
+  if (!imgScoped && css(style.borderLeftWidth))   innerStyle.borderLeftWidth   = css(style.borderLeftWidth)   as string;
+  if (!imgScoped && css(style.borderStyle))       innerStyle.borderStyle       = css(style.borderStyle)       as string;
+  if (!imgScoped && css(style.borderColor)) {
     const color = css(style.borderColor) as string;
     const alpha = typeof style.borderAlpha === "number" ? style.borderAlpha : 1;
     if (alpha < 1) {
@@ -178,7 +179,95 @@ function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<str
   if (css(style.overflowX)) (innerStyle as any).overflowX = css(style.overflowX);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (css(style.overflowY)) (innerStyle as any).overflowY = css(style.overflowY);
-  if (style.shadowX || style.shadowY || style.shadowBlur || style.shadowSpread) {
+  // Opacity (CSS-native 0..1)
+  if (typeof style.opacity === "number") innerStyle.opacity = style.opacity;
+  // Auto overflow:hidden when border + radius are both set and overflow not explicit
+  // (skipped when imgScoped — visual props live on the inner <img> instead)
+  if (!imgScoped) {
+    const bs = css(style.borderStyle) as string | undefined;
+    const hasBorderStyle = !!bs && bs !== "none";
+    const hasBorderWidth =
+      css(style.borderTopWidth)    !== undefined ||
+      css(style.borderRightWidth)  !== undefined ||
+      css(style.borderBottomWidth) !== undefined ||
+      css(style.borderLeftWidth)   !== undefined;
+    const hasRadius =
+      css(style.borderTopLeftRadius)     !== undefined ||
+      css(style.borderTopRightRadius)    !== undefined ||
+      css(style.borderBottomRightRadius) !== undefined ||
+      css(style.borderBottomLeftRadius)  !== undefined;
+    const hasOverflowSet =
+      css(style.overflowX) !== undefined ||
+      css(style.overflowY) !== undefined;
+    if (hasBorderStyle && hasBorderWidth && hasRadius && !hasOverflowSet) {
+      innerStyle.overflow = "hidden";
+    }
+  }
+  // Typography
+  if (css(style.textAlign))      innerStyle.textAlign      = css(style.textAlign)      as React.CSSProperties["textAlign"];
+  if (css(style.fontFamily))     innerStyle.fontFamily     = css(style.fontFamily)     as string;
+  if (css(style.fontSize))       innerStyle.fontSize       = css(style.fontSize)       as string;
+  if (css(style.fontWeight))     innerStyle.fontWeight     = css(style.fontWeight)     as React.CSSProperties["fontWeight"];
+  if (css(style.textTransform))  innerStyle.textTransform  = css(style.textTransform)  as React.CSSProperties["textTransform"];
+  if (css(style.fontStyle))      innerStyle.fontStyle      = css(style.fontStyle)      as React.CSSProperties["fontStyle"];
+  if (css(style.textDecoration)) innerStyle.textDecoration = css(style.textDecoration) as string;
+  if (css(style.lineHeight))     innerStyle.lineHeight     = css(style.lineHeight)     as React.CSSProperties["lineHeight"];
+  if (css(style.letterSpacing))  innerStyle.letterSpacing  = css(style.letterSpacing)  as string;
+  if (css(style.wordSpacing))    innerStyle.wordSpacing    = css(style.wordSpacing)    as string;
+  if (css(style.color)) {
+    const color = css(style.color) as string;
+    const alpha = typeof style.colorAlpha === "number" ? style.colorAlpha : 1;
+    if (alpha < 1) {
+      const hex = color.replace("#", "").padEnd(6, "0");
+      const n = parseInt(hex.slice(0, 6), 16);
+      innerStyle.color = `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+    } else {
+      innerStyle.color = color;
+    }
+  }
+  // Text stroke
+  if (css(style.textStrokeWidth)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (innerStyle as any).WebkitTextStrokeWidth = css(style.textStrokeWidth);
+  }
+  if (css(style.textStrokeColor)) {
+    const sc = css(style.textStrokeColor) as string;
+    const sa = typeof style.textStrokeAlpha === "number" ? style.textStrokeAlpha : 1;
+    let val = sc;
+    if (sa < 1) {
+      const hex = sc.replace("#", "").padEnd(6, "0");
+      const n = parseInt(hex.slice(0, 6), 16);
+      val = `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${sa})`;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (innerStyle as any).WebkitTextStrokeColor = val;
+  }
+  // Text shadow (X Y Blur Color — color falls back to currentColor)
+  {
+    const tsx    = css(style.textShadowX);
+    const tsy    = css(style.textShadowY);
+    const tsblur = css(style.textShadowBlur);
+    if (tsx || tsy || tsblur) {
+      let colorPart = "";
+      const tsColor = css(style.textShadowColor) as string | undefined;
+      if (tsColor) {
+        const tsa = typeof style.textShadowAlpha === "number" ? style.textShadowAlpha : 1;
+        if (tsa < 1) {
+          const hex = tsColor.replace("#", "").padEnd(6, "0");
+          const n = parseInt(hex.slice(0, 6), 16);
+          colorPart = ` rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${tsa})`;
+        } else {
+          colorPart = ` ${tsColor}`;
+        }
+      }
+      innerStyle.textShadow = `${tsx ?? "0px"} ${tsy ?? "0px"} ${tsblur ?? "0px"}${colorPart}`;
+    }
+  }
+  // Blend mode
+  if (css(style.mixBlendMode)) {
+    innerStyle.mixBlendMode = css(style.mixBlendMode) as React.CSSProperties["mixBlendMode"];
+  }
+  if (!imgScoped && (style.shadowX || style.shadowY || style.shadowBlur || style.shadowSpread)) {
     const sc = typeof style.shadowColor === "string" ? style.shadowColor : "#000000";
     const sa = typeof style.shadowAlpha === "number" ? style.shadowAlpha : 1;
     const hex = sc.replace("#", "").padEnd(6, "0");
@@ -304,7 +393,7 @@ export function Canvas({
   const showHandles = !!resizeBounds && !!effectiveWidth;
   const frameStyle = effectiveWidth
     ? showHandles
-      ? { width: "100%", maxWidth: effectiveWidth, flexShrink: 0 as const }
+      ? { overflow: "hidden", width: "100%", maxWidth: effectiveWidth, flexShrink: 0 as const }
       : { maxWidth: effectiveWidth, width: "100%", margin: "0 auto" }
     : undefined;
 
@@ -419,7 +508,11 @@ function SortableBlock({
     } satisfies BlockDragData,
   });
 
-  const { outerStyle, innerStyle } = resolveBlockStyle(section.config, getBpOverride(section.config, activeBreakpoint));
+  const { outerStyle, innerStyle } = resolveBlockStyle(
+    section.config,
+    getBpOverride(section.config, activeBreakpoint),
+    { imgScoped: section.type === "image" },
+  );
 
   const adv = (section.config.advanced ?? {}) as Record<string, unknown>;
   if (adv.position) outerStyle.position = adv.position as React.CSSProperties["position"];

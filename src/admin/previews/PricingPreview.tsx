@@ -3,7 +3,6 @@ import React, { memo } from "react";
 const THEMES: Record<string, React.CSSProperties> = {
   light: { background: "#fff", color: "#111" },
   dark: { background: "#111", color: "#fff" },
-  accent: { background: "#eff6ff", color: "#1e40af" },
 };
 
 interface PricingTier { name?: string; price?: string; period?: string; highlighted?: boolean }

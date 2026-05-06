@@ -5,7 +5,9 @@ export type BlockType =
   | "faq"
   | "pricing"
   | "spacer"
-  | "container";
+  | "container"
+  | "text"
+  | "image";
 
 /** Block types that can contain other blocks */
 export const CONTAINER_TYPES: BlockType[] = ["container"];
@@ -47,7 +49,7 @@ export interface TestimonialItem {
 export interface TestimonialsConfig {
   headline?: string;
   layout?: "grid" | "carousel";
-  theme?: "light" | "dark" | "accent";
+  theme?: "light" | "dark";
   items: TestimonialItem[];
 }
 
@@ -59,7 +61,7 @@ export interface FaqItem {
 export interface FaqConfig {
   headline?: string;
   subheadline?: string;
-  theme?: "light" | "dark" | "accent";
+  theme?: "light" | "dark";
   items: FaqItem[];
 }
 
@@ -77,13 +79,55 @@ export interface PricingTier {
 export interface PricingConfig {
   headline?: string;
   subheadline?: string;
-  theme?: "light" | "dark" | "accent";
+  theme?: "light" | "dark";
   tiers: PricingTier[];
 }
 
 export interface SpacerConfig {
   height?: "sm" | "md" | "lg" | "xl";
   showDivider?: boolean;
+}
+
+export interface TextConfig {
+  content?: string;
+  htmlTag?: string;
+  linkHref?: string;
+  linkNewTab?: boolean;
+  linkNofollow?: boolean;
+  linkCustomAttr?: string;
+  theme?: "light" | "dark";
+}
+
+export interface ImageMediaRef {
+  id: string;
+  storageKey: string;
+  alt?: string;
+  filename?: string;
+}
+
+export type ImageResolution = "thumbnail" | "medium" | "large" | "full";
+
+export interface ImageElementStyle {
+  width?: string;
+  minWidth?: string;
+  maxWidth?: string;
+  height?: string;
+  minHeight?: string;
+  maxHeight?: string;
+  objectFit?: string;
+  objectPosition?: string;
+}
+
+export interface ImageConfig {
+  image?: ImageMediaRef;
+  resolution?: ImageResolution;
+  caption?: string;
+  linkHref?: string;
+  linkNewTab?: boolean;
+  linkNofollow?: boolean;
+  linkCustomAttr?: string;
+  theme?: "light" | "dark";
+  imgStyle?: ImageElementStyle;
 }
 
 // ─── Breakpoints ──────────────────────────────────────────────────────────────

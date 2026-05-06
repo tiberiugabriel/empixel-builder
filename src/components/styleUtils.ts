@@ -92,11 +92,25 @@ const STYLE_PROPS = [
   "borderBottomRightRadius", "borderBottomLeftRadius",
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
   "overflowX", "overflowY",
+  "textAlign",
+  "fontFamily", "fontSize", "fontWeight",
+  "textTransform", "fontStyle", "textDecoration",
+  "lineHeight", "letterSpacing", "wordSpacing",
+  "mixBlendMode",
 ] as const;
 
-export function buildBlockStyle(config: Record<string, unknown>): string {
+// Visual props that target the inner <img> for image blocks
+const IMG_VISUAL_PROPS = [
+  "borderTopLeftRadius", "borderTopRightRadius",
+  "borderBottomRightRadius", "borderBottomLeftRadius",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+] as const;
+const IMG_VISUAL_PROP_SET: Set<string> = new Set(IMG_VISUAL_PROPS);
+
+export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean }): string {
   const style    = getEffectiveStyle(config);
   const advanced = (config.advanced ?? {}) as Record<string, unknown>;
+  const imgScoped = !!opts?.imgScoped;
 
   const parts: string[] = [];
 
@@ -106,29 +120,61 @@ export function buildBlockStyle(config: Record<string, unknown>): string {
 
   // Border style + color (applied together when borderStyle is not "none")
   const borderSt = cssStr(style.borderStyle);
-  if (borderSt && borderSt !== "none") {
+  if (!imgScoped && borderSt && borderSt !== "none") {
     const color = (style.borderColor as string) ?? "#000000";
     const alpha = (style.borderAlpha as number) ?? 1;
     parts.push(`border-style:${borderSt}`);
     parts.push(`border-color:${hexToRgba(color, alpha)}`);
   }
 
+  // Text color (with optional alpha)
+  const textColor = cssStr(style.color);
+  if (textColor) {
+    const alpha = (style.colorAlpha as number) ?? 1;
+    parts.push(`color:${alpha < 1 ? hexToRgba(textColor, alpha) : textColor}`);
+  }
+
   // All simple camelCase → kebab CSS properties
   for (const prop of STYLE_PROPS) {
+    if (imgScoped && IMG_VISUAL_PROP_SET.has(prop)) continue;
     const v = cssStr(style[prop]);
     if (v) parts.push(`${camelToKebab(prop)}:${v}`);
   }
 
   // Box shadow
-  const shadowColor = (style.shadowColor as string) ?? "#000000";
-  const shadowAlpha = (style.shadowAlpha as number) ?? 1;
-  const sx = cssStr(style.shadowX);
-  const sy = cssStr(style.shadowY);
-  const sblur   = cssStr(style.shadowBlur);
-  const sspread = cssStr(style.shadowSpread);
-  if (sx || sy || sblur || sspread) {
-    const inset = style.shadowType === "inset" ? "inset " : "";
-    parts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(shadowColor, shadowAlpha)}`);
+  if (!imgScoped) {
+    const shadowColor = (style.shadowColor as string) ?? "#000000";
+    const shadowAlpha = (style.shadowAlpha as number) ?? 1;
+    const sx = cssStr(style.shadowX);
+    const sy = cssStr(style.shadowY);
+    const sblur   = cssStr(style.shadowBlur);
+    const sspread = cssStr(style.shadowSpread);
+    if (sx || sy || sblur || sspread) {
+      const inset = style.shadowType === "inset" ? "inset " : "";
+      parts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(shadowColor, shadowAlpha)}`);
+    }
+  }
+
+  // Text stroke (-webkit-text-stroke-width / -webkit-text-stroke-color)
+  const strokeWidth = cssStr(style.textStrokeWidth);
+  if (strokeWidth) parts.push(`-webkit-text-stroke-width:${strokeWidth}`);
+  const strokeColor = cssStr(style.textStrokeColor);
+  if (strokeColor) {
+    const a = (style.textStrokeAlpha as number) ?? 1;
+    parts.push(`-webkit-text-stroke-color:${a < 1 ? hexToRgba(strokeColor, a) : strokeColor}`);
+  }
+
+  // Text shadow (X Y Blur Color — color falls back to currentColor)
+  const tsx    = cssStr(style.textShadowX);
+  const tsy    = cssStr(style.textShadowY);
+  const tsblur = cssStr(style.textShadowBlur);
+  if (tsx || tsy || tsblur) {
+    const tsColor = cssStr(style.textShadowColor);
+    const tsAlpha = (style.textShadowAlpha as number) ?? 1;
+    const colorPart = tsColor
+      ? ` ${tsAlpha < 1 ? hexToRgba(tsColor, tsAlpha) : tsColor}`
+      : "";
+    parts.push(`text-shadow:${tsx || "0px"} ${tsy || "0px"} ${tsblur || "0px"}${colorPart}`);
   }
 
   // Advanced: position + inset
@@ -145,7 +191,84 @@ export function buildBlockStyle(config: Record<string, unknown>): string {
   const zi = advanced.zIndex;
   if (zi !== undefined && zi !== "" && zi !== null) parts.push(`z-index:${zi}`);
 
+  // Opacity (stored as CSS-native 0..1)
+  const opacity = style.opacity;
+  if (typeof opacity === "number") parts.push(`opacity:${opacity}`);
+
+  // Auto overflow:hidden when border + radius are both set and overflow not explicit
+  // (skipped when imgScoped — visual props go on the <img> directly)
+  if (!imgScoped) {
+    const hasBorderStyle = (() => {
+      const bs = cssStr(style.borderStyle);
+      return !!bs && bs !== "none";
+    })();
+    const hasBorderWidth = !!(
+      cssStr(style.borderTopWidth)    ||
+      cssStr(style.borderRightWidth)  ||
+      cssStr(style.borderBottomWidth) ||
+      cssStr(style.borderLeftWidth)
+    );
+    const hasRadius = !!(
+      cssStr(style.borderTopLeftRadius)     ||
+      cssStr(style.borderTopRightRadius)    ||
+      cssStr(style.borderBottomRightRadius) ||
+      cssStr(style.borderBottomLeftRadius)
+    );
+    const hasOverflowSet = !!(cssStr(style.overflowX) || cssStr(style.overflowY));
+    if (hasBorderStyle && hasBorderWidth && hasRadius && !hasOverflowSet) {
+      parts.push("overflow:hidden");
+    }
+  }
+
   return parts.join(";");
+}
+
+// Build CSS body for the visual subset (border / radii / shadow) — used to
+// target an inner <img> for image blocks.
+export function buildImgVisualStyle(style: Record<string, unknown>): string {
+  const parts: string[] = [];
+
+  const borderSt = cssStr(style.borderStyle);
+  if (borderSt && borderSt !== "none") {
+    const color = (style.borderColor as string) ?? "#000000";
+    const alpha = (style.borderAlpha as number) ?? 1;
+    parts.push(`border-style:${borderSt}`);
+    parts.push(`border-color:${hexToRgba(color, alpha)}`);
+  }
+
+  for (const prop of IMG_VISUAL_PROPS) {
+    const v = cssStr(style[prop]);
+    if (v) parts.push(`${camelToKebab(prop)}:${v}`);
+  }
+
+  const shadowColor = (style.shadowColor as string) ?? "#000000";
+  const shadowAlpha = (style.shadowAlpha as number) ?? 1;
+  const sx = cssStr(style.shadowX);
+  const sy = cssStr(style.shadowY);
+  const sblur   = cssStr(style.shadowBlur);
+  const sspread = cssStr(style.shadowSpread);
+  if (sx || sy || sblur || sspread) {
+    const inset = style.shadowType === "inset" ? "inset " : "";
+    parts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(shadowColor, shadowAlpha)}`);
+  }
+
+  return parts.join(";");
+}
+
+export function buildImgVisualCss(config: Record<string, unknown>, blockId: string): string {
+  if (!blockId) return "";
+  const style = getEffectiveStyle(config);
+  const css = buildImgVisualStyle(style);
+  return css ? `[data-epx-block="${blockId}"] img{${css}}` : "";
+}
+
+export function buildImgVisualHoverCss(config: Record<string, unknown>, blockId: string): string {
+  if (!blockId) return "";
+  const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
+  const css = buildImgVisualStyle(styleHover);
+  if (!css) return "";
+  const importantCss = css.split(";").filter(Boolean).map(d => `${d} !important`).join(";");
+  return `[data-epx-block="${blockId}"]:hover img{${importantCss}}`;
 }
 
 // ─── Video background: storage key or URL ────────────────────────────────────
@@ -209,8 +332,9 @@ const HOVER_STYLE_PROPS = [
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
 ] as const;
 
-export function buildHoverCss(config: Record<string, unknown>, blockId: string): string {
+export function buildHoverCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean }): string {
   const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
+  const imgScoped = !!opts?.imgScoped;
   const parts: string[] = [];
 
   // Background
@@ -218,31 +342,40 @@ export function buildHoverCss(config: Record<string, unknown>, blockId: string):
   if (bg) parts.push(bg.replace(/;$/, "") + " !important");
 
   // Border style + color
-  const borderSt = cssStr(styleHover.borderStyle);
-  if (borderSt && borderSt !== "none") {
-    const color = (styleHover.borderColor as string) ?? "#000000";
-    const alpha = (styleHover.borderAlpha as number) ?? 1;
-    parts.push(`border-style:${borderSt} !important`);
-    parts.push(`border-color:${hexToRgba(color, alpha)} !important`);
+  if (!imgScoped) {
+    const borderSt = cssStr(styleHover.borderStyle);
+    if (borderSt && borderSt !== "none") {
+      const color = (styleHover.borderColor as string) ?? "#000000";
+      const alpha = (styleHover.borderAlpha as number) ?? 1;
+      parts.push(`border-style:${borderSt} !important`);
+      parts.push(`border-color:${hexToRgba(color, alpha)} !important`);
+    }
   }
 
   // Box shadow
-  const hShadowColor = (styleHover.shadowColor as string) ?? "#000000";
-  const hShadowAlpha = (styleHover.shadowAlpha as number) ?? 1;
-  const hsx = cssStr(styleHover.shadowX);
-  const hsy = cssStr(styleHover.shadowY);
-  const hsblur   = cssStr(styleHover.shadowBlur);
-  const hsspread = cssStr(styleHover.shadowSpread);
-  if (hsx || hsy || hsblur || hsspread) {
-    const inset = styleHover.shadowType === "inset" ? "inset " : "";
-    parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(hShadowColor, hShadowAlpha)} !important`);
+  if (!imgScoped) {
+    const hShadowColor = (styleHover.shadowColor as string) ?? "#000000";
+    const hShadowAlpha = (styleHover.shadowAlpha as number) ?? 1;
+    const hsx = cssStr(styleHover.shadowX);
+    const hsy = cssStr(styleHover.shadowY);
+    const hsblur   = cssStr(styleHover.shadowBlur);
+    const hsspread = cssStr(styleHover.shadowSpread);
+    if (hsx || hsy || hsblur || hsspread) {
+      const inset = styleHover.shadowType === "inset" ? "inset " : "";
+      parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(hShadowColor, hShadowAlpha)} !important`);
+    }
   }
 
   // Border widths + radius
   for (const prop of HOVER_STYLE_PROPS) {
+    if (imgScoped && IMG_VISUAL_PROP_SET.has(prop)) continue;
     const v = cssStr(styleHover[prop]);
     if (v) parts.push(`${camelToKebab(prop)}:${v} !important`);
   }
+
+  // Opacity (stored as CSS-native 0..1)
+  const opacityH = styleHover.opacity;
+  if (typeof opacityH === "number") parts.push(`opacity:${opacityH} !important`);
 
   if (!parts.length) return "";
   return `[data-epx-block="${blockId}"]:hover{${parts.join(";")}}`;
@@ -255,8 +388,8 @@ export function wrapBlockCss(styleStr: string, blockId: string): string {
   return `[data-epx-block="${blockId}"]{${styleStr}}`;
 }
 
-export function buildBlockCss(config: Record<string, unknown>, blockId: string): string {
-  return wrapBlockCss(buildBlockStyle(config), blockId);
+export function buildBlockCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean }): string {
+  return wrapBlockCss(buildBlockStyle(config, opts), blockId);
 }
 
 // ─── Per-breakpoint Hover CSS ─────────────────────────────────────────────────
@@ -310,6 +443,11 @@ const BP_VISUAL_PROPS = [
   "borderTopLeftRadius", "borderTopRightRadius",
   "borderBottomRightRadius", "borderBottomLeftRadius",
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+  "textAlign",
+  "fontFamily", "fontSize", "fontWeight",
+  "textTransform", "fontStyle", "textDecoration",
+  "lineHeight", "letterSpacing", "wordSpacing",
+  "mixBlendMode",
 ] as const;
 
 // layoutSelector: when provided (e.g. for video containers), layout+gap rules target
@@ -343,6 +481,12 @@ export function buildBreakpointCss(
       visualParts.push(`border-style:${borderSt}`, `border-color:${hexToRgba(color, alpha)}`);
     }
 
+    const bpTextColor = cssStr(bpStyle.color);
+    if (bpTextColor) {
+      const alpha = (bpStyle.colorAlpha as number) ?? 1;
+      visualParts.push(`color:${alpha < 1 ? hexToRgba(bpTextColor, alpha) : bpTextColor}`);
+    }
+
     for (const prop of BP_VISUAL_PROPS) {
       const v = cssStr(bpStyle[prop]);
       if (v) visualParts.push(`${camelToKebab(prop)}:${v}`);
@@ -357,6 +501,26 @@ export function buildBreakpointCss(
       const sc = (bpStyle.shadowColor as string) ?? "#000000";
       const sa = (bpStyle.shadowAlpha as number) ?? 1;
       visualParts.push(`box-shadow:${inset}${sx || "0px"} ${sy || "0px"} ${sblur || "0px"} ${sspread || "0px"} ${hexToRgba(sc, sa)}`);
+    }
+
+    const bpStrokeWidth = cssStr(bpStyle.textStrokeWidth);
+    if (bpStrokeWidth) visualParts.push(`-webkit-text-stroke-width:${bpStrokeWidth}`);
+    const bpStrokeColor = cssStr(bpStyle.textStrokeColor);
+    if (bpStrokeColor) {
+      const a = (bpStyle.textStrokeAlpha as number) ?? 1;
+      visualParts.push(`-webkit-text-stroke-color:${a < 1 ? hexToRgba(bpStrokeColor, a) : bpStrokeColor}`);
+    }
+
+    const tsx    = cssStr(bpStyle.textShadowX);
+    const tsy    = cssStr(bpStyle.textShadowY);
+    const tsblur = cssStr(bpStyle.textShadowBlur);
+    if (tsx || tsy || tsblur) {
+      const tsColor = cssStr(bpStyle.textShadowColor);
+      const tsAlpha = (bpStyle.textShadowAlpha as number) ?? 1;
+      const colorPart = tsColor
+        ? ` ${tsAlpha < 1 ? hexToRgba(tsColor, tsAlpha) : tsColor}`
+        : "";
+      visualParts.push(`text-shadow:${tsx || "0px"} ${tsy || "0px"} ${tsblur || "0px"}${colorPart}`);
     }
 
     // Layout + gap properties — on layoutSel (may differ from rootSel for video containers)

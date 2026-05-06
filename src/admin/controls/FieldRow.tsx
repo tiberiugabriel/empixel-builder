@@ -32,12 +32,26 @@ export function DimensionRow({ label, value, onChange }: {
 
 // ─── NumberRow ────────────────────────────────────────────────────────────────
 
-export function NumberRow({ label, value, onChange, labelClassName }: {
+export function NumberRow({ label, value, onChange, labelClassName, step = 1, min, max }: {
   label: string;
   value: number | undefined;
   onChange: (v: number | undefined) => void;
   labelClassName?: string;
+  step?: number;
+  min?: number;
+  max?: number;
 }) {
+  const clamp = (n: number) => {
+    if (typeof min === "number" && n < min) n = min;
+    if (typeof max === "number" && n > max) n = max;
+    return n;
+  };
+  const snap = (n: number) => {
+    if (step >= 1) return Math.round(n / step) * step;
+    const inv = 1 / step;
+    return Math.round(n * inv) / inv;
+  };
+
   const handleScrubDown = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -45,7 +59,9 @@ export function NumberRow({ label, value, onChange, labelClassName }: {
     document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
     const onMove = (ev: MouseEvent) => {
-      onChange(Math.round(startNum + (ev.clientX - startX) / 2));
+      // 2px of drag ≈ 1 step
+      const delta = (ev.clientX - startX) / 2;
+      onChange(clamp(snap(startNum + delta * step)));
     };
     const onUp = () => {
       document.body.style.cursor = "";
@@ -70,10 +86,14 @@ export function NumberRow({ label, value, onChange, labelClassName }: {
         className="epx-side-input__num"
         value={value ?? ""}
         placeholder="0"
-        step={1}
+        step={step}
+        min={min}
+        max={max}
         onChange={(e) => {
-          const n = parseInt(e.target.value, 10);
-          onChange(isNaN(n) ? undefined : n);
+          const raw = e.target.value;
+          if (raw === "") { onChange(undefined); return; }
+          const n = step < 1 ? parseFloat(raw) : parseInt(raw, 10);
+          onChange(isNaN(n) ? undefined : clamp(snap(n)));
         }}
       />
     </div>
@@ -114,13 +134,14 @@ function SelectDropdown({ value, options, onSelect, onClose, anchorRef }: {
 
 // ─── SelectRow ────────────────────────────────────────────────────────────────
 
-export function SelectRow({ label, value, onChange, options, labelClassName, icon }: {
+export function SelectRow({ label, value, onChange, options, labelClassName, icon, labelSuffix }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   labelClassName?: string;
   icon?: React.ReactNode;
+  labelSuffix?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -128,7 +149,7 @@ export function SelectRow({ label, value, onChange, options, labelClassName, ico
 
   return (
     <div className="epx-side-input">
-      <span className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${labelClassName ? ` ${labelClassName}` : ""}`} {...(icon && label ? { "data-tooltip": label } : {})}>{icon ?? label}</span>
+      <span className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${labelSuffix ? " epx-side-input__label--has-suffix" : ""}${labelClassName ? ` ${labelClassName}` : ""}`} {...(icon && label ? { "data-tooltip": label } : {})}>{icon ?? label}{labelSuffix}</span>
       <div ref={wrapRef} className="epx-field-row__select-wrap">
         <button type="button" className="epx-field-row__select-btn" onClick={() => setOpen(o => !o)}>
           <span>{display}</span>

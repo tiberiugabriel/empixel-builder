@@ -5,6 +5,8 @@ import { FaqPreview } from "./FaqPreview.js";
 import { PricingPreview } from "./PricingPreview.js";
 import { SpacerPreview } from "./SpacerPreview.js";
 import { ContainerPreview } from "./ContainerPreview.js";
+import { TextPreview } from "./TextPreview.js";
+import { ImagePreview } from "./ImagePreview.js";
 
 export interface PreviewProps {
   config: Record<string, unknown>;
@@ -18,4 +20,6 @@ export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewPr
   pricing: PricingPreview as React.ComponentType<PreviewProps>,
   spacer: SpacerPreview as React.ComponentType<PreviewProps>,
   container: ContainerPreview as React.ComponentType<PreviewProps>,
+  text: TextPreview as React.ComponentType<PreviewProps>,
+  image: ImagePreview as React.ComponentType<PreviewProps>,
 };

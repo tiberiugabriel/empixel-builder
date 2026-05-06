@@ -63,13 +63,15 @@ export function IconReset() {
 
 // ─── UnitDropdown ─────────────────────────────────────────────────────────────
 
-function UnitDropdown({ unit, onSelect, onClose, anchorRef }: {
+function UnitDropdown({ unit, units, onSelect, onClose, anchorRef }: {
   unit: string;
+  units?: readonly string[];
   onSelect: (u: string) => void;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLButtonElement>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const list = units ?? SPACING_UNITS;
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -82,7 +84,7 @@ function UnitDropdown({ unit, onSelect, onClose, anchorRef }: {
 
   return (
     <div ref={panelRef} className="epx-unit-dropdown">
-      {SPACING_UNITS.map((u) => (
+      {list.map((u) => (
         <button key={u} type="button"
           className={`epx-unit-dropdown__item${u === unit ? " is-active" : ""}`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(u); onClose(); }}
@@ -99,7 +101,7 @@ function UnitDropdown({ unit, onSelect, onClose, anchorRef }: {
 
 // ─── SideInput ────────────────────────────────────────────────────────────────
 
-export function SideInput({ sideKey, value, onChange, labelOverride, icon, allowNegative, labelSuffix }: {
+export function SideInput({ sideKey, value, onChange, labelOverride, icon, allowNegative, labelSuffix, units }: {
   sideKey: string;
   value: SideValue;
   onChange: (sv: SideValue) => void;
@@ -107,6 +109,7 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon, allow
   icon?: React.ReactNode;
   allowNegative?: boolean;
   labelSuffix?: React.ReactNode;
+  units?: readonly string[];
 }) {
   const [unitOpen, setUnitOpen] = useState(false);
   const unitBtnRef = useRef<HTMLButtonElement>(null);
@@ -173,6 +176,7 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon, allow
         {unitOpen && (
           <UnitDropdown
             unit={value.unit}
+            units={units}
             onSelect={(u) => onChange({ ...value, unit: u, num: u === "auto" || u === "custom" ? 0 : value.num, raw: u === "custom" ? "" : undefined })}
             onClose={() => setUnitOpen(false)}
             anchorRef={unitBtnRef as React.RefObject<HTMLButtonElement>}

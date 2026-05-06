@@ -1,0 +1,59 @@
+---
+import type { TextConfig } from "../types.js";
+import { buildBlockCss, buildHoverCss, getCustomCss } from "./styleUtils.js";
+
+interface Props {
+  value: TextConfig;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const { content = "", htmlTag } = value;
+const Tag = ((htmlTag || "p") as astroHTML.JSX.HTMLTag);
+
+const advanced = (value as Record<string, unknown>).advanced as Record<string, string> | undefined;
+const cssId      = advanced?.cssId      || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const cfg = value as Record<string, unknown>;
+const linkHref       = (cfg.linkHref       as string)  || undefined;
+const linkNewTab     = (cfg.linkNewTab      as boolean) || false;
+const linkNofollow   = (cfg.linkNofollow    as boolean) || false;
+const linkCustomAttr = (cfg.linkCustomAttr  as string)  || "";
+const linkTarget = linkNewTab ? "_blank" : undefined;
+const linkRel = (() => {
+  const parts: string[] = [];
+  if (linkNewTab)   parts.push("noopener", "noreferrer");
+  if (linkNofollow) parts.push("nofollow");
+  return parts.length ? parts.join(" ") : undefined;
+})();
+const linkCustomAttrs: Record<string, string> = {};
+if (linkCustomAttr) {
+  for (const pair of linkCustomAttr.split(",")) {
+    const sep = pair.indexOf("|");
+    if (sep > 0) {
+      const k = pair.slice(0, sep).trim();
+      const v = pair.slice(sep + 1).trim();
+      if (k) linkCustomAttrs[k] = v;
+    }
+  }
+}
+
+const config   = value as Record<string, unknown>;
+const blockCss = blockId ? buildBlockCss(config, blockId) : "";
+const hoverCss = blockId ? buildHoverCss(config, blockId) : "";
+const customCss = blockId ? getCustomCss(config, blockId) : "";
+const allCss   = [blockCss, hoverCss, customCss].filter(Boolean).join("");
+---
+
+<Tag
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+  href={linkHref}
+  target={linkTarget}
+  rel={linkRel}
+  {...linkCustomAttrs}
+>{content}</Tag>
+
+{allCss && <style set:html={allCss} is:global />}

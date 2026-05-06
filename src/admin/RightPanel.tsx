@@ -8,13 +8,19 @@ import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideV
 import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
 import { BoxShadowControl, parseShadow, serializeShadow, type BoxShadowConfig } from "./controls/BoxShadowControl.js";
-import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl } from "./controls/FieldRow.js";
+import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl, IconButtonRow } from "./controls/FieldRow.js";
 import { BackgroundControl, parseBackground, serializeBackground } from "./controls/BackgroundControl.js";
 import { GapControl, parseGap, serializeGap, type GapValue } from "./controls/GapControl.js";
 import { LayoutControl, parseLayout } from "./controls/LayoutControl.js";
 import { OverflowControl, parseOverflow, serializeOverflow, type OverflowValue } from "./controls/OverflowControl.js";
 import { LinkControl, parseLink, serializeLink, type LinkValue } from "./controls/LinkControl.js";
+import { MediaPicker, type MediaRef } from "./controls/MediaPicker.js";
 import { ThemeStyleToggle, getThemeStyleKey } from "./controls/ThemeStyleToggle.js";
+import { AlignControl, parseAlign, serializeAlign, type AlignValue } from "./controls/AlignControl.js";
+import { TypographyControl, parseTypography, serializeTypography, type TypographyValue } from "./controls/TypographyControl.js";
+import { TextStrokeControl, parseTextStroke, serializeTextStroke, type TextStrokeValue } from "./controls/TextStrokeControl.js";
+import { TextShadowControl, parseTextShadow, serializeTextShadow, type TextShadowValue } from "./controls/TextShadowControl.js";
+import { BlendModeControl, parseBlendMode, serializeBlendMode, type BlendModeValue } from "./controls/BlendModeControl.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -213,6 +219,63 @@ const HTML_TAG_OPTIONS = [
   { value: "a",       label: "a (link)" },
 ];
 
+const RESOLUTION_OPTIONS = [
+  { value: "full",      label: "Full (original)" },
+  { value: "thumbnail", label: "Thumbnail (150 × 150)" },
+  { value: "medium",    label: "Medium (300 × 300)" },
+  { value: "large",     label: "Large (1024 × 1024)" },
+];
+
+const OBJECT_FIT_OPTIONS = [
+  { value: "",           label: "Default" },
+  { value: "contain",    label: "Contain" },
+  { value: "cover",      label: "Cover" },
+  { value: "fill",       label: "Fill" },
+  { value: "none",       label: "None" },
+  { value: "scale-down", label: "Scale Down" },
+];
+
+const OBJECT_POSITION_OPTIONS = [
+  { value: "",              label: "Default" },
+  { value: "center",        label: "Center" },
+  { value: "top",           label: "Top" },
+  { value: "right",         label: "Right" },
+  { value: "bottom",        label: "Bottom" },
+  { value: "left",          label: "Left" },
+  { value: "top left",      label: "Top Left" },
+  { value: "top right",     label: "Top Right" },
+  { value: "bottom left",   label: "Bottom Left" },
+  { value: "bottom right",  label: "Bottom Right" },
+];
+
+const IMAGE_ALIGN_OPTIONS = [
+  {
+    value: "start", title: "Start",
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/><rect x="2" y="4" width="5" height="6" rx="0.75" fill="currentColor"/></svg>,
+  },
+  {
+    value: "center", title: "Center",
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/><rect x="4.5" y="4" width="5" height="6" rx="0.75" fill="currentColor"/></svg>,
+  },
+  {
+    value: "end", title: "End",
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/><rect x="7" y="4" width="5" height="6" rx="0.75" fill="currentColor"/></svg>,
+  },
+];
+
+const TEXT_TAG_OPTIONS = [
+  { value: "",     label: "Default (p)" },
+  { value: "h1",   label: "H1" },
+  { value: "h2",   label: "H2" },
+  { value: "h3",   label: "H3" },
+  { value: "h4",   label: "H4" },
+  { value: "h5",   label: "H5" },
+  { value: "h6",   label: "H6" },
+  { value: "span", label: "span" },
+  { value: "div",  label: "div" },
+  { value: "a",    label: "a (link)" },
+];
+
 const POSITION_OPTIONS = [
   { value: "", label: "Default" },
   { value: "relative", label: "Relative" },
@@ -383,6 +446,8 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
   const [borderMode, setBorderMode] = useState<"normal" | "hover">("normal");
   const [shadowMode, setShadowMode] = useState<"normal" | "hover">("normal");
   const [bgMode, setBgMode] = useState<"normal" | "hover">("normal");
+  const [opacityMode, setOpacityMode] = useState<"normal" | "hover">("normal");
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [trackedId, setTrackedId] = useState(block?.id);
 
   if (block?.id !== trackedId) {
@@ -391,6 +456,8 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
     setBorderMode("normal");
     setShadowMode("normal");
     setBgMode("normal");
+    setOpacityMode("normal");
+    setImagePickerOpen(false);
   }
 
   if (!block) {
@@ -555,6 +622,38 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
   const linkValue: LinkValue = parseLink(block.config);
   const handleLink = (val: LinkValue) => onChange(serializeLink(val));
 
+  const typoSource = isNonDesktop ? { ...style, ...bpStyleRaw } : style;
+
+  const alignValue: AlignValue = parseAlign(typoSource);
+  const handleAlign = (val: AlignValue) => {
+    if (isNonDesktop) writeBpStyle(serializeAlign(val));
+    else onChange({ style: { ...style, ...serializeAlign(val) } });
+  };
+
+  const typographyValue: TypographyValue = parseTypography(typoSource);
+  const handleTypography = (val: TypographyValue) => {
+    if (isNonDesktop) writeBpStyle(serializeTypography(val));
+    else onChange({ style: { ...style, ...serializeTypography(val) } });
+  };
+
+  const strokeValue: TextStrokeValue = parseTextStroke(typoSource);
+  const handleStroke = (val: TextStrokeValue) => {
+    if (isNonDesktop) writeBpStyle(serializeTextStroke(val));
+    else onChange({ style: { ...style, ...serializeTextStroke(val) } });
+  };
+
+  const shadowTextValue: TextShadowValue = parseTextShadow(typoSource);
+  const handleTextShadow = (val: TextShadowValue) => {
+    if (isNonDesktop) writeBpStyle(serializeTextShadow(val));
+    else onChange({ style: { ...style, ...serializeTextShadow(val) } });
+  };
+
+  const blendModeValue: BlendModeValue = parseBlendMode(typoSource);
+  const handleBlendMode = (val: BlendModeValue) => {
+    if (isNonDesktop) writeBpStyle(serializeBlendMode(val));
+    else onChange({ style: { ...style, ...serializeBlendMode(val) } });
+  };
+
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
     { id: "fields", icon: <IconFields />, title: "Fields" },
     { id: "style", icon: <IconStyle />, title: "Style" },
@@ -585,15 +684,102 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
 
       {activeTab === "fields" && (
         <div className="epx-right-panel__fields">
-          {def.fields.map((field) => (
-            <FieldRenderer
-              key={field.key}
-              field={field}
-              value={block.config[field.key]}
-              isDirty={JSON.stringify(block.config[field.key]) !== JSON.stringify(def.defaultConfig[field.key])}
-              onChange={(val) => onChange({ [field.key]: val })}
-            />
-          ))}
+          {def.fields
+            .filter((field) => !field.showWhen || block.config[field.showWhen.key] === field.showWhen.value)
+            .map((field) => (
+              <FieldRenderer
+                key={field.key}
+                field={field}
+                value={block.config[field.key]}
+                isDirty={JSON.stringify(block.config[field.key]) !== JSON.stringify(def.defaultConfig[field.key])}
+                onChange={(val) => onChange({ [field.key]: val })}
+              />
+            ))}
+          {block.type === "text" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <FieldGroup
+                isDirty={!!block.config.htmlTag}
+                onReset={() => onChange({ htmlTag: "" })}
+              >
+                <SelectRow
+                  label="HTML Tag"
+                  value={(block.config.htmlTag as string) ?? ""}
+                  onChange={(v) => onChange({ htmlTag: v })}
+                  options={TEXT_TAG_OPTIONS}
+                  labelClassName="epx-row-label--section"
+                />
+              </FieldGroup>
+              {(block.config.htmlTag as string) === "a" && (
+                <LinkControl value={linkValue} onChange={handleLink} />
+              )}
+            </div>
+          )}
+          {block.type === "image" && (() => {
+            const img = block.config.image as MediaRef | undefined;
+            const resolution = (block.config.resolution as string) ?? "full";
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div className="epx-bg-ctrl__media-row">
+                  {img?.storageKey ? (
+                    <img
+                      className="epx-bg-ctrl__thumb"
+                      src={`/_emdash/api/media/file/${img.storageKey}`}
+                      alt={img.alt ?? img.filename ?? ""}
+                    />
+                  ) : (
+                    <div className="epx-bg-ctrl__thumb-placeholder">🖼️</div>
+                  )}
+                  <span className="epx-bg-ctrl__media-name">
+                    {img?.filename ?? (img ? "Image selected" : "No image")}
+                  </span>
+                  <button
+                    type="button"
+                    className="epx-bg-ctrl__media-btn"
+                    onClick={() => setImagePickerOpen(true)}
+                  >
+                    {img ? "Change" : "Select"}
+                  </button>
+                  {img && (
+                    <button
+                      type="button"
+                      className="epx-bg-ctrl__stop-remove"
+                      onClick={() => onChange({ image: undefined })}
+                      title="Clear"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <FieldGroup
+                  isDirty={resolution !== "full"}
+                  onReset={() => onChange({ resolution: "full" })}
+                >
+                  <SelectRow
+                    label="Resolution"
+                    value={resolution}
+                    onChange={(v) => onChange({ resolution: v })}
+                    options={RESOLUTION_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+
+                <LinkControl value={linkValue} onChange={handleLink} />
+
+                {imagePickerOpen && (
+                  <MediaPicker
+                    mimeTypeFilter="image/"
+                    onSelect={([ref]) => {
+                      if (ref) onChange({ image: ref });
+                      setImagePickerOpen(false);
+                    }}
+                    onClose={() => setImagePickerOpen(false)}
+                    selectedIds={img?.id ? [img.id] : []}
+                  />
+                )}
+              </div>
+            );
+          })()}
           {block.type === "container" && (
             <LayoutControl
               value={parseLayout(isNonDesktop ? { ...block.config, ...bpStyleRaw } : block.config)}
@@ -633,7 +819,37 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
         </div>
       )}
 
-      {activeTab === "style" && (
+      {activeTab === "style" && block.type === "text" && (
+        <div className="epx-right-panel__fields">
+          <AlignControl
+            value={alignValue}
+            onChange={handleAlign}
+            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+          />
+          <TypographyControl
+            value={typographyValue}
+            onChange={handleTypography}
+            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+          />
+          <TextStrokeControl
+            value={strokeValue}
+            onChange={handleStroke}
+            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+          />
+          <TextShadowControl
+            value={shadowTextValue}
+            onChange={handleTextShadow}
+            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+          />
+          <BlendModeControl
+            value={blendModeValue}
+            onChange={handleBlendMode}
+            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+          />
+        </div>
+      )}
+
+      {activeTab === "style" && block.type !== "text" && (
         <div className="epx-right-panel__fields">
           {def.styleFields?.map((field) => (
             <FieldRenderer
@@ -644,20 +860,135 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
               onChange={(val) => onChange({ [field.key]: val })}
             />
           ))}
-          <div className="epx-stateful-ctrl">
-            <div className="epx-state-header">
-              <div className="epx-state-toggle">
-                <button type="button" className={`epx-state-toggle__btn${bgMode === "normal" ? " is-active" : ""}`} onClick={() => setBgMode("normal")} data-tooltip="Normal">
-                  <IconStateNormal />
-                </button>
-                <button type="button" className={`epx-state-toggle__btn${bgMode === "hover" ? " is-active" : ""}`} onClick={() => setBgMode("hover")} data-tooltip="Hover">
-                  <IconStateHover />
-                </button>
+          {block.type === "image" && (() => {
+            const imgStyle = (block.config.imgStyle ?? {}) as Record<string, unknown>;
+            const imgWidthValues = {
+              fix: parseSide(imgStyle.width),
+              min: parseSide(imgStyle.minWidth),
+              max: parseSide(imgStyle.maxWidth),
+            };
+            const imgHeightValues = {
+              fix: parseSide(imgStyle.height),
+              min: parseSide(imgStyle.minHeight),
+              max: parseSide(imgStyle.maxHeight),
+            };
+            const IMG_KEYS = {
+              width:  { fix: "width",  min: "minWidth",  max: "maxWidth"  },
+              height: { fix: "height", min: "minHeight", max: "maxHeight" },
+            } as const;
+            const writeImgStyle = (patch: Record<string, unknown>) => {
+              onChange({ imgStyle: { ...imgStyle, ...patch } });
+            };
+            const handleImgDim = (axis: "width" | "height", key: "fix" | "min" | "max", sv: SideValue) => {
+              writeImgStyle({ [IMG_KEYS[axis][key]]: serializeSide(sv) });
+            };
+            const objectFit = (imgStyle.objectFit as string) || "";
+            const objectPosition = (imgStyle.objectPosition as string) || "";
+            const imgAlign = (typoSource.textAlign as string) || "";
+            const opacityNormal = style.opacity as number | undefined;
+            const opacityHover = styleHover.opacity as number | undefined;
+            const opacityActive = opacityMode === "hover" ? opacityHover : opacityNormal;
+            const handleImgAlign = (v: string) => {
+              if (isNonDesktop) writeBpStyle({ textAlign: v });
+              else onChange({ style: { ...style, textAlign: v } });
+            };
+            const handleOpacity = (v: number | undefined) => {
+              if (opacityMode === "hover") onChange({ styleHover: { ...styleHover, opacity: v } });
+              else onChange({ style: { ...style, opacity: v } });
+            };
+            return (
+              <>
+                <DimensionControl
+                  label="Width"
+                  values={imgWidthValues}
+                  onChange={(key, v) => handleImgDim("width", key, v)}
+                  onReset={() => writeImgStyle({ width: "", minWidth: "", maxWidth: "" })}
+                />
+                <DimensionControl
+                  label="Height"
+                  values={imgHeightValues}
+                  onChange={(key, v) => handleImgDim("height", key, v)}
+                  onReset={() => writeImgStyle({ height: "", minHeight: "", maxHeight: "" })}
+                />
+                <FieldGroup
+                  isDirty={!!objectFit}
+                  onReset={() => writeImgStyle({ objectFit: "" })}
+                >
+                  <SelectRow
+                    label="Fit"
+                    value={objectFit}
+                    onChange={(v) => writeImgStyle({ objectFit: v })}
+                    options={OBJECT_FIT_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                <FieldGroup
+                  isDirty={!!objectPosition}
+                  onReset={() => writeImgStyle({ objectPosition: "" })}
+                >
+                  <SelectRow
+                    label="Position"
+                    value={objectPosition}
+                    onChange={(v) => writeImgStyle({ objectPosition: v })}
+                    options={OBJECT_POSITION_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                <FieldGroup
+                  isDirty={!!imgAlign}
+                  onReset={() => handleImgAlign("")}
+                >
+                  <IconButtonRow
+                    label="Align"
+                    value={imgAlign}
+                    onChange={handleImgAlign}
+                    options={IMAGE_ALIGN_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                <div className="epx-stateful-ctrl">
+                  <div className="epx-state-toggle">
+                    <button type="button" className={`epx-state-toggle__btn${opacityMode === "normal" ? " is-active" : ""}`} onClick={() => setOpacityMode("normal")} data-tooltip="Normal">
+                      <IconStateNormal />
+                    </button>
+                    <button type="button" className={`epx-state-toggle__btn${opacityMode === "hover" ? " is-active" : ""}`} onClick={() => setOpacityMode("hover")} data-tooltip="Hover">
+                      <IconStateHover />
+                    </button>
+                  </div>
+                  <FieldGroup
+                    isDirty={opacityActive !== undefined}
+                    onReset={() => handleOpacity(undefined)}
+                  >
+                    <NumberRow
+                      label="Opacity"
+                      value={opacityActive}
+                      onChange={handleOpacity}
+                      labelClassName="epx-row-label--section"
+                      step={0.1}
+                      min={0}
+                      max={1}
+                    />
+                  </FieldGroup>
+                </div>
+              </>
+            );
+          })()}
+          {block.type !== "image" && (
+            <div className="epx-stateful-ctrl">
+              <div className="epx-state-header">
+                <div className="epx-state-toggle">
+                  <button type="button" className={`epx-state-toggle__btn${bgMode === "normal" ? " is-active" : ""}`} onClick={() => setBgMode("normal")} data-tooltip="Normal">
+                    <IconStateNormal />
+                  </button>
+                  <button type="button" className={`epx-state-toggle__btn${bgMode === "hover" ? " is-active" : ""}`} onClick={() => setBgMode("hover")} data-tooltip="Hover">
+                    <IconStateHover />
+                  </button>
+                </div>
+                <ThemeStyleToggle theme={theme} onChange={handleTheme} />
               </div>
-              <ThemeStyleToggle theme={theme} onChange={handleTheme} />
+              <BackgroundControl value={bgValue} onChange={handleBackground} allowedTypes={bgMode === "hover" ? ["color", "gradient", "image"] : undefined} />
             </div>
-            <BackgroundControl value={bgValue} onChange={handleBackground} allowedTypes={bgMode === "hover" ? ["color", "gradient", "image"] : undefined} />
-          </div>
+          )}
           <div className="epx-stateful-ctrl">
             <div className="epx-state-toggle">
               <button type="button" className={`epx-state-toggle__btn${radiusMode === "normal" ? " is-active" : ""}`} onClick={() => setRadiusMode("normal")} data-tooltip="Normal">

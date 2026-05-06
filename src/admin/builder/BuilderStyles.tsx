@@ -828,8 +828,16 @@ export function BuilderStyles() {
         font-style: italic; text-align: right; padding: 0 8px;
       }
       .epx-border-color-cell {
-        display: flex; align-items: center; gap: 6px; height: 28px;
+        display: flex; align-items: center; justify-content: flex-end; gap: 6px; height: 28px;
         padding: 0 8px; position: relative; overflow: visible;
+      }
+
+      /* Typography expanded — truncate sub-row labels with ellipsis */
+      .epx-typo-ctrl.epx-spacing-ctrl .epx-spacing-ctrl__expanded .epx-side-input__label--row,
+      .epx-typo-ctrl.epx-spacing-ctrl .epx-spacing-ctrl__expanded .epx-side-input__label--full {
+        display: block; min-width: 0; flex-shrink: 1;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        line-height: 28px; text-align: left;
       }
       .epx-border-color-swatch {
         width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0;

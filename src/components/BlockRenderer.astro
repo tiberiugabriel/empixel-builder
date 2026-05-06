@@ -4,6 +4,8 @@ import Testimonials from "./Testimonials.astro";
 import FaqSection from "./FaqSection.astro";
 import PricingSection from "./PricingSection.astro";
 import SpacerSection from "./SpacerSection.astro";
+import Text from "./Text.astro";
+import ImageBlock from "./Image.astro";
 import { buildBlockCss, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,7 +23,7 @@ interface Props {
 const { block } = Astro.props;
 const Component = LEAF_COMPONENTS[block.type];
 
-const config  = block.config as Record<string, unknown>;
+const config      = block.config as Record<string, unknown>;
 const blockCss    = buildBlockCss(config, block.id);
 const videoSrc    = getVideoBackground(config);
 const blockId     = getBlockId(config);
@@ -30,6 +32,14 @@ const customCss   = getCustomCss(config, block.id);
 const hoverCss    = buildHoverCss(config, block.id);
 const allCss      = [blockCss, hoverCss, customCss].filter(Boolean).join("");
 ---
+
+{block.type === "text" && (
+  <Text value={block.config} blockId={block.id} />
+)}
+
+{block.type === "image" && (
+  <ImageBlock value={block.config} blockId={block.id} />
+)}
 
 {Component && (
   <div
@@ -53,4 +63,4 @@ const allCss      = [blockCss, hoverCss, customCss].filter(Boolean).join("");
   </div>
 )}
 
-{allCss && <style set:html={allCss} is:global />}
+{Component && allCss && <style set:html={allCss} is:global />}

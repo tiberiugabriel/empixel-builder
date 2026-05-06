@@ -1,0 +1,122 @@
+---
+import type { ImageConfig } from "../types.js";
+import { buildBlockCss, buildHoverCss, buildImgVisualCss, buildImgVisualHoverCss, getCustomCss } from "./styleUtils.js";
+
+interface Props {
+  value: ImageConfig;
+  blockId?: string;
+}
+
+const RESOLUTION_DIMS: Record<string, { w: number; h: number }> = {
+  thumbnail: { w: 150,  h: 150  },
+  medium:    { w: 300,  h: 300  },
+  large:     { w: 1024, h: 1024 },
+};
+
+const ALIGN_TO_JUSTIFY: Record<string, string> = {
+  start:  "flex-start",
+  center: "center",
+  end:    "flex-end",
+};
+
+const { value, blockId } = Astro.props;
+const { image, resolution = "full", caption = "" } = value;
+
+const advanced = (value as Record<string, unknown>).advanced as Record<string, string> | undefined;
+const cssId      = advanced?.cssId      || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const cfg = value as Record<string, unknown>;
+const linkHref       = (cfg.linkHref       as string)  || undefined;
+const linkNewTab     = (cfg.linkNewTab     as boolean) || false;
+const linkNofollow   = (cfg.linkNofollow   as boolean) || false;
+const linkCustomAttr = (cfg.linkCustomAttr as string)  || "";
+const linkTarget = linkNewTab ? "_blank" : undefined;
+const linkRel = (() => {
+  const parts: string[] = [];
+  if (linkNewTab)   parts.push("noopener", "noreferrer");
+  if (linkNofollow) parts.push("nofollow");
+  return parts.length ? parts.join(" ") : undefined;
+})();
+const linkCustomAttrs: Record<string, string> = {};
+if (linkCustomAttr) {
+  for (const pair of linkCustomAttr.split(",")) {
+    const sep = pair.indexOf("|");
+    if (sep > 0) {
+      const k = pair.slice(0, sep).trim();
+      const v = pair.slice(sep + 1).trim();
+      if (k) linkCustomAttrs[k] = v;
+    }
+  }
+}
+
+const dims = RESOLUTION_DIMS[resolution];
+const imgWidthAttr  = dims?.w;
+const imgHeightAttr = dims?.h;
+const imgSrc = image?.storageKey ? `/_emdash/api/media/file/${image.storageKey}` : undefined;
+const imgAlt = image?.alt ?? image?.filename ?? "";
+
+const imgStyleCfg = (cfg.imgStyle ?? {}) as Record<string, string | undefined>;
+const imgInline = (() => {
+  const out: string[] = [];
+  const keys: Array<[string, string]> = [
+    ["width",          "width"],
+    ["minWidth",       "min-width"],
+    ["maxWidth",       "max-width"],
+    ["height",         "height"],
+    ["minHeight",      "min-height"],
+    ["maxHeight",      "max-height"],
+    ["objectFit",      "object-fit"],
+    ["objectPosition", "object-position"],
+  ];
+  for (const [k, css] of keys) {
+    const v = (imgStyleCfg[k] || "").trim();
+    if (v) out.push(`${css}:${v}`);
+  }
+  return out.join(";");
+})();
+
+const config   = value as Record<string, unknown>;
+const blockCss = blockId ? buildBlockCss(config, blockId, { imgScoped: true }) : "";
+const hoverCss = blockId ? buildHoverCss(config, blockId, { imgScoped: true }) : "";
+const imgVisualCss      = blockId ? buildImgVisualCss(config, blockId)      : "";
+const imgVisualHoverCss = blockId ? buildImgVisualHoverCss(config, blockId) : "";
+const customCss = blockId ? getCustomCss(config, blockId) : "";
+
+const styleCfg = (cfg.style ?? {}) as Record<string, string | undefined>;
+const alignVal = (styleCfg.textAlign || "").trim();
+const justify  = ALIGN_TO_JUSTIFY[alignVal];
+const frameCss = blockId && justify
+  ? `[data-epx-block="${blockId}"] > .epx-img-frame{display:flex;justify-content:${justify};}`
+  : "";
+
+const allCss = [blockCss, hoverCss, imgVisualCss, imgVisualHoverCss, customCss, frameCss].filter(Boolean).join("");
+
+const RootTag = ((caption ? "figure" : (linkHref ? "a" : "div")) as astroHTML.JSX.HTMLTag);
+const rootIsLink = RootTag === "a";
+---
+
+{imgSrc ? (
+  <RootTag
+    data-epx-block={blockId || undefined}
+    id={cssId}
+    class={cssClasses || undefined}
+    href={rootIsLink ? linkHref : undefined}
+    target={rootIsLink ? linkTarget : undefined}
+    rel={rootIsLink ? linkRel : undefined}
+    {...(rootIsLink ? linkCustomAttrs : {})}
+  >
+    <div class="epx-img-frame">
+      {caption && linkHref ? (
+        <a href={linkHref} target={linkTarget} rel={linkRel} {...linkCustomAttrs}>
+          <img src={imgSrc} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+        </a>
+      ) : (
+        <img src={imgSrc} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+      )}
+    </div>
+    {caption && <figcaption>{caption}</figcaption>}
+  </RootTag>
+) : null}
+
+{imgSrc && allCss && <style set:html={allCss} is:global />}
