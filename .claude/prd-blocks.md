@@ -28,10 +28,12 @@ interface BlockDef {
 interface FieldDef {
   key: string;
   label: string;
-  type: "text" | "url" | "textarea" | "number" | "select" | "toggle" | "json-array";
+  type: "text" | "url" | "textarea" | "number" | "select" | "toggle" | "json-array" | "link";
   options?: Array<{ value: string; label: string }>;
   placeholder?: string;
   required?: boolean;
+  labelClassName?: string;
+  showWhen?: { key: string; value: string };  // Conditional render
   itemFields?: FieldDef[];   // For json-array: sub-field schema
 }
 ```
@@ -46,12 +48,20 @@ interface FieldDef {
 | `select` | `<select>` | string |
 | `toggle` | checkbox + inline label | boolean |
 | `json-array` | JsonArrayField | array |
+| `link` | LinkControl | `{ href, newTab, nofollow, customAttr }` |
 
 ## Current Blocks (v0.5.0)
 
 ### BlockType union (src/types.ts)
 ```ts
-export type BlockType = "testimonials" | "faq" | "pricing" | "spacer" | "container";
+export type BlockType =
+  | "testimonials"
+  | "faq"
+  | "pricing"
+  | "spacer"
+  | "container"
+  | "text"
+  | "image";
 ```
 
 ### 1. testimonials
@@ -83,6 +93,38 @@ export type BlockType = "testimonials" | "faq" | "pricing" | "spacer" | "contain
 - Category: core
 - Fields: height (sm/md/lg/xl), showDivider
 - Default: `{ height: "md", showDivider: false }`
+
+### 6. text
+- Category: general
+- Fields: content (textarea), HTML Tag selector (default `p`; supports h1–h6, span, div, a), LinkControl (if tag = "a")
+- Default: `{ content: "", theme: "light" }`
+- **Style tab is custom**: Align / Typography / TextStroke / TextShadow / BlendMode (no Background/Border/Shadow sections)
+- Config: `TextConfig` — `content`, `htmlTag`, `linkHref`, `linkNewTab`, `linkNofollow`, `linkCustomAttr`, `theme`
+
+### 7. image
+- Category: general
+- Fields: caption (textarea), MediaPicker thumbnail row, Resolution selector (full / thumbnail / medium / large), LinkControl (always available)
+- Default: `{ theme: "light", resolution: "full" }`
+- **Style tab is custom**: Width/Height (writes to `imgStyle`, not `style`), Object Fit, Object Position, Align, Opacity (normal/hover) — no Background/Border/Shadow sections at root (border/radius/shadow target inner `<img>` via `imgStyle`-equivalent CSS)
+- Config: `ImageConfig` — `image: ImageMediaRef`, `resolution`, `caption`, `linkHref`, `linkNewTab`, `linkNofollow`, `linkCustomAttr`, `theme`, `imgStyle: ImageElementStyle`
+
+```ts
+interface ImageMediaRef {
+  id: string;
+  storageKey: string;
+  alt?: string;
+  filename?: string;
+}
+
+type ImageResolution = "thumbnail" | "medium" | "large" | "full";
+
+interface ImageElementStyle {
+  width?: string; minWidth?: string; maxWidth?: string;
+  height?: string; minHeight?: string; maxHeight?: string;
+  objectFit?: string;
+  objectPosition?: string;
+}
+```
 
 ## SectionBlock (Tree Node)
 
@@ -156,18 +198,18 @@ Safely parses JSON array from DB (may be string or already array).
 | `cta` | general | headline, subheadline, ctaLabel, ctaUrl |
 | `stats` | general | headline, items (label, value) |
 | `gallery` | general | images (src, alt, caption) |
-| `video` | general | videoUrl, posterUrl, autoplay |
 | `columns` | core | columnCount, slots |
 | `heading` | core | text, level (h1-h6), align |
 | `paragraph` | core | text, align |
 | `rich-text` | core | content (Portable Text) |
 | `html` | core | content (raw HTML) |
-| `image` | core | image (src, alt), caption, link |
+
+(Video as standalone block is on hold — video backgrounds already supported via `BackgroundControl` on container.)
 
 ## TODO
 
 - [ ] Expand `BlockType` union with remaining block types
 - [ ] Write `BlockDef` for each new block
-- [ ] Add `image` field type to FieldDef (wires MediaPicker)
+- [ ] Add generic `image` field type to FieldDef (wires MediaPicker for non-image blocks)
 - [ ] Add `rich-text` field type (Portable Text editor)
 - [ ] Consider block categories: core / general / experimental

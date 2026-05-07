@@ -137,8 +137,8 @@ On drop → dispatches ADD_BLOCK, ADD_TO_CONTAINER, INSERT_AFTER, MOVE_BLOCK, RE
 See [prd-rightpanel.md](prd-rightpanel.md) for full details.
 
 Three tabs:
-- **Fields** — Block-specific content fields from `def.fields[]`
-- **Style** — Background, BorderRadius, Border, BoxShadow (each with Normal/Hover toggle)
+- **Fields** — Block-specific content fields from `def.fields[]` (container adds layout/gap/overflow/htmlTag; text adds htmlTag + link; image adds MediaPicker + resolution + link)
+- **Style** — Background/Radius/Border/Shadow (each with Normal/Hover toggle) for most blocks; **text** swaps to Align/Typography/TextStroke/TextShadow/BlendMode; **image** swaps to dimension/object-fit/object-position/align/opacity (with hover) and scopes border/radius/shadow to inner `<img>`
 - **Advanced** — Width/Height, Padding, Margin, Position, Offset, Z-Index, CSS ID/Classes, Custom CSS
 
 Receives `activeBreakpoint` and `breakpointsConfig` props for per-breakpoint style writes.

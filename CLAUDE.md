@@ -29,5 +29,23 @@ TypeScript strict · React (admin UI) · Astro (frontend) · SQLite (`better-sql
 
 ## Key Constraint
 
-Only 5 block types exist right now: `testimonials`, `faq`, `pricing`, `container`, `spacer`.
+7 block types exist right now: `testimonials`, `faq`, `pricing`, `container`, `spacer`, `text`, `image`.
 Only container blocks can be placed at the canvas root level — all others must be inside a container.
+
+## Keep PRDs in Sync
+
+The `.claude/prd-*.md` files are the source of truth for what this plugin currently does. They drift fast if not maintained.
+
+**Whenever you change anything in the project, update the matching PRD file in the same task** — don't defer it to a follow-up. Use the table above to pick the right file. If a change spans multiple subsystems, update each affected PRD.
+
+Examples that require a PRD update:
+- Adding/removing/renaming a block type → `prd-blocks.md` + `prd-previews.md` + `prd-frontend.md` + `prd-index.md` (file tree) + `prd.md` (block inventory)
+- New control or field type → `prd-rightpanel.md` + `prd-blocks.md` (if it's a `FieldDef.type`)
+- New reducer action or state field → `prd-builder-ui.md`
+- New API route, DB column, or hook → `prd-backend.md`
+- New `styleUtils.ts` function or rendering behavior → `prd-frontend.md` (and `prd-breakpoints.md` if breakpoint-related)
+- New breakpoint or change to canvas-resize logic → `prd-breakpoints.md`
+
+When you finish a feature that completes a `TODO` in a PRD, mark it `[x]` rather than deleting it (so the history of what was planned vs. shipped stays visible). Move it to a "Done" section only when the TODO list gets long.
+
+If you only touch styling, copy, or non-architectural details, no PRD update is needed.

@@ -12,7 +12,9 @@ src/admin/previews/
 ├─ FaqPreview.tsx
 ├─ PricingPreview.tsx
 ├─ ContainerPreview.tsx
-└─ SpacerPreview.tsx
+├─ SpacerPreview.tsx
+├─ TextPreview.tsx
+└─ ImagePreview.tsx
 ```
 
 ## Preview Registration (index.ts)
@@ -30,6 +32,8 @@ export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewPr
   pricing: PricingPreview,
   spacer: SpacerPreview,
   container: ContainerPreview,
+  text: TextPreview,
+  image: ImagePreview,
 };
 ```
 
@@ -75,13 +79,15 @@ Previews **must reflect config changes in real time**. No hardcoded values.
 - `children` — child blocks (for container)
 - `slots` — slot arrays (for columns)
 
-## Current Previews (5)
+## Current Previews (7)
 
 1. **TestimonialsPreview** — Grid/carousel of testimonial cards
 2. **FaqPreview** — Accordion items list
 3. **PricingPreview** — Pricing tiers grid
 4. **ContainerPreview** — Renders children recursively via PREVIEW_COMPONENTS
 5. **SpacerPreview** — Height indicator bar
+6. **TextPreview** — Renders `config.content` with the chosen `htmlTag`
+7. **ImagePreview** — Renders `config.image` (via `/_emdash/api/media/file/<storageKey>`) with caption + link
 
 ## Container Preview Pattern
 
@@ -145,11 +151,9 @@ Or use theme class:
   - CtaPreview
   - StatsPreview
   - GalleryPreview
-  - VideoPreview
   - ColumnsPreview
   - HeadingPreview
   - ParagraphPreview
 - [ ] Add preview CSS file (previews.css) for scoped preview styling
 - [ ] Make previews respond to style changes (read from `config.style`)
-- [ ] Add image placeholder for image blocks
 - [ ] Test nested container preview rendering (3+ levels)

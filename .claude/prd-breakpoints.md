@@ -107,32 +107,25 @@ const effectiveStyle = { ...activeStyle, ...bpStyleRaw };
 
 The control reads from `effectiveStyle` and writes back only to `bpStyleRaw` (via `writeBpStyle()`).
 
-## Frontend Rendering (planned)
+## Frontend Rendering
 
-Breakpoint styles should generate CSS media queries:
+Breakpoint styles are emitted as CSS media queries by `buildBreakpointCss(config, blockId, layoutSelector?)` in `styleUtils.ts`:
 
 ```css
-/* Block base styles (desktop) */
-[data-epx-block="<id>"] {
-  padding-top: 24px;
-}
-
-/* Tablet portrait override */
 @media (max-width: 992px) {
-  [data-epx-block="<id>"] {
-    padding-top: 8px;
-  }
+  [data-epx-block="<id>"] { padding-top: 8px; }
 }
-
-/* Mobile portrait override */
 @media (max-width: 575px) {
-  [data-epx-block="<id>"] {
-    padding-top: 4px;
-  }
+  [data-epx-block="<id>"] { padding-top: 4px; }
 }
 ```
 
-This requires a `generateBreakpointStyles(block)` function in `styleUtils.ts` (not yet implemented).
+Visual properties (border, radius, shadow, text color, typography, text-stroke, text-shadow) are written to the root `[data-epx-block="<id>"]` selector.
+Layout / gap properties (`column-gap`, `row-gap`, `flex-direction`, `flex-wrap`, `justify-content`, `align-items`) are written to `layoutSelector` when provided — `SectionContainer.astro` passes `[data-epx-block="<id>"]>div` for video-background containers so layout targets the inner content wrapper, otherwise it merges into a single rule.
+
+Hover overrides per breakpoint go through `buildBreakpointHoverCss(config, blockId)` and emit `@media + :hover` rules with `!important`.
+
+Both functions sort entries by `_px` descending so that smaller breakpoints win in cascade order. CSS is concatenated and injected via `<style set:html={...} is:global />` in `BlockRenderer.astro` / `SectionContainer.astro`.
 
 ## API
 
@@ -145,8 +138,9 @@ Saves to KV. Always merges non-removable breakpoints into `enabled`.
 
 ## TODO
 
-- [ ] Implement `generateBreakpointStyles(block)` in `styleUtils.ts`
-- [ ] Render breakpoint style tags in `LayoutRenderer.astro` / `BlockRenderer.astro`
-- [ ] Render hover styles as `:hover` pseudo-selector CSS
-- [ ] Render theme styles (`styleDark`, `styleAccent`) via `data-theme` attribute
+- [x] Implement breakpoint CSS generation in `styleUtils.ts` (`buildBreakpointCss` / `buildBreakpointHoverCss`)
+- [x] Render breakpoint style tags in `BlockRenderer.astro` / `SectionContainer.astro`
+- [x] Render hover styles as `:hover` pseudo-selector CSS (`buildHoverCss`)
+- [x] Render `styleDark` (merged via `getEffectiveStyle` when `theme === "dark"`)
+- [ ] Render `styleAccent` via `data-theme="accent"` attribute / selector
 - [ ] Allow per-page breakpoint overrides (currently global only)

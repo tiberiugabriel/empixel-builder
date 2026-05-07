@@ -17,14 +17,19 @@ RightPanel.tsx (3 tabs: Fields, Style, Advanced)
    ├─ BorderRadiusControl.tsx
    ├─ BorderControl.tsx
    ├─ BoxShadowControl.tsx      # Box shadow (x, y, blur, spread, color, inset)
-   ├─ BackgroundControl.tsx     # Color / gradient / image
+   ├─ BackgroundControl.tsx     # Color / gradient / image / slideshow / video
    ├─ GapControl.tsx            # Column + row gap
-   ├─ LayoutControl.tsx         # Flex direction + wrap + align + justify
+   ├─ LayoutControl.tsx         # Flex/Grid layout properties
    ├─ OverflowControl.tsx       # Overflow x/y
-   ├─ LinkControl.tsx           # href + target for <a> containers
-   ├─ MediaPicker.tsx           # Image/media selector (UI exists, not wired to FieldRenderer)
+   ├─ LinkControl.tsx           # href, newTab, nofollow, customAttr
+   ├─ MediaPicker.tsx           # Image/media picker (wired to image block + Background)
    ├─ ThemeStyleToggle.tsx      # Light / Dark / Accent theme selector
-   └─ FieldRow.tsx              # NumberRow, TextRow, SelectRow, DimensionControl, FieldGroup
+   ├─ AlignControl.tsx          # Text-align (start/center/end/justify) — Text block
+   ├─ TypographyControl.tsx     # Font family, size, weight, line-height, transform, etc — Text block
+   ├─ TextStrokeControl.tsx     # -webkit-text-stroke-width / -color — Text block
+   ├─ TextShadowControl.tsx     # text-shadow X/Y/Blur/Color — Text block
+   ├─ BlendModeControl.tsx      # mix-blend-mode — Text block
+   └─ FieldRow.tsx              # NumberRow, TextRow, SelectRow, DimensionControl, IconButtonRow, FieldGroup
 ```
 
 ## Tabs
@@ -32,9 +37,11 @@ RightPanel.tsx (3 tabs: Fields, Style, Advanced)
 ### Tab 1: Fields
 Block-specific content from `def.fields[]`.
 - Uses `FieldRenderer` to dispatch each field type
-- Container block adds: LayoutControl, GapControl, OverflowControl, HTML Tag selector, LinkControl
+- **Container** adds: LayoutControl, GapControl, OverflowControl, HTML Tag, LinkControl (if tag = "a")
+- **Text** adds: HTML Tag selector (default `p`, supports h1–h6, span, div, a), LinkControl (if tag = "a")
+- **Image** adds: MediaPicker thumbnail row, Resolution selector, LinkControl (always)
 
-### Tab 2: Style
+### Tab 2: Style — default (non-text, non-image)
 Visual styling. Each section has a **Normal / Hover state toggle** (IconStateNormal / IconStateHover).
 
 | Section | Controls | State toggle |
@@ -43,6 +50,25 @@ Visual styling. Each section has a **Normal / Hover state toggle** (IconStateNor
 | Border Radius | BorderRadiusControl | ✅ Normal/Hover |
 | Border | BorderControl | ✅ Normal/Hover |
 | Box Shadow | BoxShadowControl | ✅ Normal/Hover |
+
+### Tab 2: Style — text block
+Custom typography stack (no Background / Radius / Border / Shadow sections):
+- AlignControl
+- TypographyControl
+- TextStrokeControl
+- TextShadowControl
+- BlendModeControl
+
+All write to `block.config.style.*` (or breakpoint overrides when active BP ≠ desktop).
+
+### Tab 2: Style — image block
+Image-element styling (no Background section; border/radius/shadow target inner `<img>`):
+- DimensionControl Width/Height (writes to `block.config.imgStyle.*`)
+- Object Fit (`imgStyle.objectFit`)
+- Object Position (`imgStyle.objectPosition`)
+- Align (writes `style.textAlign` → frame uses `justify-content` mapping)
+- Opacity (with Normal/Hover toggle)
+- Border Radius / Border / Box Shadow sections still appear and target the inner `<img>` via `buildImgVisualCss` on the frontend
 
 Hover styles are written to `block.config.styleHover`.
 Theme styles are written to `block.config.style` / `block.config.styleDark` / `block.config.styleAccent` via `getThemeStyleKey(theme)`.
@@ -135,14 +161,16 @@ Accepts `breakpointIndicator` prop.
 
 ## BackgroundControl
 
-- Solid color picker (ColorPicker)
-- Gradient editor (via CSS gradient string)
-- Image picker (MediaPicker)
-- Background size: cover / contain / repeat
-- Background position: center / top / bottom / left / right
+- Solid color picker (ColorPicker, with alpha)
+- Gradient editor (linear-gradient with multiple stops + angle)
+- Image picker (MediaPicker, with size / position / repeat / attachment)
+- Slideshow (multiple images, frontend renders first slide as static background fallback)
+- Video (HTML5 file via MediaPicker, YouTube URL, or Vimeo URL — with start/end time, loop, fallback poster, size, position)
 - Opacity slider
 
-`allowedTypes` prop: restricts to subset (e.g. hover state restricts nothing, normal state allows all).
+`allowedTypes` prop: restricts to subset (e.g. hover state limited to `["color", "gradient", "image"]`).
+
+Background config is serialized into `style.backgroundType` + per-type fields (`backgroundColor`, `backgroundGradStops`, `backgroundImageStorageKey`, `backgroundVideoSrc`, etc.) and consumed by `buildBackgroundCss` on the frontend.
 
 ## GapControl
 
@@ -152,11 +180,11 @@ CSS keys: `columnGap`, `rowGap`
 
 ## LayoutControl
 
-Flex layout properties for container blocks:
-- Direction: row / column
-- Wrap: nowrap / wrap
-- Align items: start / center / end / stretch / baseline
-- Justify content: start / center / end / space-between / space-around / space-evenly
+Flex/Grid layout properties for container blocks:
+- Mode: flex or grid
+- Flex: direction (row/column), wrap, align-items, justify-content
+- Grid: grid-template-columns, grid-template-rows, grid-auto-flow, justify-items, align-items
+- Accepts `breakpointIndicator` prop and writes to breakpoint overrides when non-desktop BP is active
 
 ## OverflowControl
 
@@ -164,11 +192,38 @@ Overflow x/y selector: visible / hidden / scroll / auto
 
 ## LinkControl
 
-Link properties for `<a>` container blocks:
-- `href` text input
-- `target` select: _self / _blank / _parent / _top
+Link properties for `<a>` containers, text blocks (when tag = "a"), and image blocks:
+- `linkHref` — URL text input
+- `linkNewTab` — toggle (adds `target="_blank"` + `rel="noopener noreferrer"`)
+- `linkNofollow` — toggle (adds `rel="nofollow"`)
+- `linkCustomAttr` — comma-separated `key|value` pairs for custom attributes
 
-Shown only when container's HTML Tag is `a`.
+Stored as flat keys on `block.config` (not under a nested `link` object).
+
+## AlignControl
+Text alignment selector (start / center / end / justify). Writes `textAlign`. Accepts `breakpointIndicator`.
+
+## TypographyControl
+Font properties:
+- `fontFamily`, `fontSize`, `fontWeight`
+- `lineHeight`, `letterSpacing`, `wordSpacing`
+- `textTransform`, `fontStyle`, `textDecoration`
+- Color (with alpha)
+
+Writes to `style.*` (or breakpoint override when active).
+
+## TextStrokeControl
+- `textStrokeWidth` → `-webkit-text-stroke-width`
+- `textStrokeColor` (+ alpha) → `-webkit-text-stroke-color`
+
+## TextShadowControl
+- `textShadowX`, `textShadowY`, `textShadowBlur`
+- `textShadowColor` (+ alpha)
+
+Combined into `text-shadow: X Y Blur Color` on frontend.
+
+## BlendModeControl
+Single select for `mixBlendMode` (normal / multiply / screen / overlay / etc.).
 
 ## ThemeStyleToggle
 
@@ -238,8 +293,7 @@ Dirty label: `color-mix(in srgb, var(--epx-text-faint), white 45%)`
 
 ## TODO
 
-- [ ] Wire MediaPicker into FieldRenderer (`image` field type)
+- [ ] Wire MediaPicker into FieldRenderer as a generic `image` field type (currently used inline only inside image block + Background)
 - [ ] Add rich-text field type (Portable Text editor)
-- [ ] Add typography control (font-family, weight, size, line-height)
-- [ ] Add gradient editor (currently only solid/image for hover mode)
 - [ ] Keyboard shortcuts within controls (Escape to cancel, Enter to confirm)
+- [ ] Surface accent-theme writes — `getThemeStyleKey("accent")` already returns `styleAccent`, but accent CSS is not yet rendered on the frontend

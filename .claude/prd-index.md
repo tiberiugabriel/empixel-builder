@@ -61,10 +61,10 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 
 ### Rendering
 1. Astro page calls `getBuilderLayout(entryId, collection)` → queries SQLite
-2. Page renders `<LayoutRenderer layout={layout} />`
-3. LayoutRenderer iterates sections → `<BlockRenderer block={section} />`
-4. BlockRenderer dispatches to correct Astro component by `block.type`
-5. Block component reads `block.config`, applies `generateBlockStyles(block)`, renders HTML
+2. Page renders `<LayoutRenderer sections={layout.sections} />`
+3. LayoutRenderer iterates sections — containers go to `SectionContainer.astro`, leaves to `BlockRenderer.astro`
+4. `BlockRenderer` dispatches leaves (testimonials/faq/pricing/spacer/text/image) by `block.type`
+5. Each component builds CSS via `buildBlockCss` / `buildHoverCss` / `buildBreakpointCss` / `getCustomCss` and injects it as a global `<style>` tag, with `[data-epx-block="<id>"]` selectors
 
 ## Key Concepts
 
@@ -173,6 +173,11 @@ src/
 │  │  ├─ LinkControl.tsx
 │  │  ├─ MediaPicker.tsx
 │  │  ├─ ThemeStyleToggle.tsx
+│  │  ├─ AlignControl.tsx
+│  │  ├─ TypographyControl.tsx
+│  │  ├─ TextStrokeControl.tsx
+│  │  ├─ TextShadowControl.tsx
+│  │  ├─ BlendModeControl.tsx
 │  │  └─ FieldRow.tsx
 │  │
 │  ├─ fields/                            # Field renderers
@@ -186,37 +191,45 @@ src/
 │     ├─ FaqPreview.tsx
 │     ├─ PricingPreview.tsx
 │     ├─ ContainerPreview.tsx
-│     └─ SpacerPreview.tsx
+│     ├─ SpacerPreview.tsx
+│     ├─ TextPreview.tsx
+│     └─ ImagePreview.tsx
 │
 └─ components/                           # Frontend (Astro)
    ├─ index.ts                           # Exports + blockComponents map
-   ├─ BlockRenderer.astro                # Block dispatcher
+   ├─ BlockRenderer.astro                # Leaf block dispatcher
    ├─ LayoutRenderer.astro               # Root layout renderer
+   ├─ SectionContainer.astro             # container block (recursive)
    ├─ BuilderWrapper.astro               # Builder-page wrapper
-   ├─ styleUtils.ts                      # CSS generation
+   ├─ styleUtils.ts                      # CSS generation (selector-based)
    ├─ db.ts                              # getBuilderLayout()
    ├─ Testimonials.astro
    ├─ FaqSection.astro
    ├─ PricingSection.astro
    ├─ SpacerSection.astro
-   └─ SectionContainer.astro
+   ├─ Text.astro
+   └─ Image.astro
 ```
 
 ## Roadmap
 
 ### Immediate (complete block coverage)
-1. Add BlockDef + type interface for: hero, features-grid, image-text, cta, stats, gallery, video, columns
+1. Add BlockDef + type interface for: hero, features-grid, image-text, cta, stats, gallery, columns
 2. Create preview component per new block
 3. Create Astro component per new block
-4. Add `image` field type (wire MediaPicker into FieldRenderer)
+4. Add generic `image` FieldDef type (wire MediaPicker into FieldRenderer for non-image blocks)
 
 ### Short-term
 - Undo/Redo (UNDO action + history stack + topbar buttons)
 - Rich-text field type (Portable Text)
-- Breakpoint style rendering on frontend (generateBreakpointStyles → media queries)
-- Hover CSS rendering (`:hover` from styleHover)
-- Theme CSS rendering (`styleDark` / `styleAccent` via data-theme)
+- Accent-theme rendering on frontend (`styleAccent` via `data-theme="accent"` selector)
 - Block search/filter in LeftPanel
+
+### Done (was on roadmap)
+- ✅ Breakpoint media-query rendering (`buildBreakpointCss` / `buildBreakpointHoverCss`)
+- ✅ Hover CSS rendering (`buildHoverCss`)
+- ✅ Dark theme CSS (`styleDark` via `getEffectiveStyle`)
+- ✅ `text` and `image` blocks (with typography stack and image-scoped visual CSS)
 
 ### Later
 - Layout templates/presets
