@@ -136,6 +136,40 @@ Returns current `BreakpointsConfig` from KV storage. Falls back to `DEFAULT_BREA
 Body: `{ enabled: BreakpointId[], overrides: BreakpointOverride[] }`
 Saves to KV. Always merges non-removable breakpoints into `enabled`.
 
+## v0.6+ — config-level breakpoints
+
+For block fields that aren't CSS-style (e.g. boolean toggles, select strings), per-breakpoint overrides live in a parallel map alongside `styleBreakpoints`:
+
+```ts
+block.config.configBreakpoints = {
+  "tablet-portrait": { _px: 992, dropCap: false, columns: "2", columnsGap: "16px" },
+};
+```
+
+Reader pattern in RightPanel:
+```ts
+const eff = isNonDesktop ? { ...config, ...bpConfigRaw } : config;
+```
+
+Writer:
+```ts
+function writeBpConfig(patch) {
+  const px = getEffectiveBpPx(activeBreakpoint, breakpointsConfig);
+  const current = configBreakpoints[activeBreakpoint] ?? {};
+  onChange({ configBreakpoints: { ...configBreakpoints, [activeBreakpoint]: { ...current, _px: px, ...patch } } });
+}
+```
+
+Frontend emission walks the union of `styleBreakpoints` + `configBreakpoints` keys, emits `@media(max-width:_px){...}` rules per bp. Canvas previews receive `activeBreakpoint` via `PreviewProps` and merge for the active bp.
+
+Currently used by: `text-editor` block (`dropCap`, `columns`, `columnsCustom`, `columnsGap`).
+
+## Breakpoint indicator — convention
+
+Bp-aware controls render the `breakpointIndicator` (`<span class="epx-bp-label-icon">…<getBpIcon(activeBreakpoint)/></span>`) on every breakpoint, including `desktop`. Do NOT gate on `isNonDesktop`. Icon doubles as a "this control is bp-aware" affordance.
+
+The indicator is a sibling of the label span (NOT nested inside) — placed immediately after `.epx-side-input__label`. CSS: `.epx-bp-label-icon { margin-right: auto; padding-left: 2px; }` keeps it left-anchored next to the label.
+
 ## TODO
 
 - [x] Implement breakpoint CSS generation in `styleUtils.ts` (`buildBreakpointCss` / `buildBreakpointHoverCss`)

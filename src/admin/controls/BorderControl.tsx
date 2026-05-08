@@ -186,7 +186,10 @@ export function BorderControl({ value, onChange, breakpointIndicator }: {
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {mixed ? (
-              <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Border{breakpointIndicator}</span>
+              <>
+                <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Border</span>
+                {breakpointIndicator}
+              </>
             ) : (
               <SideInput sideKey="" labelOverride="Border" value={collapsed} onChange={handleCollapsedChange} labelSuffix={breakpointIndicator} />
             )}

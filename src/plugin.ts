@@ -39,18 +39,140 @@ function getDb(): SqliteDb {
       PRIMARY KEY (collection, entry_id)
     )
   `);
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS empixel_builder_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `);
   try {
     _db.exec("ALTER TABLE empixel_builder_layouts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
   } catch {
     // column already exists
   }
+
+  runSpacerMigration(_db);
+
   return _db;
+}
+
+/**
+ * One-time migration: rewrite legacy `spacer` blocks → `divider-spacer`.
+ * Idempotent — flagged in `empixel_builder_meta` after first successful run.
+ */
+function runSpacerMigration(db: SqliteDb): void {
+  const FLAG = "migration_spacer_v1";
+  try {
+    const existing = db.prepare("SELECT value FROM empixel_builder_meta WHERE key = ?").get(FLAG);
+    if (existing) return;
+
+    const HEIGHT_TO_PX: Record<string, string> = {
+      sm: "32px", md: "64px", lg: "96px", xl: "128px",
+    };
+
+    interface OldBlock {
+      id: string;
+      type: string;
+      config?: Record<string, unknown>;
+      children?: OldBlock[];
+      slots?: OldBlock[][];
+    }
+
+    function transform(blocks: OldBlock[]): { changed: boolean; out: OldBlock[] } {
+      let changed = false;
+      const out: OldBlock[] = [];
+      for (const b of blocks) {
+        let next: OldBlock = b;
+        if (b.type === "spacer") {
+          changed = true;
+          const oldCfg = (b.config ?? {}) as { height?: string; showDivider?: boolean };
+          next = {
+            ...b,
+            type: "divider-spacer",
+            config: {
+              ...(b.config ?? {}),
+              space: HEIGHT_TO_PX[oldCfg.height ?? "md"] ?? "64px",
+              divider: {
+                style: oldCfg.showDivider ? "solid" : "none",
+                width: "1px",
+                length: "100%",
+                color: "#000000",
+                colorAlpha: 0.12,
+                align: "center",
+              },
+            },
+          };
+        }
+        if (next.children && next.children.length) {
+          const childRes = transform(next.children);
+          if (childRes.changed) {
+            changed = true;
+            next = { ...next, children: childRes.out };
+          }
+        }
+        if (next.slots && next.slots.length) {
+          const newSlots: OldBlock[][] = [];
+          let slotChanged = false;
+          for (const slot of next.slots) {
+            const res = transform(slot);
+            if (res.changed) slotChanged = true;
+            newSlots.push(res.out);
+          }
+          if (slotChanged) {
+            changed = true;
+            next = { ...next, slots: newSlots };
+          }
+        }
+        out.push(next);
+      }
+      return { changed, out };
+    }
+
+    const rows = db
+      .prepare("SELECT collection, entry_id, sections FROM empixel_builder_layouts")
+      .all() as Array<{ collection: string; entry_id: string; sections: string }>;
+    const updateStmt = db.prepare(
+      "UPDATE empixel_builder_layouts SET sections = ?, updated_at = current_timestamp WHERE collection = ? AND entry_id = ?"
+    );
+
+    let migrated = 0;
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.sections);
+        if (!Array.isArray(parsed)) continue;
+        const result = transform(parsed as OldBlock[]);
+        if (result.changed) {
+          updateStmt.run(JSON.stringify(result.out), row.collection, row.entry_id);
+          migrated += 1;
+        }
+      } catch (err) {
+        console.error(
+          `[empixel-builder] spacer migration: failed to migrate ${row.collection}/${row.entry_id}:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+
+    db.prepare("INSERT OR REPLACE INTO empixel_builder_meta (key, value) VALUES (?, ?)").run(
+      FLAG,
+      String(Date.now())
+    );
+
+    if (migrated > 0) {
+      console.log(`[empixel-builder] migrated ${migrated} layout(s) from spacer → divider-spacer`);
+    }
+  } catch (err) {
+    console.error(
+      "[empixel-builder] spacer migration failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
 }
 
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
-    version: "0.5.0",
+    version: "0.6.0",
     capabilities: ["read:content"],
     routes: {
       // GET  ?pageId=&collection=  → load layout

@@ -75,7 +75,10 @@ export function GapControl({ value, onChange, breakpointIndicator }: {
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {isMixed ? (
-              <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Gaps{breakpointIndicator}</span>
+              <>
+                <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Gaps</span>
+                {breakpointIndicator}
+              </>
             ) : (
               <SideInput sideKey="" labelOverride="Gaps" value={col} onChange={handleCollapsedChange} labelSuffix={breakpointIndicator} />
             )}

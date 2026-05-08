@@ -76,6 +76,31 @@ CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
 
 Note: `entry_id` stores the ULID (not slug). Legacy rows may use slug as `entry_id` — the GET/POST handlers include fallback logic for old slug-based rows.
 
+Table: `empixel_builder_meta` (v0.6)
+
+```sql
+CREATE TABLE IF NOT EXISTS empixel_builder_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+)
+```
+
+Stores migration flags and other plugin metadata. Sync access from `getDb()` so migrations don't depend on async KV.
+
+## Migrations (v0.6)
+
+`runSpacerMigration(db)` runs once per database on first `getDb()` call. Steps:
+
+1. Read `empixel_builder_meta` for `migration_spacer_v1`. If present, skip.
+2. `SELECT collection, entry_id, sections FROM empixel_builder_layouts`.
+3. For each row, JSON-parse, recursively walk the tree (children + slots), rewrite any `type: "spacer"` node to `type: "divider-spacer"` with mapped defaults:
+   - `space: { sm: "32px", md: "64px", lg: "96px", xl: "128px" }[old.height]`
+   - `divider.style: old.showDivider ? "solid" : "none"` plus default width/length/color/align.
+4. `UPDATE` only rows that changed.
+5. Write `INSERT OR REPLACE INTO empixel_builder_meta (key, value) VALUES ('migration_spacer_v1', <timestamp>)`.
+
+Per-row failures are caught and logged; the migration flag is still written so the loop doesn't re-run forever. To re-run a failed migration, manually delete the meta row.
+
 ## KV Storage
 
 | Key | Type | Purpose |

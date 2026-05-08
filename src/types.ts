@@ -4,10 +4,15 @@ export type BlockType =
   | "testimonials"
   | "faq"
   | "pricing"
-  | "spacer"
   | "container"
   | "text"
-  | "image";
+  | "image"
+  | "text-editor"
+  | "video"
+  | "button"
+  | "icon"
+  | "html"
+  | "divider-spacer";
 
 /** Block types that can contain other blocks */
 export const CONTAINER_TYPES: BlockType[] = ["container"];
@@ -83,11 +88,6 @@ export interface PricingConfig {
   tiers: PricingTier[];
 }
 
-export interface SpacerConfig {
-  height?: "sm" | "md" | "lg" | "xl";
-  showDivider?: boolean;
-}
-
 export interface TextConfig {
   content?: string;
   htmlTag?: string;
@@ -128,6 +128,141 @@ export interface ImageConfig {
   linkCustomAttr?: string;
   theme?: "light" | "dark";
   imgStyle?: ImageElementStyle;
+}
+
+// ─── Icon group (used by Video overlay, Button, Icon, Divider-Spacer) ────────
+
+export interface IconGroupValue {
+  iconSrc?: ImageMediaRef;
+  iconSize?: string;
+  iconColor?: string;
+  iconColorAlpha?: number;
+  iconPosition?: "left" | "right" | "top" | "bottom" | "center" | "above" | "below";
+}
+
+// ─── Text Editor Block ────────────────────────────────────────────────────────
+
+// Portable Text JSON — kept loose to avoid hard runtime coupling to @portabletext.
+export type RichTextValue = unknown[];
+
+export interface TextEditorConfig {
+  content?: RichTextValue;
+  dropCap?: boolean;
+  columns?: "1" | "2" | "3" | "custom";
+  columnsCustom?: number;
+  columnsGap?: string;
+  theme?: "light" | "dark";
+}
+
+// ─── Video Block ──────────────────────────────────────────────────────────────
+
+export type VideoProvider = "youtube" | "vimeo" | "custom";
+
+export interface VideoSourceValue {
+  src?: "media" | "url";
+  media?: ImageMediaRef;
+  url?: string;
+  provider?: VideoProvider;
+  autoplay?: boolean;
+  mute?: boolean;
+  controls?: boolean;
+  captions?: boolean;
+  lazyLoad?: boolean;
+  controlsColor?: string;
+  /** Vimeo only */
+  introTitle?: boolean;
+  introPortrait?: boolean;
+  introByline?: boolean;
+}
+
+export interface VideoOverlayValue {
+  image?: ImageMediaRef;
+  resolution?: ImageResolution;
+  size?: "cover" | "contain" | "auto";
+  position?: string;
+  icon?: IconGroupValue;
+}
+
+export interface VideoConfig {
+  video?: VideoSourceValue;
+  overlay?: VideoOverlayValue;
+  aspectRatio?: "1:1" | "3:2" | "4:3" | "16:9" | "21:9" | "9:16" | "custom";
+  aspectRatioCustomW?: string;
+  aspectRatioCustomH?: string;
+  theme?: "light" | "dark";
+}
+
+// ─── Button Block ─────────────────────────────────────────────────────────────
+
+export interface ButtonConfig {
+  text?: string;
+  linkHref?: string;
+  linkNewTab?: boolean;
+  linkNofollow?: boolean;
+  linkCustomAttr?: string;
+  icon?: IconGroupValue;
+  theme?: "light" | "dark";
+}
+
+// ─── Icon Block ───────────────────────────────────────────────────────────────
+
+export interface IconConfig {
+  icon?: IconGroupValue;
+  linkHref?: string;
+  linkNewTab?: boolean;
+  linkNofollow?: boolean;
+  linkCustomAttr?: string;
+  rotate?: string;
+  theme?: "light" | "dark";
+}
+
+// ─── HTML Block ───────────────────────────────────────────────────────────────
+
+export interface HtmlConfig {
+  code?: string;
+  theme?: "light" | "dark";
+}
+
+// ─── Divider / Spacer Block ───────────────────────────────────────────────────
+
+export type DividerStyle =
+  | "none"
+  | "solid"
+  | "dashed"
+  | "dotted"
+  | "double"
+  | "groove"
+  | "ridge"
+  | "gradient"
+  | "wavy"
+  | "zigzag";
+
+export interface DividerGradientStop {
+  color: string;
+  alpha: number;
+  pos: number;
+}
+
+export interface DividerGradient {
+  angle?: number;
+  stops?: DividerGradientStop[];
+}
+
+export interface DividerConfig {
+  style?: DividerStyle;
+  width?: string;
+  length?: string;
+  color?: string;
+  colorAlpha?: number;
+  align?: "left" | "center" | "right";
+  icon?: IconGroupValue;
+  gradient?: DividerGradient;
+}
+
+export interface DividerSpacerConfig {
+  space?: string;
+  divider?: DividerConfig;
+  theme?: "light" | "dark";
 }
 
 // ─── Breakpoints ──────────────────────────────────────────────────────────────

@@ -3,14 +3,18 @@
 ## Role
 Reusable UI components for editing block properties: fields, controls, and styling inputs.
 
+## Convention — breakpoint indicator
+Any bp-aware control MUST show the `breakpointIndicator` next to its label on every breakpoint, including `desktop`. Pass `breakpointIndicator={breakpointIndicator}` unconditionally — do NOT gate on `isNonDesktop`. The icon doubles as a "this control is bp-aware" affordance and indicates which breakpoint is currently being edited. Controls that are NOT bp-aware (e.g. `htmlTag`, link fields, plain config-level metadata) must omit the indicator.
+
 ## Architecture
 
 ```
 RightPanel.tsx (3 tabs: Fields, Style, Advanced)
 ├─ fields/
-│  ├─ FieldRenderer.tsx         # Generic field dispatcher
+│  ├─ FieldRenderer.tsx         # Generic field dispatcher (12 types)
 │  ├─ JsonArrayField.tsx        # Expandable item list
-│  └─ PageBuilderField.tsx      # Drag-drop layout field
+│  ├─ PageBuilderField.tsx      # Drag-drop layout field
+│  └─ RichTextField.tsx         # v0.6 — wraps @emdash-cms/admin PortableTextEditor (lazy)
 └─ controls/
    ├─ ColorPicker.tsx
    ├─ SpacingControl.tsx        # Padding / Margin / Offset
@@ -26,11 +30,17 @@ RightPanel.tsx (3 tabs: Fields, Style, Advanced)
    ├─ ImagePreviewCard.tsx      # Full-width image preview card (Select / Change / Remove)
    ├─ ThemeStyleToggle.tsx      # Light / Dark / Accent theme selector
    ├─ AlignControl.tsx          # Text-align (start/center/end/justify) — Text block
-   ├─ TypographyControl.tsx     # Font family, size, weight, line-height, transform, etc — Text block
+   ├─ TypographyControl.tsx     # Font + linkColor (v0.6) — Text/Text-Editor/Button blocks
    ├─ TextStrokeControl.tsx     # -webkit-text-stroke-width / -color — Text block
-   ├─ TextShadowControl.tsx     # text-shadow X/Y/Blur/Color — Text block
+   ├─ TextShadowControl.tsx     # text-shadow X/Y/Blur/Color — Text/Text-Editor blocks
    ├─ BlendModeControl.tsx      # mix-blend-mode — Text block
-   └─ FieldRow.tsx              # NumberRow, TextRow, SelectRow, DimensionControl, IconButtonRow, FieldGroup
+   ├─ FieldRow.tsx              # NumberRow, TextRow, SelectRow, DimensionControl, IconButtonRow, FieldGroup
+   ├─ NumberWithUnits.tsx       # v0.6 — labeled number+unit standalone (px/rem/em/%/vh/vw/deg/turn)
+   ├─ ColorNormalHover.tsx      # v0.6 — ColorPicker + Normal/Hover toggle
+   ├─ IconGroup.tsx             # v0.6 — collapsible icon picker (src/size/color/shadow/position)
+   ├─ CssFiltersControl.tsx     # v0.6 — blur/brightness/contrast/saturate/hue-rotate/grayscale/sepia/invert
+   ├─ VideoSourceControl.tsx    # v0.6 — Media|URL toggle, provider auto-detect, per-provider params
+   └─ CodeEditor.tsx            # v0.6 — html/css/js mode, regex token-coloring, HTML autocomplete (extracted from RightPanel inline)
 ```
 
 ## Tabs
@@ -61,6 +71,31 @@ Custom typography stack (no Background / Radius / Border / Shadow sections):
 - BlendModeControl
 
 All write to `block.config.style.*` (or breakpoint overrides when active BP ≠ desktop).
+
+### Tab 2: Style — text-editor block (v0.6)
+Custom branch — no Background/Border/Shadow:
+- AlignControl
+- TypographyControl (with linkColor)
+- TextShadowControl
+- ParagraphSpacing (NumberWithUnits) → writes `style.paragraphSpacing` → `[data-epx-block] p+p { margin-top }`
+- DropCap group (collapsible, when `dropCap=true`): Size / Lines / Margin Right (all NumberWithUnits) → emit scoped `::first-letter` rules in TextEditor.astro
+
+### Tab 2: Style — video block (v0.6)
+- AspectRatio (1:1/3:2/4:3/16:9/21:9/9:16/custom W+H)
+- CssFiltersControl
+
+### Tab 2: Style — button block (v0.6)
+Default branch with TypographyControl prepended (Background, BorderRadius, Border, Shadow follow).
+
+### Tab 2: Style — icon block (v0.6)
+Custom branch — no Background:
+- AlignControl (writes `style.textAlign` → flex justify-content via wrapper)
+- ColorNormalHover (writes `style.iconColor`/`styleHover.iconColor`; SVG-only via mask, PNG ignored with admin note)
+- Size (NumberWithUnits) — writes `style.iconBlockSize`
+- Rotate (NumberWithUnits with deg/turn units, allowNegative)
+
+### Tab 2: Style — html / divider-spacer (v0.6)
+No Style tab — placeholder text "All settings for this block are in the Fields tab.". All knobs live in Fields.
 
 ### Tab 2: Style — image block
 Image-element styling (no Background section; border/radius/shadow target inner `<img>`):
@@ -104,6 +139,11 @@ Routes `FieldDef.type` to appropriate input:
 | `select` | `<select>` | string |
 | `toggle` | checkbox + label | boolean |
 | `json-array` | JsonArrayField | array |
+| `link` | LinkControl | `{ href, newTab, nofollow, customAttr }` |
+| `rich-text` | RichTextField (lazy `@emdash-cms/admin` `PortableTextEditor`) | Portable Text JSON array |
+| `code` | CodeEditor (`language: html|css|js`) | string |
+| `number-units` | NumberWithUnits | string (e.g. `"24px"`) |
+| `icon-group` | IconGroup (`showPosition` prop) | IconGroupValue |
 
 ## JsonArrayField
 
@@ -248,14 +288,22 @@ Wrappers for Advanced tab rows:
 - `TextRow` — text input
 - `SelectRow` — custom dropdown
 
-## CodeEditor (inline in RightPanel.tsx)
+## CodeEditor (controls/CodeEditor.tsx, v0.6)
 
-Custom CSS textarea:
-- Dark-only theme (Catppuccin Mocha palette via CSS vars)
-- Line numbers column (synced scroll)
+Extracted from RightPanel.tsx inline editor; now reusable.
+
+Props:
+- `value`, `onChange`
+- `language: "html" | "css" | "js"` (default `"css"`)
+- `selectorHeader?: string` — when present, shows header with kw + selector + copy button
+- `placeholder?`, `minHeight?` (default 140)
+
+Features:
+- Line numbers column (synced scroll with textarea)
 - Tab key inserts 4 spaces
-- Header shows CSS selector (`[data-epx-block="<id>"]`) with copy button
-- Height: min 140px, vertically resizable
+- Regex-based syntax highlighting (overlay div under transparent textarea)
+- HTML mode: tag autocomplete after `<`, attribute autocomplete inside open tag (per-tag attr lists for a/img/input/form/button/iframe/video/audio/source/link/meta/script/label/td/th)
+- Used by: Custom CSS in Advanced tab + `html` block's code field
 
 ## Hover State System
 
@@ -292,9 +340,34 @@ Dirty label: `color-mix(in srgb, var(--epx-text-faint), white 45%)`
 - `activeBreakpoint: BreakpointId`
 - `breakpointsConfig: BreakpointsConfig`
 
+## v0.6+ — control changes
+
+- **`SelectRow` (FieldRow.tsx)** gained:
+  - `leftAddon?: React.ReactNode` — content rendered between label and dropdown (e.g. number input shown when value === "custom"). Mirrors `SideInput`'s number+unit pattern.
+  - `onLabelMouseDown?: (e) => void` — enable drag-scrub on the label.
+  - Option `label` widened from `string` to `React.ReactNode` so options can render JSX (e.g. pen icon for "custom").
+  - Internally `SelectDropdown` filters options where `value === "custom"` and renders them below an `epx-unit-dropdown__sep` line with `epx-unit-dropdown__item--pen` (centered icon styling).
+- **`SelectDropdown` + `UnitDropdown`** portal-render to `document.body` with `position: fixed`, computing `top`/`left` from anchor `getBoundingClientRect()`. Flip up when `spaceBelow < panelHeight + 8 && r.top > panelHeight + 8`. Re-position on `scroll` (capture) + `resize`. `right: auto; width: max-content` overrides default CSS. Avoids clipping by Structure panel / RightPanel scroll.
+- **Toggle field type** in `FieldRenderer` renders as switch (`<label class="epx-toggle">` with track + thumb) inside a `<FieldGroup>` wrapper (bg + border + reset). Replaces inline checkbox.
+- **Inline custom rows** in text-editor block (Fields tab): Drop Cap (switch), Columns (SelectRow with custom pen + scrubable label), Columns Gap (SideInput inside FieldGroup). All bp-aware via `configBreakpoints`.
+- **Per-control breakpoint indicator** is a sibling of the label span, not nested. Always visible (desktop included).
+- **Custom CSS editor** keyword `selector` is substituted at render time with `[data-epx-block="<id>"]`; bare declarations get auto-wrapped in `selector{...}`. Header label fixed to `selector` (not `language`). Editor textarea auto-grows; outer scroll is the panel's.
+
+## v0.6 Shared Controls
+
+| Control | File | Used by |
+|---------|------|---------|
+| `NumberWithUnits` | `NumberWithUnits.tsx` | text-editor (paragraph spacing, columns gap, drop cap), video (custom aspect), icon (size, rotate), divider-spacer (space, divider width/length) |
+| `ColorNormalHover` | `ColorNormalHover.tsx` | icon block (icon color) |
+| `IconGroup` | `IconGroup.tsx` | video overlay, button, icon, divider-spacer (collapsible: src + size + color + drop-shadow + position) |
+| `CssFiltersControl` | `CssFiltersControl.tsx` | video block (Style tab) |
+| `VideoSourceControl` | `VideoSourceControl.tsx` | video block (Fields tab) — provider auto-detect (YT/Vimeo/HTML5), per-provider params (autoplay/mute/controls/captions/lazy/intro toggles/controls color) |
+| `CodeEditor` | `CodeEditor.tsx` | html block (Fields tab, language="html"), Custom CSS in Advanced (language="css") |
+
 ## TODO
 
 - [ ] Wire MediaPicker into FieldRenderer as a generic `image` field type (currently used inline only inside image block + Background)
-- [ ] Add rich-text field type (Portable Text editor)
 - [ ] Keyboard shortcuts within controls (Escape to cancel, Enter to confirm)
 - [ ] Surface accent-theme writes — `getThemeStyleKey("accent")` already returns `styleAccent`, but accent CSS is not yet rendered on the frontend
+- [x] Add rich-text field type (Portable Text editor) — v0.6
+- [x] Add code field type (multi-language CodeEditor) — v0.6

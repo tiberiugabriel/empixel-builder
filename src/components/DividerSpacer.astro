@@ -1,0 +1,203 @@
+---
+import type { DividerSpacerConfig, DividerConfig, IconGroupValue, DividerGradient } from "../types.js";
+import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+
+interface Props {
+  value: DividerSpacerConfig;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const cfg = value as Record<string, unknown>;
+
+const advanced = cfg.advanced as Record<string, string> | undefined;
+const cssId = advanced?.cssId || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const space = value.space || "48px";
+const divider = (value.divider ?? {}) as DividerConfig;
+const dividerActive = divider.style && divider.style !== "none";
+const icon = (divider.icon ?? {}) as IconGroupValue;
+
+const iconUrl = icon.iconSrc?.storageKey
+  ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
+  : undefined;
+const iconSize = icon.iconSize || "20px";
+const iconColor = icon.iconColor;
+const iconColorAlpha = icon.iconColorAlpha ?? 1;
+const iconAlt = icon.iconSrc?.alt ?? icon.iconSrc?.filename ?? "";
+const iconFilename = icon.iconSrc?.filename ?? "";
+const isSvgIcon = /\.svg(\?|$)/i.test(iconFilename);
+
+function hexA(hex: string, alpha: number): string {
+  const c = hex.replace("#", "");
+  const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c.slice(0, 6);
+  const n = parseInt(full.padEnd(6, "0"), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+function parsePxNumber(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const m = raw.match(/^([\d.]+)\s*(px|rem|em)?$/i);
+  if (!m) return fallback;
+  const n = parseFloat(m[1]);
+  if (isNaN(n)) return fallback;
+  const unit = (m[2] || "px").toLowerCase();
+  if (unit === "rem" || unit === "em") return n * 16;
+  return n;
+}
+
+const lineColorRaw = divider.color || "#000000";
+const lineAlpha = divider.colorAlpha ?? 1;
+const lineColorRgba = hexA(lineColorRaw, lineAlpha);
+const lineWidth = divider.width || "1px";
+const lineLength = divider.length || "100%";
+const dividerStyle = divider.style ?? "solid";
+
+const align = divider.align ?? "center";
+const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
+
+const iconPos = icon.iconPosition ?? "center";
+const isVertical = iconPos === "above" || iconPos === "below";
+
+// Stroke thickness for wavy/zigzag (driven by divider.width).
+const strokePx = Math.max(0.5, parsePxNumber(lineWidth, 1.5));
+// Pattern row height — should accommodate stroke amplitude.
+const patternHeight = Math.max(8, Math.ceil(strokePx * 5));
+
+function buildLineCss(): string {
+  if (!blockId || !dividerActive) return "";
+  // In horizontal layout, line grows; in vertical layout, line spans width.
+  const sizing = isVertical
+    ? `width:${lineLength};max-width:100%;flex:0 0 auto;`
+    : `flex:1;max-width:${lineLength};`;
+
+  if (dividerStyle === "wavy") {
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 6' preserveAspectRatio='none'><path d='M0 3 Q 5 0 10 3 T 20 3' stroke='${lineColorRgba}' fill='none' stroke-width='${strokePx}' stroke-linecap='round'/></svg>`;
+    const enc = encodeURIComponent(svg);
+    return `[data-epx-block="${blockId}"] .epx-divider-line{
+      ${sizing}
+      height:${patternHeight}px;
+      background-image:url("data:image/svg+xml;utf8,${enc}");
+      background-repeat:repeat-x;
+      background-position:center;
+      background-size:${patternHeight * 3}px 100%;
+    }`;
+  }
+
+  if (dividerStyle === "zigzag") {
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 6' preserveAspectRatio='none'><polyline points='0,5 5,1 10,5 15,1 20,5' stroke='${lineColorRgba}' fill='none' stroke-width='${strokePx}' stroke-linecap='round' stroke-linejoin='round'/></svg>`;
+    const enc = encodeURIComponent(svg);
+    return `[data-epx-block="${blockId}"] .epx-divider-line{
+      ${sizing}
+      height:${patternHeight}px;
+      background-image:url("data:image/svg+xml;utf8,${enc}");
+      background-repeat:repeat-x;
+      background-position:center;
+      background-size:${patternHeight * 3}px 100%;
+    }`;
+  }
+
+  if (dividerStyle === "gradient") {
+    const grad = (divider.gradient ?? {}) as DividerGradient;
+    // UI angle uses 0=top→bottom (clockwise). CSS uses 0=bottom→top. Map.
+    const cssAngle = (((grad.angle ?? 0) + 180) % 360);
+    const stops = (grad.stops && grad.stops.length >= 2)
+      ? [...grad.stops].sort((a, b) => a.pos - b.pos).map((s) => `${hexA(s.color, s.alpha)} ${s.pos}%`).join(",")
+      : `${lineColorRgba} 0%, transparent 100%`;
+    return `[data-epx-block="${blockId}"] .epx-divider-line{
+      ${sizing}
+      height:${lineWidth};
+      background:linear-gradient(${cssAngle}deg, ${stops});
+    }`;
+  }
+
+  // solid/dashed/dotted/double/groove/ridge → CSS border
+  return `[data-epx-block="${blockId}"] .epx-divider-line{
+    ${sizing}
+    height:0;
+    border-top:${lineWidth} ${dividerStyle} ${lineColorRgba};
+  }`;
+}
+
+const lineCss = buildLineCss();
+
+const wrapperCss = blockId && dividerActive
+  ? `[data-epx-block="${blockId}"]{
+      display:flex;
+      flex-direction:${isVertical ? "column" : "row"};
+      align-items:center;
+      justify-content:center;
+      ${isVertical ? "" : `justify-content:${justify};`}
+      gap:8px;
+      min-height:${space};
+    }`
+  : "";
+
+const noDividerWrapperCss = !dividerActive && blockId
+  ? `[data-epx-block="${blockId}"]{height:${space};display:block;}`
+  : "";
+
+// SVG icon recolor via CSS mask (PNG → plain <img>).
+const iconImgCss = blockId && iconUrl && isSvgIcon && iconColor
+  ? `[data-epx-block="${blockId}"] .epx-divider-icon{
+      display:inline-block;
+      width:${iconSize};
+      height:${iconSize};
+      background-color:${hexA(iconColor, iconColorAlpha)};
+      mask:url(${iconUrl}) no-repeat center/contain;
+      -webkit-mask:url(${iconUrl}) no-repeat center/contain;
+      flex:0 0 auto;
+    }`
+  : "";
+
+const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
+const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
+const customCss = blockId ? getCustomCss(cfg, blockId) : "";
+const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
+const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+const allCss = [noDividerWrapperCss, wrapperCss, lineCss, iconImgCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+
+// Layout matrix (children order):
+//   above  → icon, line                 (vertical wrapper)
+//   below  → line, icon                 (vertical wrapper)
+//   left   → icon, line                 (horizontal)
+//   right  → line, icon                 (horizontal)
+//   center → line, icon, line           (horizontal)
+//   none   → line                       (horizontal)
+const renderIcon = !!iconUrl;
+const iconBefore = renderIcon && (iconPos === "left" || iconPos === "above");
+const iconAfter  = renderIcon && (iconPos === "right" || iconPos === "below");
+const iconCenter = renderIcon && iconPos === "center";
+---
+
+<div
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+  aria-hidden={!dividerActive ? "true" : undefined}
+>
+  {dividerActive && (
+    <>
+      {iconBefore && (
+        isSvgIcon && iconColor
+          ? <span class="epx-divider-icon" role="img" aria-label={iconAlt} />
+          : <img class="epx-divider-icon-raw" src={iconUrl} alt={iconAlt} style={`width:${iconSize};height:${iconSize};flex:0 0 auto;`} />
+      )}
+      <span class="epx-divider-line" />
+      {iconCenter && (
+        isSvgIcon && iconColor
+          ? <span class="epx-divider-icon" role="img" aria-label={iconAlt} />
+          : <img class="epx-divider-icon-raw" src={iconUrl} alt={iconAlt} style={`width:${iconSize};height:${iconSize};flex:0 0 auto;`} />
+      )}
+      {iconCenter && <span class="epx-divider-line" />}
+      {iconAfter && (
+        isSvgIcon && iconColor
+          ? <span class="epx-divider-icon" role="img" aria-label={iconAlt} />
+          : <img class="epx-divider-icon-raw" src={iconUrl} alt={iconAlt} style={`width:${iconSize};height:${iconSize};flex:0 0 auto;`} />
+      )}
+    </>
+  )}
+</div>
+
+{allCss && <style set:html={allCss} is:global />}

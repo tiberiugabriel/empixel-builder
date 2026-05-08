@@ -19,7 +19,8 @@ const ALIGN_TO_JUSTIFY: Record<string, string> = {
   end:    "flex-end",
 };
 
-const { value, blockId } = Astro.props;
+const { value: rawValue, blockId } = Astro.props as { value?: ImageConfig; blockId?: string };
+const value: ImageConfig = rawValue ?? {};
 const { image, resolution = "full", caption = "" } = value;
 
 const advanced = (value as Record<string, unknown>).advanced as Record<string, string> | undefined;

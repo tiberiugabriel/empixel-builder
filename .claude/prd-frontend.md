@@ -7,19 +7,24 @@ Server-rendered Astro components that render blocks to HTML. Zero client-side Ja
 
 ```
 src/components/
-├─ index.ts              # Exports: blockComponents map, getBuilderLayout, LayoutRenderer, BuilderWrapper
-├─ BlockRenderer.astro   # Leaf-block dispatcher (testimonials/faq/pricing/spacer/text/image)
+├─ index.ts              # Exports: blockComponents map (12 entries), getBuilderLayout, LayoutRenderer, BuilderWrapper
+├─ BlockRenderer.astro   # Leaf-block dispatcher (12 leaves)
 ├─ LayoutRenderer.astro  # Iterates sections; routes containers to SectionContainer, leaves to BlockRenderer
 ├─ SectionContainer.astro # container block (renders children, handles layout/video/link)
 ├─ BuilderWrapper.astro  # Wrapper for builder-enabled pages
-├─ styleUtils.ts         # CSS generation from block config (selector-based, not inline)
+├─ styleUtils.ts         # CSS generation from block config (selector-based)
 ├─ db.ts                 # getBuilderLayout() database query
 ├─ Testimonials.astro    # testimonials block
 ├─ FaqSection.astro      # faq block
 ├─ PricingSection.astro  # pricing block
-├─ SpacerSection.astro   # spacer block
 ├─ Text.astro            # text block
-└─ Image.astro           # image block
+├─ Image.astro           # image block
+├─ TextEditor.astro      # v0.6 — Portable Text via emdash/ui (lazy import, plain-text fallback)
+├─ Video.astro           # v0.6 — YT/Vimeo/HTML5 embed + image overlay click-to-play
+├─ Button.astro          # v0.6 — <a> | <button>, icon flex order
+├─ Icon.astro            # v0.6 — SVG mask color or <img> for PNG, optional rotate + drop-shadow filter
+├─ Html.astro            # v0.6 — raw set:html (trusted input, not sanitized)
+└─ DividerSpacer.astro   # v0.6 — fixed-height block + optional decorative divider (solid/dashed/.../wavy/zigzag/gradient)
 ```
 
 ## blockComponents map (index.ts)
@@ -29,9 +34,14 @@ export const blockComponents: Record<string, unknown> = {
   testimonials: Testimonials,
   faq: FaqSection,
   pricing: PricingSection,
-  spacer: SpacerSection,
   text: Text,
   image: ImageBlock,
+  "text-editor": TextEditor,
+  video: Video,
+  button: Button,
+  icon: Icon,
+  html: Html,
+  "divider-spacer": DividerSpacer,
 };
 ```
 
@@ -184,6 +194,28 @@ Wraps pages with builder-related metadata/attributes. Usage TBD.
 - **No duplicate logic** between admin previews and frontend components
 - **Cache pages** that query layouts (`Astro.cache.set(cacheHint)`)
 
+## v0.6+ — frontend updates
+
+- **HTML block** rendered inside a sandboxed iframe with `srcdoc` (`sandbox="allow-scripts allow-same-origin"`, `scrolling="no"`) so site CSS doesn't cross in and the block's `<style>`/`<script>` doesn't leak out. If user code already has `<html>`, srcdoc reuses it; else minimal shell wraps the fragment. Auto-resize via parent script (idempotent global flag) reads `iframe.contentDocument.documentElement.scrollHeight` after `load` + `ResizeObserver` + `MutationObserver` + img loads + 100ms polling for first 2s. Iframe collapsed to `0px` before measurement to neutralize `vh`/`100%` body height feedback. Iframe IS the `data-epx-block` element (no wrapper `<div>`); inline style + global rule force `width: 100%; border: none` regardless of flex/grid parent.
+- **Text Editor block** (`TextEditor.astro`) emits per-breakpoint media queries by walking the union of `configBreakpoints` + `styleBreakpoints` for `column-count`, `column-gap`, and `::first-letter` rule (drop cap toggle + size/lines/margin-right). Image inserts inside PortableText render via custom `components.type.image` → [PortableTextImage.astro](../src/components/PortableTextImage.astro) which builds the URL from `node.asset.storageKey` / `node.storageKey` / `node.url`. Renderer pulled from `emdash/ui` lazily; falls back to plain text when unavailable.
+- **`getCustomCss(config, blockId)`** in `styleUtils.ts` substitutes the `selector` keyword (`/\bselector\b/g`) with `[data-epx-block="<id>"]`. If user CSS contains `{` it's emitted as-is (full rules with selectors); else it's wrapped as bare declarations under the block's selector. Powers the Custom CSS editor + the same on canvas (Canvas.tsx walks tree and injects via `<style id="epx-canvas-custom-css">`).
+- **Text shadow** on canvas + frontend now defaults missing `textShadowColor` to `#000000` (was inheriting `currentColor` → white-on-dark).
+- **Image.astro** defensive guard — `value = rawValue ?? {}` so undefined props (e.g. PortableText image slot) don't throw at frontmatter destructure.
+
+## v0.6 styleUtils additions
+
+- `STYLE_PROPS` and `BP_VISUAL_PROPS` extended with `aspectRatio` and `filter` so the existing CSS pipeline emits them per-breakpoint and at desktop.
+- `TextEditor.astro` injects scoped one-off rules for column-count/gap, paragraph spacing (`p + p { margin-top }`), drop cap (`> *:first-child::first-letter { ... }`), and link color (`a { color: var(...); opacity: ... }`).
+- `DividerSpacer.astro` renders SVG mask data URIs for `wavy` and `zigzag` divider styles, `linear-gradient` for `gradient` style, and a regular CSS border for the rest.
+- `Video.astro` sets `aspect-ratio` directly on the wrapper (resolved from preset or `aspectRatioCustomW/H`) and lazy-loads the embed by withholding `src` until the overlay is clicked (tiny inline script promotes `data-epx-src` → `src`).
+- `Button.astro` sets `display:inline-flex` + `flex-direction` from `iconPosition`.
+- `Icon.astro` for SVG sources renders an inner span with `mask: url(...)` so `iconColor` recolors the silhouette; for PNG it renders `<img>` (admin shows a "color ignored" note).
+
+## peerDependencies (v0.6)
+
+- `@emdash-cms/admin` is declared as **optional** peerDep so the plugin works without it; if installed, `RichTextField` lazy-imports `PortableTextEditor` for the `text-editor` block, and `TextEditor.astro` lazy-imports `PortableText` from `emdash/ui` for SSR rendering.
+- Both fall back to a plain JSON textarea (admin) and plain-text rendering (frontend) when unavailable.
+
 ## TODO
 
 - [ ] Add Astro components for all remaining block types (hero, features-grid, etc.)
@@ -195,3 +227,4 @@ Wraps pages with builder-related metadata/attributes. Usage TBD.
 - [ ] Add responsive image optimization (`<picture>` / `srcset`)
 - [ ] Add SEO metadata (og:image, schema.org)
 - [ ] Test nested containers (3+ levels deep)
+- [x] Add Astro components: text-editor, video, button, icon, html, divider-spacer (v0.6)

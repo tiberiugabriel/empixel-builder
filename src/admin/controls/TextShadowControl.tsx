@@ -75,7 +75,8 @@ export function TextShadowControl({ value, onChange, breakpointIndicator }: {
       {!expanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
-            <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Text Shadow{breakpointIndicator}</span>
+            <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Text Shadow</span>
+            {breakpointIndicator}
             <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(true)}>▾</button>
           </div>
           {isDirty && (
@@ -87,7 +88,8 @@ export function TextShadowControl({ value, onChange, breakpointIndicator }: {
       ) : (
         <div className="epx-spacing-ctrl__expanded">
           <div className="epx-spacing-ctrl__exp-header">
-            <span className="epx-spacing-ctrl__label">Text Shadow{breakpointIndicator}</span>
+            <span className="epx-spacing-ctrl__label">Text Shadow</span>
+            {breakpointIndicator}
             <div className="epx-spacing-ctrl__exp-actions">
               {isDirty && (
                 <button type="button" className="epx-reset-btn" onClick={handleReset} title="Reset">

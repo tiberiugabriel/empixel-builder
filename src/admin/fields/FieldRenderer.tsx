@@ -3,6 +3,11 @@ import type { FieldDef } from "../blockDefinitions.js";
 import { JsonArrayField } from "./JsonArrayField.js";
 import { LinkControl, type LinkValue } from "../controls/LinkControl.js";
 import { FieldGroup, SelectRow } from "../controls/FieldRow.js";
+import { NumberWithUnits } from "../controls/NumberWithUnits.js";
+import { CodeEditor } from "../controls/CodeEditor.js";
+import { IconGroup } from "../controls/IconGroup.js";
+import { RichTextField } from "./RichTextField.js";
+import type { IconGroupValue } from "../../types.js";
 
 interface Props {
   field: FieldDef;
@@ -29,19 +34,71 @@ export function FieldRenderer({ field, value, onChange, isDirty }: Props) {
     );
   }
 
-  if (field.type === "toggle") {
+  if (field.type === "rich-text") {
     return (
-      <div className={`epx-field epx-field--toggle${dc}`}>
-        <label className="epx-field__toggle-label">
-          <input
-            type="checkbox"
-            checked={Boolean(value)}
-            onChange={(e) => onChange(e.target.checked)}
-            className="epx-field__toggle-input"
-          />
-          <span className="epx-field__label">{field.label}</span>
-        </label>
+      <div className={`epx-field${dc}`}>
+        <label className={field.labelClassName ?? "epx-field__label"}>{field.label}</label>
+        <RichTextField
+          value={Array.isArray(value) ? value : []}
+          onChange={(v) => onChange(v)}
+          placeholder={field.placeholder}
+        />
       </div>
+    );
+  }
+
+  if (field.type === "code") {
+    return (
+      <div className={`epx-field${dc}`}>
+        <label className={field.labelClassName ?? "epx-field__label"}>{field.label}</label>
+        <CodeEditor
+          value={typeof value === "string" ? value : ""}
+          onChange={(v) => onChange(v)}
+          language={field.language ?? "html"}
+          placeholder={field.placeholder}
+        />
+      </div>
+    );
+  }
+
+  if (field.type === "number-units") {
+    return (
+      <NumberWithUnits
+        label={field.label}
+        value={typeof value === "string" ? value : undefined}
+        onChange={(v) => onChange(v)}
+        units={field.units}
+      />
+    );
+  }
+
+  if (field.type === "icon-group") {
+    return (
+      <IconGroup
+        label={field.label}
+        value={(value as IconGroupValue) ?? undefined}
+        onChange={(v) => onChange(v)}
+        showPosition={field.showPosition}
+      />
+    );
+  }
+
+  if (field.type === "toggle") {
+    const checked = Boolean(value);
+    return (
+      <FieldGroup isDirty={checked} onReset={() => onChange(false)}>
+        <div className="epx-side-input">
+          <span className="epx-side-input__label epx-side-input__label--row epx-row-label--section">{field.label}</span>
+          <label className="epx-toggle" style={{ marginLeft: "auto", paddingRight: 8 }}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(e) => onChange(e.target.checked)}
+            />
+            <span className="epx-toggle__track"><span className="epx-toggle__thumb" /></span>
+          </label>
+        </div>
+      </FieldGroup>
     );
   }
 

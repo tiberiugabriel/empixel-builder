@@ -1,0 +1,191 @@
+---
+import type { VideoConfig, VideoSourceValue, VideoOverlayValue } from "../types.js";
+import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+
+interface Props {
+  value: VideoConfig;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const cfg = value as Record<string, unknown>;
+
+const advanced = cfg.advanced as Record<string, string> | undefined;
+const cssId = advanced?.cssId || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const video = (value.video ?? {}) as VideoSourceValue;
+const overlay = (value.overlay ?? {}) as VideoOverlayValue;
+const aspect = value.aspectRatio ?? "16:9";
+const aspectMap: Record<string, string> = {
+  "1:1": "1 / 1",
+  "3:2": "3 / 2",
+  "4:3": "4 / 3",
+  "16:9": "16 / 9",
+  "21:9": "21 / 9",
+  "9:16": "9 / 16",
+};
+const aspectRatioCss = aspect === "custom"
+  ? `${value.aspectRatioCustomW || "16"} / ${value.aspectRatioCustomH || "9"}`
+  : aspectMap[aspect] ?? "16 / 9";
+
+// Resolve video URL.
+const videoUrl: string | undefined = video.src === "media" && video.media?.storageKey
+  ? `/_emdash/api/media/file/${video.media.storageKey}`
+  : video.url;
+
+function detectProvider(url: string | undefined): "youtube" | "vimeo" | "custom" | null {
+  if (!url) return null;
+  if (/youtu\.?be/i.test(url)) return "youtube";
+  if (/vimeo\.com/i.test(url)) return "vimeo";
+  if (/\.(mp4|webm|mov|ogv|m4v)(\?|$)/i.test(url)) return "custom";
+  return null;
+}
+
+const provider = detectProvider(videoUrl);
+
+function ytId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function vimeoId(url: string): string | null {
+  const m = url.match(/(?:vimeo\.com\/(?:video\/)?|player\.vimeo\.com\/video\/)(\d+)/);
+  return m ? m[1] : null;
+}
+
+function buildYouTubeUrl(id: string, v: VideoSourceValue): string {
+  const p = new URLSearchParams();
+  if (v.autoplay)            p.set("autoplay", "1");
+  if (v.mute || v.autoplay)  p.set("mute", "1");
+  if (v.controls === false)  p.set("controls", "0");
+  if (v.captions)            { p.set("cc_load_policy", "1"); }
+  p.set("rel", "0");
+  p.set("modestbranding", "1");
+  p.set("playsinline", "1");
+  if (v.controlsColor) {
+    // YouTube only supports two values: red (default) or white
+    const c = v.controlsColor.toLowerCase().includes("white") ? "white" : "red";
+    p.set("color", c);
+  }
+  return `https://www.youtube.com/embed/${id}?${p}`;
+}
+
+function buildVimeoUrl(id: string, v: VideoSourceValue): string {
+  const p = new URLSearchParams();
+  if (v.autoplay)             p.set("autoplay", "1");
+  if (v.mute || v.autoplay)   p.set("muted", "1");
+  if (v.controls === false)   p.set("controls", "0");
+  if (v.introTitle === false)    p.set("title", "0");
+  if (v.introPortrait === false) p.set("portrait", "0");
+  if (v.introByline === false)   p.set("byline", "0");
+  if (v.controlsColor)           p.set("color", v.controlsColor.replace(/^#/, ""));
+  return `https://player.vimeo.com/video/${id}?${p}`;
+}
+
+const overlayUrl: string | undefined = overlay.image?.storageKey
+  ? `/_emdash/api/media/file/${overlay.image.storageKey}`
+  : undefined;
+const overlayAlt: string = overlay.image?.alt ?? overlay.image?.filename ?? "";
+const overlaySize: string = overlay.size ?? "cover";
+const overlayPosition: string = overlay.position ?? "center";
+
+const ytUrl = provider === "youtube" && videoUrl ? (() => { const id = ytId(videoUrl); return id ? buildYouTubeUrl(id, video) : null; })() : null;
+const vimeoUrl = provider === "vimeo" && videoUrl ? (() => { const id = vimeoId(videoUrl); return id ? buildVimeoUrl(id, video) : null; })() : null;
+
+const lazy = video.lazyLoad ?? true;
+
+const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
+const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
+const customCss = blockId ? getCustomCss(cfg, blockId) : "";
+const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
+const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+
+const wrapperCss = blockId
+  ? `[data-epx-block="${blockId}"]{position:relative;width:100%;aspect-ratio:${aspectRatioCss};overflow:hidden;}
+     [data-epx-block="${blockId}"] > iframe,
+     [data-epx-block="${blockId}"] > video{position:absolute;inset:0;width:100%;height:100%;border:0;}`
+  : "";
+
+const allCss = [wrapperCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+---
+
+<div
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+>
+  {overlayUrl && (
+    <button
+      type="button"
+      class="epx-video-overlay"
+      data-epx-video-overlay
+      style={`position:absolute;inset:0;width:100%;height:100%;border:0;padding:0;background:none;cursor:pointer;z-index:2;`}
+      aria-label="Play video"
+    >
+      <img
+        src={overlayUrl}
+        alt={overlayAlt}
+        style={`width:100%;height:100%;object-fit:${overlaySize};object-position:${overlayPosition};display:block;`}
+        loading="lazy"
+        decoding="async"
+      />
+    </button>
+  )}
+
+  {provider === "youtube" && ytUrl && (
+    <iframe
+      data-epx-video-iframe
+      src={overlayUrl ? undefined : ytUrl}
+      data-epx-src={overlayUrl ? ytUrl : undefined}
+      title="YouTube video"
+      loading={lazy ? "lazy" : undefined}
+      allow="autoplay; encrypted-media; picture-in-picture"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allowfullscreen
+    />
+  )}
+
+  {provider === "vimeo" && vimeoUrl && (
+    <iframe
+      data-epx-video-iframe
+      src={overlayUrl ? undefined : vimeoUrl}
+      data-epx-src={overlayUrl ? vimeoUrl : undefined}
+      title="Vimeo video"
+      loading={lazy ? "lazy" : undefined}
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowfullscreen
+    />
+  )}
+
+  {provider === "custom" && videoUrl && (
+    <video
+      data-epx-video-iframe
+      src={overlayUrl ? undefined : videoUrl}
+      data-epx-src={overlayUrl ? videoUrl : undefined}
+      autoplay={video.autoplay && !overlayUrl ? true : undefined}
+      muted={video.mute || video.autoplay ? true : undefined}
+      controls={video.controls !== false ? true : undefined}
+      playsinline
+      preload={lazy ? "none" : "metadata"}
+    />
+  )}
+</div>
+
+{overlayUrl && (
+  <script is:inline>{`
+    (function(){
+      var btn = document.currentScript.previousElementSibling.querySelector('[data-epx-video-overlay]');
+      var media = document.currentScript.previousElementSibling.querySelector('[data-epx-video-iframe]');
+      if (!btn || !media) return;
+      btn.addEventListener('click', function(){
+        var src = media.getAttribute('data-epx-src');
+        if (src) media.setAttribute('src', src);
+        if (media.tagName === 'VIDEO') { try { media.play(); } catch(e){} }
+        btn.style.display = 'none';
+      });
+    })();
+  `}</script>
+)}
+
+{allCss && <style set:html={allCss} is:global />}

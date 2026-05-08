@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SideInput, IconReset, type SideValue } from "./SpacingControl.js";
 
 // ─── FieldGroup ───────────────────────────────────────────────────────────────
@@ -104,12 +105,13 @@ export function NumberRow({ label, value, onChange, labelClassName, step = 1, mi
 
 function SelectDropdown({ value, options, onSelect, onClose, anchorRef }: {
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: React.ReactNode }[];
   onSelect: (v: string) => void;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLDivElement>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -120,28 +122,75 @@ function SelectDropdown({ value, options, onSelect, onClose, anchorRef }: {
     return () => document.removeEventListener("mousedown", h);
   }, [onClose, anchorRef]);
 
-  return (
-    <div ref={panelRef} className="epx-unit-dropdown">
-      {options.map((opt) => (
+  useLayoutEffect(() => {
+    const reposition = () => {
+      const anchor = anchorRef.current;
+      const panel = panelRef.current;
+      if (!anchor || !panel) return;
+      const r = anchor.getBoundingClientRect();
+      const ph = panel.offsetHeight;
+      const spaceBelow = window.innerHeight - r.bottom;
+      const flipUp = spaceBelow < ph + 8 && r.top > ph + 8;
+      const top = flipUp ? Math.max(4, r.top - ph - 4) : r.bottom + 4;
+      const left = Math.max(4, r.right - panel.offsetWidth);
+      setPos({ top, left });
+    };
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [anchorRef]);
+
+  const portalStyle: React.CSSProperties = {
+    position: "fixed",
+    top: pos?.top ?? -9999,
+    left: pos?.left ?? -9999,
+    right: "auto",
+    width: "max-content",
+    zIndex: 9999,
+  };
+
+  const regular = options.filter((o) => o.value !== "custom");
+  const customOpts = options.filter((o) => o.value === "custom");
+
+  return createPortal(
+    <div ref={panelRef} className="epx-unit-dropdown" style={portalStyle}>
+      {regular.map((opt) => (
         <button key={opt.value} type="button"
           className={`epx-unit-dropdown__item${opt.value === value ? " is-active" : ""}`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(opt.value); onClose(); }}
         >{opt.label}</button>
       ))}
-    </div>
+      {customOpts.length > 0 && <div className="epx-unit-dropdown__sep" />}
+      {customOpts.map((opt) => (
+        <button key={opt.value} type="button"
+          className={`epx-unit-dropdown__item epx-unit-dropdown__item--pen${opt.value === value ? " is-active" : ""}`}
+          onMouseDown={(e) => { e.preventDefault(); onSelect(opt.value); onClose(); }}
+        >{opt.label}</button>
+      ))}
+    </div>,
+    document.body,
   );
 }
 
 // ─── SelectRow ────────────────────────────────────────────────────────────────
 
-export function SelectRow({ label, value, onChange, options, labelClassName, icon, labelSuffix }: {
+export function SelectRow({ label, value, onChange, options, labelClassName, icon, labelSuffix, leftAddon, onLabelMouseDown }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: React.ReactNode }[];
   labelClassName?: string;
   icon?: React.ReactNode;
   labelSuffix?: React.ReactNode;
+  /** Optional content rendered between the label and the dropdown — typically
+   *  a number/text input shown for "custom" values (mirrors SideInput's unit pattern). */
+  leftAddon?: React.ReactNode;
+  /** Optional mousedown handler on the label to allow drag-scrubbing values. */
+  onLabelMouseDown?: (e: React.MouseEvent) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -149,7 +198,15 @@ export function SelectRow({ label, value, onChange, options, labelClassName, ico
 
   return (
     <div className="epx-side-input">
-      <span className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${labelSuffix ? " epx-side-input__label--has-suffix" : ""}${labelClassName ? ` ${labelClassName}` : ""}`} {...(icon && label ? { "data-tooltip": label } : {})}>{icon ?? label}{labelSuffix}</span>
+      <span
+        className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${onLabelMouseDown ? " epx-side-input__label--scrub" : ""}${labelClassName ? ` ${labelClassName}` : ""}`}
+        style={onLabelMouseDown ? { cursor: "ew-resize" } : undefined}
+        onMouseDown={onLabelMouseDown}
+        title={onLabelMouseDown ? "Drag to adjust" : undefined}
+        {...(icon && label ? { "data-tooltip": label } : {})}
+      >{icon ?? label}</span>
+      {labelSuffix}
+      {leftAddon}
       <div ref={wrapRef} className="epx-field-row__select-wrap">
         <button type="button" className="epx-field-row__select-btn" onClick={() => setOpen(o => !o)}>
           <span>{display}</span>

@@ -197,6 +197,16 @@ Save button disabled when: isSaving OR (not isDirty AND not isBreakpointsDirty)
 - Both trigger `beforeunload` guard
 - Back button shows warning modal if either is dirty
 
+## v0.6+ — Canvas changes
+
+- **Custom CSS injection** — `Canvas.tsx` walks the section tree (`collectCustomCss`) and writes a global `<style id="epx-canvas-custom-css">` element to `document.head`. Mirrors the existing hover-css injector. Uses the shared `getCustomCss` helper from `styleUtils.ts` (with `selector` keyword substitution + smart wrap).
+- **Containing block for absolute/fixed/sticky** — `.epx-canvas__list` (the inner content wrapper, NOT the scroll container) gets `position: relative; transform: translateZ(0)`. Becomes containing block for `position: fixed` descendants without poisoning the surrounding scroll/resize behavior.
+- **Resize handle smoothness** — drag uses rAF coalescing (one `setLocalWidth` per frame). On mousedown, `document.body.classList.add("epx-resizing")` is set; CSS rule `body.epx-resizing .epx-canvas__preview-frame, body.epx-resizing .epx-canvas__list { pointer-events: none }` disables iframe/block pointer capture during drag (otherwise HTML-block iframes froze the cursor).
+- **Responsive frame** — `frameStyle` for resizable preview switched from `overflow: hidden` to `overflowX: hidden` (vertical scroll preserved).
+- **Empty state** — `.epx-canvas--empty .epx-canvas__preview-frame` is flex-centered both axes so the placeholder lands middle of viewport.
+- **Per-block previews receive `activeBreakpoint`** via `PreviewProps`, so previews can bp-merge their config (used by `TextEditorPreview`).
+- **Label overflow detector** — small `useEffect` in `Builder.tsx` runs `MutationObserver` + `ResizeObserver` to set `data-overflow="true"` on `.epx-side-input__label--full` / `.epx-spacing-ctrl__label` when truncated. CSS `::after { content: "..." }` shows literal three dots; `text-overflow: ellipsis` fallback only used when CSS variant unsupported.
+
 ## TODO
 
 - [ ] Add UNDO action + history stack (push before every mutation)

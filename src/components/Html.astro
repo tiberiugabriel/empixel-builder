@@ -1,0 +1,124 @@
+---
+import type { HtmlConfig } from "../types.js";
+import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+
+interface Props {
+  value: HtmlConfig;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const cfg = value as Record<string, unknown>;
+
+const advanced = cfg.advanced as Record<string, string> | undefined;
+const cssId = advanced?.cssId || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const rawCode = value.code ?? "";
+const frameId = blockId ?? `epx-html-${Math.random().toString(36).slice(2, 9)}`;
+
+function buildSrcdoc(code: string): string {
+  const hasFullDoc = /<html[\s>]/i.test(code);
+  if (hasFullDoc) return code;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;}</style></head><body>${code}</body></html>`;
+}
+
+const srcdoc = buildSrcdoc(rawCode);
+
+const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
+const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
+const customCss = blockId ? getCustomCss(cfg, blockId) : "";
+const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
+const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+
+// Hard-override sizing so the iframe always takes full width regardless of
+// surrounding flex/grid context, has no border, and has no internal scroll.
+const iframeOverrideCss = `iframe[data-epx-html-frame]{display:block;width:100%;max-width:100%;border:none!important;outline:none;flex:1 1 100%;align-self:stretch;min-width:0;box-sizing:border-box;}`;
+
+const allCss = [iframeOverrideCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+---
+
+<iframe
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+  data-epx-html-frame={frameId}
+  sandbox="allow-scripts allow-same-origin"
+  scrolling="no"
+  srcdoc={srcdoc}
+  frameborder="0"
+  style="display:block;width:100%;border:none;height:0;"
+/>
+
+<script is:inline>
+  (function(){
+    if (window.__epxHtmlAutoResize) return;
+    window.__epxHtmlAutoResize = true;
+
+    function size(f){
+      try{
+        var doc = f.contentDocument;
+        if (!doc || !doc.documentElement) return;
+        // Collapse iframe to 0 first so any vh / height:100% / min-height:100vh
+        // body styles don't feed back into our measurement. Layout is computed
+        // synchronously here; browser only paints at the next frame, so the
+        // intermediate 0 is invisible.
+        f.style.height = "0px";
+        // Force reflow inside iframe.
+        void doc.documentElement.offsetHeight;
+        var h = Math.max(
+          doc.documentElement.scrollHeight,
+          doc.documentElement.offsetHeight,
+          doc.body ? doc.body.scrollHeight : 0,
+          doc.body ? doc.body.offsetHeight : 0
+        );
+        if (h > 0) f.style.height = h + "px";
+      }catch(e){}
+    }
+
+    function watch(f){
+      function init(){
+        size(f);
+        try{
+          var doc = f.contentDocument;
+          if (!doc) return;
+          if (window.ResizeObserver && doc.body) {
+            new ResizeObserver(function(){ size(f); }).observe(doc.body);
+          }
+          if (window.MutationObserver && doc.body) {
+            new MutationObserver(function(){ size(f); }).observe(doc.body, { attributes:true, childList:true, subtree:true, characterData:true });
+          }
+          var imgs = doc.querySelectorAll("img");
+          for (var i=0;i<imgs.length;i++) imgs[i].addEventListener("load", function(){ size(f); });
+        }catch(e){}
+      }
+      f.addEventListener("load", init);
+      var ticks = 0;
+      var poll = setInterval(function(){
+        size(f);
+        ticks += 1;
+        if (ticks > 20) clearInterval(poll);
+      }, 100);
+      if (f.contentDocument && f.contentDocument.readyState === "complete") init();
+    }
+
+    function scan(){
+      var frames = document.querySelectorAll("iframe[data-epx-html-frame]");
+      for (var i=0;i<frames.length;i++){
+        var f = frames[i];
+        if (!f.__epxWatched) { f.__epxWatched = true; watch(f); }
+      }
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", scan);
+    } else {
+      scan();
+    }
+    window.addEventListener("load", scan);
+    setTimeout(scan, 100);
+    setTimeout(scan, 500);
+  })();
+</script>
+
+{allCss && <style set:html={allCss} is:global />}

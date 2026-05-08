@@ -97,6 +97,8 @@ const STYLE_PROPS = [
   "textTransform", "fontStyle", "textDecoration",
   "lineHeight", "letterSpacing", "wordSpacing",
   "mixBlendMode",
+  "aspectRatio",
+  "filter",
 ] as const;
 
 // Visual props that target the inner <img> for image blocks
@@ -164,16 +166,14 @@ export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgSco
     parts.push(`-webkit-text-stroke-color:${a < 1 ? hexToRgba(strokeColor, a) : strokeColor}`);
   }
 
-  // Text shadow (X Y Blur Color — color falls back to currentColor)
+  // Text shadow (X Y Blur Color — defaults to #000000 if not set)
   const tsx    = cssStr(style.textShadowX);
   const tsy    = cssStr(style.textShadowY);
   const tsblur = cssStr(style.textShadowBlur);
   if (tsx || tsy || tsblur) {
-    const tsColor = cssStr(style.textShadowColor);
+    const tsColor = cssStr(style.textShadowColor) || "#000000";
     const tsAlpha = (style.textShadowAlpha as number) ?? 1;
-    const colorPart = tsColor
-      ? ` ${tsAlpha < 1 ? hexToRgba(tsColor, tsAlpha) : tsColor}`
-      : "";
+    const colorPart = ` ${tsAlpha < 1 ? hexToRgba(tsColor, tsAlpha) : tsColor}`;
     parts.push(`text-shadow:${tsx || "0px"} ${tsy || "0px"} ${tsblur || "0px"}${colorPart}`);
   }
 
@@ -448,6 +448,8 @@ const BP_VISUAL_PROPS = [
   "textTransform", "fontStyle", "textDecoration",
   "lineHeight", "letterSpacing", "wordSpacing",
   "mixBlendMode",
+  "aspectRatio",
+  "filter",
 ] as const;
 
 // layoutSelector: when provided (e.g. for video containers), layout+gap rules target
@@ -515,11 +517,9 @@ export function buildBreakpointCss(
     const tsy    = cssStr(bpStyle.textShadowY);
     const tsblur = cssStr(bpStyle.textShadowBlur);
     if (tsx || tsy || tsblur) {
-      const tsColor = cssStr(bpStyle.textShadowColor);
+      const tsColor = cssStr(bpStyle.textShadowColor) || "#000000";
       const tsAlpha = (bpStyle.textShadowAlpha as number) ?? 1;
-      const colorPart = tsColor
-        ? ` ${tsAlpha < 1 ? hexToRgba(tsColor, tsAlpha) : tsColor}`
-        : "";
+      const colorPart = ` ${tsAlpha < 1 ? hexToRgba(tsColor, tsAlpha) : tsColor}`;
       visualParts.push(`text-shadow:${tsx || "0px"} ${tsy || "0px"} ${tsblur || "0px"}${colorPart}`);
     }
 
@@ -564,6 +564,12 @@ export function getBlockClass(config: Record<string, unknown>): string {
 export function getCustomCss(config: Record<string, unknown>, blockId: string): string {
   const advanced = (config.advanced ?? {}) as Record<string, unknown>;
   const css = cssStr(advanced.customCss);
-  if (!css) return "";
-  return `[data-epx-block="${blockId}"]{${css}}`;
+  if (!css || !blockId) return "";
+  const sel = `[data-epx-block="${blockId}"]`;
+  // Substitute the `selector` keyword (whole-word) with the block's attribute selector.
+  const replaced = css.replace(/\bselector\b/g, sel);
+  // If the user wrote rule blocks (contains `{`), emit as-is. Otherwise treat
+  // the input as bare declarations and wrap in a rule scoped to the block.
+  if (replaced.includes("{")) return replaced;
+  return `${sel}{${replaced}}`;
 }

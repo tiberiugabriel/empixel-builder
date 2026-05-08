@@ -63,7 +63,7 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 1. Astro page calls `getBuilderLayout(entryId, collection)` → queries SQLite
 2. Page renders `<LayoutRenderer sections={layout.sections} />`
 3. LayoutRenderer iterates sections — containers go to `SectionContainer.astro`, leaves to `BlockRenderer.astro`
-4. `BlockRenderer` dispatches leaves (testimonials/faq/pricing/spacer/text/image) by `block.type`
+4. `BlockRenderer` dispatches leaves (testimonials/faq/pricing/text/image/text-editor/video/button/icon/html/divider-spacer) by `block.type`
 5. Each component builds CSS via `buildBlockCss` / `buildHoverCss` / `buildBreakpointCss` / `getCustomCss` and injects it as a global `<style>` tag, with `[data-epx-block="<id>"]` selectors
 
 ## Key Concepts
@@ -175,16 +175,23 @@ src/
 │  │  ├─ ImagePreviewCard.tsx
 │  │  ├─ ThemeStyleToggle.tsx
 │  │  ├─ AlignControl.tsx
-│  │  ├─ TypographyControl.tsx
+│  │  ├─ TypographyControl.tsx          # adds linkColor (v0.6)
 │  │  ├─ TextStrokeControl.tsx
 │  │  ├─ TextShadowControl.tsx
 │  │  ├─ BlendModeControl.tsx
-│  │  └─ FieldRow.tsx
+│  │  ├─ FieldRow.tsx
+│  │  ├─ NumberWithUnits.tsx             # v0.6 — labeled number+unit standalone
+│  │  ├─ ColorNormalHover.tsx            # v0.6 — color picker w/ Normal/Hover toggle
+│  │  ├─ IconGroup.tsx                   # v0.6 — collapsible icon picker (src/size/color/shadow/pos)
+│  │  ├─ CssFiltersControl.tsx           # v0.6 — CSS filters (blur/brightness/contrast/etc.)
+│  │  ├─ VideoSourceControl.tsx          # v0.6 — extracted video sub-mode + provider auto-detect
+│  │  └─ CodeEditor.tsx                  # v0.6 — html/css/js editor w/ token-coloring + autocomplete
 │  │
 │  ├─ fields/                            # Field renderers
-│  │  ├─ FieldRenderer.tsx
+│  │  ├─ FieldRenderer.tsx              # dispatches: rich-text, code, number-units, icon-group (v0.6)
 │  │  ├─ JsonArrayField.tsx
-│  │  └─ PageBuilderField.tsx
+│  │  ├─ PageBuilderField.tsx
+│  │  └─ RichTextField.tsx               # v0.6 — wraps @emdash-cms/admin PortableTextEditor (lazy)
 │  │
 │  └─ previews/                          # Live preview components
 │     ├─ index.ts                        # PREVIEW_COMPONENTS export
@@ -192,24 +199,34 @@ src/
 │     ├─ FaqPreview.tsx
 │     ├─ PricingPreview.tsx
 │     ├─ ContainerPreview.tsx
-│     ├─ SpacerPreview.tsx
 │     ├─ TextPreview.tsx
-│     └─ ImagePreview.tsx
+│     ├─ ImagePreview.tsx
+│     ├─ TextEditorPreview.tsx           # v0.6
+│     ├─ VideoPreview.tsx                # v0.6
+│     ├─ ButtonPreview.tsx               # v0.6
+│     ├─ IconPreview.tsx                 # v0.6
+│     ├─ HtmlPreview.tsx                 # v0.6
+│     └─ DividerSpacerPreview.tsx        # v0.6
 │
 └─ components/                           # Frontend (Astro)
    ├─ index.ts                           # Exports + blockComponents map
-   ├─ BlockRenderer.astro                # Leaf block dispatcher
+   ├─ BlockRenderer.astro                # Leaf block dispatcher (12 leaves)
    ├─ LayoutRenderer.astro               # Root layout renderer
    ├─ SectionContainer.astro             # container block (recursive)
    ├─ BuilderWrapper.astro               # Builder-page wrapper
-   ├─ styleUtils.ts                      # CSS generation (selector-based)
+   ├─ styleUtils.ts                      # CSS generation (selector-based; aspectRatio + filter added v0.6)
    ├─ db.ts                              # getBuilderLayout()
    ├─ Testimonials.astro
    ├─ FaqSection.astro
    ├─ PricingSection.astro
-   ├─ SpacerSection.astro
    ├─ Text.astro
-   └─ Image.astro
+   ├─ Image.astro
+   ├─ TextEditor.astro                   # v0.6 — Portable Text via emdash/ui
+   ├─ Video.astro                        # v0.6 — YT/Vimeo/HTML5 + overlay click-to-play
+   ├─ Button.astro                       # v0.6 — <a> | <button>
+   ├─ Icon.astro                         # v0.6 — SVG mask color or <img> for PNG
+   ├─ Html.astro                         # v0.6 — raw set:html (trusted input)
+   └─ DividerSpacer.astro                # v0.6 — space + optional divider line / icon
 ```
 
 ## Roadmap

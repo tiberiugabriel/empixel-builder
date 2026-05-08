@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ function UnitDropdown({ unit, units, onSelect, onClose, anchorRef }: {
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const list = units ?? SPACING_UNITS;
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -82,8 +84,40 @@ function UnitDropdown({ unit, units, onSelect, onClose, anchorRef }: {
     return () => document.removeEventListener("mousedown", h);
   }, [onClose, anchorRef]);
 
-  return (
-    <div ref={panelRef} className="epx-unit-dropdown">
+  // Compute portal position. Flips up when not enough viewport space below.
+  useLayoutEffect(() => {
+    const reposition = () => {
+      const anchor = anchorRef.current;
+      const panel = panelRef.current;
+      if (!anchor || !panel) return;
+      const r = anchor.getBoundingClientRect();
+      const ph = panel.offsetHeight;
+      const spaceBelow = window.innerHeight - r.bottom;
+      const flipUp = spaceBelow < ph + 8 && r.top > ph + 8;
+      const top = flipUp ? Math.max(4, r.top - ph - 4) : r.bottom + 4;
+      const left = Math.max(4, r.right - panel.offsetWidth);
+      setPos({ top, left });
+    };
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [anchorRef]);
+
+  const portalStyle: React.CSSProperties = {
+    position: "fixed",
+    top: pos?.top ?? -9999,
+    left: pos?.left ?? -9999,
+    right: "auto",
+    width: "max-content",
+    zIndex: 9999,
+  };
+
+  return createPortal(
+    <div ref={panelRef} className="epx-unit-dropdown" style={portalStyle}>
       {list.map((u) => (
         <button key={u} type="button"
           className={`epx-unit-dropdown__item${u === unit ? " is-active" : ""}`}
@@ -95,7 +129,8 @@ function UnitDropdown({ unit, units, onSelect, onClose, anchorRef }: {
         className={`epx-unit-dropdown__item epx-unit-dropdown__item--pen${unit === "custom" ? " is-active" : ""}`}
         onMouseDown={(e) => { e.preventDefault(); onSelect("custom"); onClose(); }}
       ><IconPen /></button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -138,13 +173,13 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon, allow
   return (
     <div className="epx-side-input">
       <span
-        className={`epx-side-input__label${labelOverride ? " epx-side-input__label--full" : ""}${icon ? " epx-side-input__label--icon" : ""}${labelSuffix ? " epx-side-input__label--has-suffix" : ""}`}
+        className={`epx-side-input__label${labelOverride ? " epx-side-input__label--full" : ""}${icon ? " epx-side-input__label--icon" : ""}`}
         onMouseDown={handleScrubDown}
         title="Drag to adjust"
       >
         {icon ?? labelOverride ?? sideKey}
-        {labelSuffix}
       </span>
+      {labelSuffix}
       {value.unit === "custom" ? (
         <input
           type="text"

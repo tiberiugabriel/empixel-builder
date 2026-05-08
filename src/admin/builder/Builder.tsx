@@ -465,6 +465,41 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
     return () => window.removeEventListener("beforeunload", handler);
   }, [state.isDirty, isBreakpointsDirty]);
 
+  // Detect overflow on labels so CSS ::after can show "..." indicator.
+  useEffect(() => {
+    const SEL = ".epx-side-input__label--full, .epx-spacing-ctrl__label";
+    const watched = new WeakMap<Element, ResizeObserver>();
+    const update = (el: HTMLElement) => {
+      const overflow = el.scrollWidth > el.clientWidth + 1;
+      if ((el.dataset.overflow === "true") !== overflow) {
+        el.dataset.overflow = overflow ? "true" : "false";
+      }
+    };
+    const watch = (el: HTMLElement) => {
+      if (watched.has(el)) return;
+      update(el);
+      const ro = new ResizeObserver(() => update(el));
+      ro.observe(el);
+      watched.set(el, ro);
+    };
+    const scan = (root: ParentNode) => {
+      root.querySelectorAll<HTMLElement>(SEL).forEach(watch);
+    };
+    scan(document);
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((n) => {
+          if (n instanceof HTMLElement) {
+            if (n.matches(SEL)) watch(n);
+            scan(n);
+          }
+        });
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => { mo.disconnect(); };
+  }, []);
+
   const doNavigateBack = useCallback(() => {
     if (backUrl) { window.location.href = backUrl; } else { onBack(); }
   }, [backUrl, onBack]);

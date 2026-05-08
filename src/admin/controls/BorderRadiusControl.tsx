@@ -105,7 +105,10 @@ export function BorderRadiusControl({ value, onChange, breakpointIndicator }: {
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {isMixed ? (
-              <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Radius{breakpointIndicator}</span>
+              <>
+                <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Radius</span>
+                {breakpointIndicator}
+              </>
             ) : (
               <SideInput sideKey="" labelOverride="Radius" value={collapsedValue} onChange={handleCollapsedChange} labelSuffix={breakpointIndicator} />
             )}

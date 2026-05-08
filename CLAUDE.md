@@ -7,7 +7,7 @@ Drag-and-drop page builder plugin. Layouts stored as JSON in SQLite, rendered vi
 Read these two files at the start of every chat before doing any work:
 
 1. **`.claude/prd-index.md`** — architecture overview, full file tree, data flow, key concepts, terminology
-2. **`.claude/prd.md`** — current version (v0.5.0), completed features, what's in progress, next priorities
+2. **`.claude/prd.md`** — current version (v0.6.0), completed features, what's in progress, next priorities
 
 Then load the relevant sub-PRD based on the task:
 

@@ -3,9 +3,14 @@ import type { SectionBlock } from "../types.js";
 import Testimonials from "./Testimonials.astro";
 import FaqSection from "./FaqSection.astro";
 import PricingSection from "./PricingSection.astro";
-import SpacerSection from "./SpacerSection.astro";
 import Text from "./Text.astro";
 import ImageBlock from "./Image.astro";
+import TextEditor from "./TextEditor.astro";
+import Video from "./Video.astro";
+import Button from "./Button.astro";
+import Icon from "./Icon.astro";
+import Html from "./Html.astro";
+import DividerSpacer from "./DividerSpacer.astro";
 import { buildBlockCss, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,7 +18,6 @@ const LEAF_COMPONENTS: Record<string, any> = {
   testimonials: Testimonials,
   faq: FaqSection,
   pricing: PricingSection,
-  spacer: SpacerSection,
 };
 
 interface Props {
@@ -39,6 +43,30 @@ const allCss      = [blockCss, hoverCss, customCss].filter(Boolean).join("");
 
 {block.type === "image" && (
   <ImageBlock value={block.config} blockId={block.id} />
+)}
+
+{block.type === "text-editor" && (
+  <TextEditor value={block.config} blockId={block.id} />
+)}
+
+{block.type === "video" && (
+  <Video value={block.config} blockId={block.id} />
+)}
+
+{block.type === "button" && (
+  <Button value={block.config} blockId={block.id} />
+)}
+
+{block.type === "icon" && (
+  <Icon value={block.config} blockId={block.id} />
+)}
+
+{block.type === "html" && (
+  <Html value={block.config} blockId={block.id} />
+)}
+
+{block.type === "divider-spacer" && (
+  <DividerSpacer value={block.config} blockId={block.id} />
 )}
 
 {Component && (

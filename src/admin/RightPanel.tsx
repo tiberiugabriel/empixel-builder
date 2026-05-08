@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import type { SectionBlock, BreakpointId, BreakpointsConfig } from "../types.js";
 import { BREAKPOINT_DEFS } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { getBpIcon } from "./components/BreakpointIcons.js";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
-import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideValue, type SpacingKeys } from "./controls/SpacingControl.js";
+import { SpacingControl, SideInput, parseSide, serializeSide, type SpacingValue, type SideValue, type SpacingKeys } from "./controls/SpacingControl.js";
 import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
 import { BoxShadowControl, parseShadow, serializeShadow, type BoxShadowConfig } from "./controls/BoxShadowControl.js";
@@ -22,6 +22,14 @@ import { TypographyControl, parseTypography, serializeTypography, type Typograph
 import { TextStrokeControl, parseTextStroke, serializeTextStroke, type TextStrokeValue } from "./controls/TextStrokeControl.js";
 import { TextShadowControl, parseTextShadow, serializeTextShadow, type TextShadowValue } from "./controls/TextShadowControl.js";
 import { BlendModeControl, parseBlendMode, serializeBlendMode, type BlendModeValue } from "./controls/BlendModeControl.js";
+import { CodeEditor } from "./controls/CodeEditor.js";
+import { NumberWithUnits } from "./controls/NumberWithUnits.js";
+import { ColorNormalHover } from "./controls/ColorNormalHover.js";
+import { IconGroup } from "./controls/IconGroup.js";
+import { CssFiltersControl, parseFilter, serializeFilter, type CssFiltersValue } from "./controls/CssFiltersControl.js";
+import { VideoSourceControl } from "./controls/VideoSourceControl.js";
+import { ColorPicker, getColorDisplay, type ColorFormat } from "./controls/ColorPicker.js";
+import type { VideoSourceValue, VideoOverlayValue, DividerConfig, DividerStyle, DividerGradient, DividerGradientStop } from "../types.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -104,107 +112,6 @@ type AdvancedConfig = {
 
 export function PanelDivider() {
   return <div className="epx-panel-divider" />;
-}
-
-// ─── CodeEditor ───────────────────────────────────────────────────────────────
-
-function CodeEditor({
-  value,
-  onChange,
-  selector,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  selector: string;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lineNumsRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
-  const copySelector = () => {
-    navigator.clipboard.writeText(selector).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-  const lineCount = value === "" ? 1 : value.split("\n").length;
-
-  // Sync line numbers scroll with textarea scroll
-  const handleScroll = () => {
-    if (lineNumsRef.current && textareaRef.current) {
-      lineNumsRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  };
-
-  // Tab key → insert 4 spaces (no focus jump)
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Tab") return;
-    e.preventDefault();
-    const ta = textareaRef.current!;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const next = value.substring(0, start) + "    " + value.substring(end);
-    onChange(next);
-    // Restore caret after React re-render
-    requestAnimationFrame(() => {
-      ta.selectionStart = ta.selectionEnd = start + 4;
-    });
-  };
-
-  // Keep cursor position stable across onChange re-renders
-  const selStart = useRef(0);
-  const selEnd = useRef(0);
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.selectionStart = selStart.current;
-    ta.selectionEnd = selEnd.current;
-  });
-
-  const placeholder = `color: red;\nfont-size: 18px;`;
-
-  return (
-    <div className="epx-code-editor">
-      <div className="epx-code-editor__header">
-        <button type="button" className="epx-code-editor__copy-btn" onClick={copySelector} title="Copy selector">
-          {copied ? (
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          ) : (
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="4" y="1" width="7" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.2"/><rect x="1" y="3" width="7" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.2" fill="var(--epx-surface-code)"/></svg>
-          )}
-        </button>
-        <div className="epx-code-editor__selector-scroll">
-          <span className="epx-code-editor__selector-kw">selector</span>
-          <span className="epx-code-editor__selector-eq"> = </span>
-          <span className="epx-code-editor__selector-val">{selector}</span>
-        </div>
-      </div>
-      <div className="epx-code-editor__body">
-        <div ref={lineNumsRef} className="epx-code-editor__line-nums" aria-hidden="true">
-          {Array.from({ length: lineCount }, (_, i) => (
-            <div key={i} className="epx-code-editor__line-num">{i + 1}</div>
-          ))}
-        </div>
-        <textarea
-          ref={textareaRef}
-          className="epx-code-editor__textarea"
-          value={value}
-          placeholder={placeholder}
-          spellCheck={false}
-          onScroll={handleScroll}
-          onKeyDown={handleKeyDown}
-          onSelect={(e) => {
-            selStart.current = (e.target as HTMLTextAreaElement).selectionStart;
-            selEnd.current = (e.target as HTMLTextAreaElement).selectionEnd;
-          }}
-          onChange={(e) => {
-            selStart.current = e.target.selectionStart;
-            selEnd.current = e.target.selectionEnd;
-            onChange(e.target.value);
-          }}
-        />
-      </div>
-    </div>
-  );
 }
 
 const HTML_TAG_OPTIONS = [
@@ -430,7 +337,8 @@ function AdvancedTab({
         <CodeEditor
           value={value.customCss ?? ""}
           onChange={(v) => set("customCss", v)}
-          selector={selector}
+          language="css"
+          selectorHeader={selector}
         />
       </div>
     </div>
@@ -449,6 +357,14 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
   const [bgMode, setBgMode] = useState<"normal" | "hover">("normal");
   const [opacityMode, setOpacityMode] = useState<"normal" | "hover">("normal");
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [videoOverlayPickerOpen, setVideoOverlayPickerOpen] = useState(false);
+  const [divColorOpen, setDivColorOpen] = useState(false);
+  const [divColorPos, setDivColorPos] = useState({ top: 0, left: 0 });
+  const [divColorFormat, setDivColorFormat] = useState<ColorFormat>("HEX");
+  const divColorSwatchRef = useRef<HTMLButtonElement>(null);
+  const [divGradPickerKey, setDivGradPickerKey] = useState<number | null>(null);
+  const [divGradPickerPos, setDivGradPickerPos] = useState({ top: 0, left: 0 });
+  const [divGradColorFormat, setDivGradColorFormat] = useState<ColorFormat>("HEX");
   const [trackedId, setTrackedId] = useState(block?.id);
 
   if (block?.id !== trackedId) {
@@ -459,6 +375,9 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
     setBgMode("normal");
     setOpacityMode("normal");
     setImagePickerOpen(false);
+    setVideoOverlayPickerOpen(false);
+    setDivColorOpen(false);
+    setDivGradPickerKey(null);
   }
 
   if (!block) {
@@ -546,6 +465,17 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
     const px = getEffectiveBpPx(activeBreakpoint, breakpointsConfig);
     const current = styleHoverBreakpoints[activeBreakpoint] ?? {};
     onChange({ styleHoverBreakpoints: { ...styleHoverBreakpoints, [activeBreakpoint]: { ...current, _px: px, ...patch } } });
+  };
+
+  // Per-breakpoint overrides for top-level config keys (non-CSS fields like
+  // dropCap, columns, columnsGap). Mirrors `writeBpStyle`/`bpStyleRaw` but
+  // targets `block.config.configBreakpoints[bpId]`.
+  const configBreakpoints = (block.config.configBreakpoints ?? {}) as Record<string, Record<string, unknown>>;
+  const bpConfigRaw = isNonDesktop ? (configBreakpoints[activeBreakpoint] ?? {}) : {};
+  const writeBpConfig = (patch: Record<string, unknown>) => {
+    const px = getEffectiveBpPx(activeBreakpoint, breakpointsConfig);
+    const current = configBreakpoints[activeBreakpoint] ?? {};
+    onChange({ configBreakpoints: { ...configBreakpoints, [activeBreakpoint]: { ...current, _px: px, ...patch } } });
   };
 
   const radiusSource = isNonDesktop
@@ -655,11 +585,18 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
     else onChange({ style: { ...style, ...serializeBlendMode(val) } });
   };
 
+  const hideStyleTab = block.type === "html";
+
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
     { id: "fields", icon: <IconFields />, title: "Fields" },
-    { id: "style", icon: <IconStyle />, title: "Style" },
+    ...(hideStyleTab ? [] : [{ id: "style" as Tab, icon: <IconStyle />, title: "Style" }]),
     { id: "advanced", icon: <IconAdvanced />, title: "Advanced" },
   ];
+
+  // If style tab is hidden but currently active, switch to fields.
+  if (hideStyleTab && activeTab === "style") {
+    setActiveTab("fields");
+  }
 
   return (
     <aside className="epx-right-panel">
@@ -696,6 +633,154 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
                 onChange={(val) => onChange({ [field.key]: val })}
               />
             ))}
+          {block.type === "text-editor" && (() => {
+            // Effective per-breakpoint reads — bp override falls back to base.
+            const baseDropCap = !!block.config.dropCap;
+            const baseColumns = (block.config.columns as string) ?? "1";
+            const baseColumnsCustom = block.config.columnsCustom as number | undefined;
+            const baseColumnsGap = (block.config.columnsGap as string) ?? "0px";
+            const eff = isNonDesktop ? { ...block.config, ...bpConfigRaw } : block.config;
+            const effDropCap = !!eff.dropCap;
+            const effColumns = (eff.columns as string) ?? "1";
+            const effColumnsCustom = eff.columnsCustom as number | undefined;
+            const effColumnsGap = (eff.columnsGap as string) ?? "0px";
+
+            const setKey = (key: string, val: unknown) => {
+              if (isNonDesktop) writeBpConfig({ [key]: val });
+              else onChange({ [key]: val });
+            };
+
+            const dropCapDirty = isNonDesktop
+              ? bpConfigRaw.dropCap !== undefined
+              : baseDropCap;
+            const columnsDirty = isNonDesktop
+              ? bpConfigRaw.columns !== undefined || bpConfigRaw.columnsCustom !== undefined
+              : baseColumns !== "1" || baseColumnsCustom !== undefined;
+            const columnsGapDirty = isNonDesktop
+              ? bpConfigRaw.columnsGap !== undefined
+              : !!baseColumnsGap && baseColumnsGap !== "0px";
+
+            return (
+              <>
+                {/* Drop Cap toggle (bp-aware) */}
+                <FieldGroup
+                  isDirty={dropCapDirty}
+                  onReset={() => {
+                    if (isNonDesktop) writeBpConfig({ dropCap: undefined });
+                    else onChange({ dropCap: false });
+                  }}
+                >
+                  <div className="epx-side-input">
+                    <span className="epx-side-input__label epx-side-input__label--row epx-row-label--section">Drop Cap</span>
+                    {breakpointIndicator}
+                    <label className="epx-toggle" style={{ marginLeft: "auto", paddingRight: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={effDropCap}
+                        onChange={(e) => setKey("dropCap", e.target.checked)}
+                      />
+                      <span className="epx-toggle__track"><span className="epx-toggle__thumb" /></span>
+                    </label>
+                  </div>
+                </FieldGroup>
+
+                {/* Columns dropdown + inline custom input (bp-aware), scrubable label. */}
+                <FieldGroup
+                  isDirty={columnsDirty}
+                  onReset={() => {
+                    if (isNonDesktop) writeBpConfig({ columns: undefined, columnsCustom: undefined });
+                    else onChange({ columns: "1", columnsCustom: undefined });
+                  }}
+                >
+                  <SelectRow
+                    label="Columns"
+                    value={effColumns}
+                    onChange={(v) => setKey("columns", v)}
+                    options={[
+                      { value: "1", label: "1" },
+                      { value: "2", label: "2" },
+                      { value: "3", label: "3" },
+                      {
+                        value: "custom",
+                        label: (
+                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M8.5 1.5a1.414 1.414 0 0 1 2 2L4 10H2v-2L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        ),
+                      },
+                    ]}
+                    labelClassName="epx-row-label--section"
+                    labelSuffix={breakpointIndicator}
+                    onLabelMouseDown={(e) => {
+                      e.preventDefault();
+                      const startX = e.clientX;
+                      const startCount = effColumns === "custom"
+                        ? (effColumnsCustom ?? 1)
+                        : Number(effColumns) || 1;
+                      document.body.style.cursor = "ew-resize";
+                      document.body.style.userSelect = "none";
+                      const onMove = (ev: MouseEvent) => {
+                        // 8px drag = 1 column step.
+                        const next = Math.max(1, Math.round(startCount + (ev.clientX - startX) / 8));
+                        if (next <= 3) {
+                          const v = String(next);
+                          setKey("columns", v);
+                          // Clear custom when going back to preset.
+                          if (effColumnsCustom !== undefined) setKey("columnsCustom", undefined);
+                        } else {
+                          setKey("columns", "custom");
+                          setKey("columnsCustom", next);
+                        }
+                      };
+                      const onUp = () => {
+                        document.body.style.cursor = "";
+                        document.body.style.userSelect = "";
+                        window.removeEventListener("mousemove", onMove);
+                        window.removeEventListener("mouseup", onUp);
+                      };
+                      window.addEventListener("mousemove", onMove);
+                      window.addEventListener("mouseup", onUp);
+                    }}
+                    leftAddon={effColumns === "custom" ? (
+                      <input
+                        type="number"
+                        className="epx-side-input__num"
+                        min={2}
+                        step={1}
+                        value={effColumnsCustom ?? ""}
+                        placeholder="4"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setKey("columnsCustom", raw === "" ? undefined : Number(raw));
+                        }}
+                      />
+                    ) : null}
+                  />
+                </FieldGroup>
+
+                {/* Columns Gap (bp-aware) — inline SideInput to use a single FieldGroup wrapper. */}
+                <FieldGroup
+                  isDirty={columnsGapDirty}
+                  onReset={() => {
+                    if (isNonDesktop) writeBpConfig({ columnsGap: undefined });
+                    else onChange({ columnsGap: "0px" });
+                  }}
+                >
+                  <SideInput
+                    sideKey=""
+                    labelOverride="Columns Gap"
+                    value={parseSide(effColumnsGap)}
+                    onChange={(next) => {
+                      const isEmpty = next.num === 0 && next.unit === "px";
+                      setKey("columnsGap", isEmpty ? "" : serializeSide(next));
+                    }}
+                    units={["px", "rem", "em", "%"]}
+                    labelSuffix={breakpointIndicator}
+                  />
+                </FieldGroup>
+              </>
+            );
+          })()}
           {block.type === "text" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <FieldGroup
@@ -792,6 +877,399 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
               </div>
             </>
           )}
+          {block.type === "video" && (() => {
+            const video = (block.config.video ?? {}) as VideoSourceValue;
+            const overlay = (block.config.overlay ?? {}) as VideoOverlayValue;
+            const overlayImg = overlay.image;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <VideoSourceControl
+                  value={video}
+                  onChange={(v) => onChange({ video: v })}
+                  breakpointIndicator={breakpointIndicator}
+                />
+                <PanelDivider />
+                <span className="epx-row-label--section" style={{ fontSize: 11, color: "var(--epx-text-faint)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Image Overlay</span>
+                <ImagePreviewCard
+                  image={overlayImg}
+                  onSelect={() => setVideoOverlayPickerOpen(true)}
+                  onRemove={() => onChange({ overlay: { ...overlay, image: undefined } })}
+                  emptyLabel="Select Overlay Image"
+                  boxed
+                />
+                {videoOverlayPickerOpen && (
+                  <MediaPicker
+                    title="Select Overlay Image"
+                    mimeTypeFilter="image/"
+                    onSelect={([ref]) => {
+                      if (ref) onChange({ overlay: { ...overlay, image: ref } });
+                      setVideoOverlayPickerOpen(false);
+                    }}
+                    onClose={() => setVideoOverlayPickerOpen(false)}
+                    selectedIds={overlayImg?.id ? [overlayImg.id] : []}
+                  />
+                )}
+                <FieldGroup
+                  isDirty={!!overlay.resolution && overlay.resolution !== "full"}
+                  onReset={() => onChange({ overlay: { ...overlay, resolution: undefined } })}
+                >
+                  <SelectRow
+                    label="Resolution"
+                    value={overlay.resolution ?? "full"}
+                    onChange={(v) => onChange({ overlay: { ...overlay, resolution: v as VideoOverlayValue["resolution"] } })}
+                    options={RESOLUTION_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                <FieldGroup
+                  isDirty={!!overlay.size && overlay.size !== "cover"}
+                  onReset={() => onChange({ overlay: { ...overlay, size: undefined } })}
+                >
+                  <SelectRow
+                    label="Size"
+                    value={overlay.size ?? "cover"}
+                    onChange={(v) => onChange({ overlay: { ...overlay, size: v as VideoOverlayValue["size"] } })}
+                    options={[{ value: "cover", label: "Cover" }, { value: "contain", label: "Contain" }, { value: "auto", label: "Auto" }]}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                <FieldGroup
+                  isDirty={!!overlay.position && overlay.position !== "center"}
+                  onReset={() => onChange({ overlay: { ...overlay, position: undefined } })}
+                >
+                  <SelectRow
+                    label="Position"
+                    value={overlay.position ?? "center"}
+                    onChange={(v) => onChange({ overlay: { ...overlay, position: v } })}
+                    options={OBJECT_POSITION_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                <IconGroup
+                  label="Overlay Icon"
+                  value={overlay.icon}
+                  onChange={(v) => onChange({ overlay: { ...overlay, icon: v } })}
+                  showPosition={false}
+                />
+              </div>
+            );
+          })()}
+          {block.type === "button" && (
+            <LinkControl value={linkValue} onChange={handleLink} />
+          )}
+          {block.type === "icon" && (
+            <LinkControl value={linkValue} onChange={handleLink} />
+          )}
+          {block.type === "divider-spacer" && (() => {
+            const divider = (block.config.divider ?? {}) as DividerConfig;
+            const setDivider = (patch: Partial<DividerConfig>) =>
+              onChange({ divider: { ...divider, ...patch } });
+            const dividerActive = divider.style && divider.style !== "none";
+            const isGradient = divider.style === "gradient";
+            const gradient: DividerGradient = divider.gradient ?? {
+              angle: 0,
+              stops: [
+                { color: "#000000", alpha: 1, pos: 0 },
+                { color: "#000000", alpha: 0, pos: 100 },
+              ],
+            };
+            const gradStops: DividerGradientStop[] = gradient.stops ?? [];
+            const setGradient = (patch: Partial<DividerGradient>) =>
+              setDivider({ gradient: { ...gradient, ...patch } });
+            const updateStop = (i: number, patch: Partial<DividerGradientStop>) =>
+              setGradient({ stops: gradStops.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) });
+            const addStop = () =>
+              setGradient({
+                stops: [
+                  ...gradStops,
+                  { color: "#888888", alpha: 1, pos: Math.min(100, (gradStops[gradStops.length - 1]?.pos ?? 50) + 10) },
+                ],
+              });
+            const removeStop = (i: number) => {
+              if (gradStops.length <= 2) return;
+              setGradient({ stops: gradStops.filter((_, idx) => idx !== i) });
+            };
+            const openDivColor = () => {
+              if (divColorSwatchRef.current) {
+                const r = divColorSwatchRef.current.getBoundingClientRect();
+                setDivColorPos({ top: r.bottom + 4, left: r.left - 180 });
+              }
+              setDivColorOpen((o) => !o);
+            };
+            const openGradStop = (i: number, el: HTMLElement) => {
+              const r = el.getBoundingClientRect();
+              setDivGradPickerPos({ top: r.bottom + 4, left: r.left - 180 });
+              setDivGradPickerKey((prev) => (prev === i ? null : i));
+            };
+            // Scrub helpers (mirror BackgroundControl gradient editor patterns)
+            const startAngleScrub = (e: React.MouseEvent) => {
+              e.preventDefault();
+              const startX = e.clientX;
+              const startAngle = gradient.angle ?? 0;
+              document.body.style.cursor = "ew-resize";
+              document.body.style.userSelect = "none";
+              const onMove = (ev: MouseEvent) => {
+                const next = ((Math.round(startAngle + (ev.clientX - startX)) % 360) + 360) % 360;
+                setGradient({ angle: next });
+              };
+              const onUp = () => {
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            };
+            const startStopPosScrub = (i: number) => (e: React.MouseEvent) => {
+              e.preventDefault();
+              const startX = e.clientX;
+              const startPos = gradStops[i].pos;
+              document.body.style.cursor = "ew-resize";
+              document.body.style.userSelect = "none";
+              const onMove = (ev: MouseEvent) => {
+                const next = Math.min(100, Math.max(0, Math.round(startPos + (ev.clientX - startX) / 2)));
+                updateStop(i, { pos: next });
+              };
+              const onUp = () => {
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            };
+            // Convert UI angle (0=top→bottom, clockwise) to CSS angle.
+            // CSS linear-gradient uses 0=bottom→top, 180=top→bottom. So css = (ui + 180) % 360.
+            const cssAngle = (((gradient.angle ?? 0) + 180) % 360);
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <PanelDivider />
+                <span className="epx-row-label--section" style={{ fontSize: 11, color: "var(--epx-text-faint)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Divider</span>
+                <FieldGroup
+                  isDirty={!!divider.style && divider.style !== "none"}
+                  onReset={() => setDivider({ style: "none" })}
+                >
+                  <SelectRow
+                    label="Style"
+                    value={divider.style ?? "none"}
+                    onChange={(v) => setDivider({ style: v as DividerStyle })}
+                    options={[
+                      { value: "none",     label: "None" },
+                      { value: "solid",    label: "Solid" },
+                      { value: "dashed",   label: "Dashed" },
+                      { value: "dotted",   label: "Dotted" },
+                      { value: "double",   label: "Double" },
+                      { value: "groove",   label: "Groove" },
+                      { value: "ridge",    label: "Ridge" },
+                      { value: "gradient", label: "Gradient" },
+                      { value: "wavy",     label: "Wavy" },
+                      { value: "zigzag",   label: "Zigzag" },
+                    ]}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                {dividerActive && (
+                  <>
+                    <NumberWithUnits
+                      label="Width"
+                      value={divider.width}
+                      onChange={(v) => setDivider({ width: v || undefined })}
+                      units={["px", "rem", "em"]}
+                    />
+                    <NumberWithUnits
+                      label="Length"
+                      value={divider.length}
+                      onChange={(v) => setDivider({ length: v || undefined })}
+                      units={["%", "px", "rem", "em", "vw"]}
+                    />
+                    {!isGradient && (
+                      <FieldGroup
+                        isDirty={!!divider.color || (divider.colorAlpha !== undefined && divider.colorAlpha < 1)}
+                        onReset={() => setDivider({ color: undefined, colorAlpha: undefined })}
+                      >
+                        <div className="epx-side-input">
+                          <span className="epx-side-input__label epx-side-input__label--row">Color</span>
+                          <div className="epx-border-color-cell" style={{ flex: 1 }}>
+                            <button
+                              ref={divColorSwatchRef}
+                              type="button"
+                              className="epx-border-color-swatch"
+                              style={{ background: divider.color || "#000000", opacity: divider.colorAlpha ?? 1 }}
+                              onClick={openDivColor}
+                            />
+                            <span className="epx-border-color-hex">{getColorDisplay(divider.color || "#000000", divColorFormat)}</span>
+                            {divColorOpen && (
+                              <ColorPicker
+                                value={divider.color || "#000000"}
+                                alpha={divider.colorAlpha ?? 1}
+                                onChange={(hex, a) => setDivider({ color: hex, colorAlpha: a })}
+                                onClose={() => setDivColorOpen(false)}
+                                position={divColorPos}
+                                format={divColorFormat}
+                                onFormatChange={setDivColorFormat}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </FieldGroup>
+                    )}
+                    {isGradient && (
+                      <div className="epx-bg-ctrl__card" style={{ marginTop: 4 }}>
+                        <div className="epx-spacing-ctrl__exp-header">
+                          <span className="epx-spacing-ctrl__label">Gradient</span>
+                        </div>
+                        <div className="epx-bg-ctrl__body">
+                          {/* Angle row with scrub label */}
+                          <div className="epx-bg-ctrl__stop" style={{ borderTopColor: "transparent", display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+                            <span
+                              className="epx-bg-ctrl__stop-label"
+                              style={{ cursor: "ew-resize" }}
+                              title="Drag to adjust"
+                              onMouseDown={startAngleScrub}
+                            >Angle</span>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                              <input
+                                type="number"
+                                className="epx-bg-ctrl__stop-pos"
+                                style={{ width: 46 }}
+                                value={gradient.angle ?? 0}
+                                min={0}
+                                max={360}
+                                onChange={(e) => setGradient({ angle: Number(e.target.value) })}
+                              />
+                              <span className="epx-bg-ctrl__stop-unit">°</span>
+                            </div>
+                          </div>
+                          {/* Stops list — sorted by pos, % scrubable */}
+                          {[...gradStops]
+                            .map((stop, i) => ({ stop, i }))
+                            .sort((a, b) => a.stop.pos - b.stop.pos)
+                            .map(({ stop, i }) => (
+                              <div key={i} className="epx-bg-ctrl__stop">
+                                <button
+                                  type="button"
+                                  className="epx-bg-ctrl__swatch"
+                                  onClick={(e) => openGradStop(i, e.currentTarget)}
+                                  title="Pick color"
+                                >
+                                  <div className="epx-bg-ctrl__swatch-fill" style={{ background: stop.color, opacity: stop.alpha }} />
+                                </button>
+                                <span className="epx-bg-ctrl__hex" style={{ flex: 1 }}>{getColorDisplay(stop.color, divGradColorFormat)}</span>
+                                <input
+                                  type="number"
+                                  className="epx-bg-ctrl__stop-pos"
+                                  value={stop.pos}
+                                  min={0}
+                                  max={100}
+                                  onChange={(e) => updateStop(i, { pos: Number(e.target.value) })}
+                                />
+                                <span
+                                  className="epx-bg-ctrl__stop-unit"
+                                  style={{ cursor: "ew-resize" }}
+                                  onMouseDown={startStopPosScrub(i)}
+                                  title="Drag to adjust"
+                                >%</span>
+                                <button
+                                  type="button"
+                                  className="epx-bg-ctrl__stop-remove"
+                                  onClick={() => removeStop(i)}
+                                  disabled={gradStops.length <= 2}
+                                  title="Remove stop"
+                                >×</button>
+                              </div>
+                            ))}
+                          <button
+                            type="button"
+                            className="epx-bg-ctrl__add-btn"
+                            onClick={addStop}
+                            disabled={gradStops.length >= 8}
+                          >+ Add Color Stop</button>
+                          {/* Preview bar with draggable markers (uses CSS-mapped angle for visual fidelity) */}
+                          {gradStops.length >= 2 && (() => {
+                            const sortedStops = [...gradStops].sort((a, b) => a.pos - b.pos);
+                            const previewBg = `linear-gradient(${cssAngle}deg, ${sortedStops.map((s) => {
+                              const c = s.color.replace("#", "");
+                              const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c.slice(0, 6);
+                              const n = parseInt(full.padEnd(6, "0"), 16);
+                              return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${s.alpha}) ${s.pos}%`;
+                            }).join(",")})`;
+                            const onMarkerDown = (i: number) => (e: React.MouseEvent) => {
+                              e.preventDefault();
+                              const bar = (e.currentTarget as HTMLElement).parentElement!;
+                              const rect = bar.getBoundingClientRect();
+                              document.body.style.cursor = "ew-resize";
+                              document.body.style.userSelect = "none";
+                              const onMove = (ev: MouseEvent) => {
+                                const pct = Math.min(100, Math.max(0, Math.round(((ev.clientX - rect.left) / rect.width) * 100)));
+                                updateStop(i, { pos: pct });
+                              };
+                              const onUp = () => {
+                                document.body.style.cursor = "";
+                                document.body.style.userSelect = "";
+                                window.removeEventListener("mousemove", onMove);
+                                window.removeEventListener("mouseup", onUp);
+                              };
+                              window.addEventListener("mousemove", onMove);
+                              window.addEventListener("mouseup", onUp);
+                            };
+                            return (
+                              <div
+                                className="epx-bg-ctrl__grad-preview"
+                                style={{ background: previewBg }}
+                              >
+                                {gradStops.map((stop, i) => (
+                                  <div
+                                    key={i}
+                                    className="epx-bg-ctrl__grad-marker"
+                                    style={{ left: `${stop.pos}%`, color: stop.color }}
+                                    onMouseDown={onMarkerDown(i)}
+                                  >
+                                    <div className="epx-bg-ctrl__grad-marker-arrow epx-bg-ctrl__grad-marker-arrow--top" />
+                                    <div className="epx-bg-ctrl__grad-marker-arrow epx-bg-ctrl__grad-marker-arrow--bottom" />
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                          {divGradPickerKey !== null && gradStops[divGradPickerKey] && (
+                            <ColorPicker
+                              value={gradStops[divGradPickerKey].color}
+                              alpha={gradStops[divGradPickerKey].alpha}
+                              onChange={(hex, a) => updateStop(divGradPickerKey, { color: hex, alpha: a })}
+                              onClose={() => setDivGradPickerKey(null)}
+                              position={divGradPickerPos}
+                              format={divGradColorFormat}
+                              onFormatChange={setDivGradColorFormat}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <FieldGroup
+                      isDirty={!!divider.align && divider.align !== "center"}
+                      onReset={() => setDivider({ align: "center" })}
+                    >
+                      <SelectRow
+                        label="Align"
+                        value={divider.align ?? "center"}
+                        onChange={(v) => setDivider({ align: v as DividerConfig["align"] })}
+                        options={[{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]}
+                        labelClassName="epx-row-label--section"
+                      />
+                    </FieldGroup>
+                    <IconGroup
+                      label="Divider Icon"
+                      value={divider.icon}
+                      onChange={(v) => setDivider({ icon: v })}
+                      showPosition={true}
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -800,33 +1278,210 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
           <AlignControl
             value={alignValue}
             onChange={handleAlign}
-            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+            breakpointIndicator={breakpointIndicator}
           />
           <TypographyControl
             value={typographyValue}
             onChange={handleTypography}
-            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+            breakpointIndicator={breakpointIndicator}
           />
           <TextStrokeControl
             value={strokeValue}
             onChange={handleStroke}
-            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+            breakpointIndicator={breakpointIndicator}
           />
           <TextShadowControl
             value={shadowTextValue}
             onChange={handleTextShadow}
-            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+            breakpointIndicator={breakpointIndicator}
           />
           <BlendModeControl
             value={blendModeValue}
             onChange={handleBlendMode}
-            breakpointIndicator={isNonDesktop ? breakpointIndicator : undefined}
+            breakpointIndicator={breakpointIndicator}
           />
         </div>
       )}
 
-      {activeTab === "style" && block.type !== "text" && (
+      {activeTab === "style" && (block.type === "text-editor") && (
         <div className="epx-right-panel__fields">
+          <AlignControl
+            value={alignValue}
+            onChange={handleAlign}
+            breakpointIndicator={breakpointIndicator}
+          />
+          <TypographyControl
+            value={parseTypography(style)}
+            onChange={(v) => onChange({ style: { ...style, ...serializeTypography(v) } })}
+          />
+          <TextShadowControl
+            value={shadowTextValue}
+            onChange={handleTextShadow}
+            breakpointIndicator={breakpointIndicator}
+          />
+          <NumberWithUnits
+            label="Paragraph Spacing"
+            value={(typoSource.paragraphSpacing as string) || ""}
+            onChange={(v) => {
+              if (isNonDesktop) writeBpStyle({ paragraphSpacing: v });
+              else onChange({ style: { ...style, paragraphSpacing: v } });
+            }}
+            units={["px", "rem", "em", "%"]}
+            breakpointIndicator={breakpointIndicator}
+          />
+          {(() => {
+            const dropCapBpOverride = bpConfigRaw.dropCap as boolean | undefined;
+            const dropCapEff = isNonDesktop && typeof dropCapBpOverride === "boolean"
+              ? dropCapBpOverride
+              : !!block.config.dropCap;
+            if (!dropCapEff) return null;
+            // Drop-cap settings — bp-aware reads from typoSource (style+bp), writes via writeBpStyle.
+            const dcSize = (typoSource.dropCapSize as string) || "";
+            const dcLines = (typoSource.dropCapLines as string) || "";
+            const dcMR = (typoSource.dropCapMarginRight as string) || "";
+            const writeDc = (key: string, v: string) => {
+              if (isNonDesktop) writeBpStyle({ [key]: v });
+              else onChange({ style: { ...style, [key]: v } });
+            };
+            return (
+              <>
+                <PanelDivider />
+                <span className="epx-row-label--section" style={{ fontSize: 11, color: "var(--epx-text-faint)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Drop Cap</span>
+                <NumberWithUnits
+                  label="Size"
+                  value={dcSize}
+                  onChange={(v) => writeDc("dropCapSize", v)}
+                  units={["em", "rem", "px"]}
+                  breakpointIndicator={breakpointIndicator}
+                />
+                <NumberWithUnits
+                  label="Lines"
+                  value={dcLines}
+                  onChange={(v) => writeDc("dropCapLines", v)}
+                  units={["em", "rem"]}
+                  breakpointIndicator={breakpointIndicator}
+                />
+                <NumberWithUnits
+                  label="Margin Right"
+                  value={dcMR}
+                  onChange={(v) => writeDc("dropCapMarginRight", v)}
+                  units={["px", "rem", "em"]}
+                  breakpointIndicator={breakpointIndicator}
+                />
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {activeTab === "style" && block.type === "video" && (() => {
+        const aspect = (block.config.aspectRatio as string) || "16:9";
+        const cssFilter = (style.filter as string) || "";
+        const filterValue: CssFiltersValue = parseFilter(cssFilter);
+        const handleFilter = (v: CssFiltersValue) => {
+          const next = serializeFilter(v);
+          onChange({ style: { ...style, filter: next || undefined } });
+        };
+        return (
+          <div className="epx-right-panel__fields">
+            <FieldGroup
+              isDirty={aspect !== "16:9"}
+              onReset={() => onChange({ aspectRatio: "16:9" })}
+            >
+              <SelectRow
+                label="Aspect Ratio"
+                value={aspect}
+                onChange={(v) => onChange({ aspectRatio: v })}
+                options={[
+                  { value: "1:1",    label: "1:1" },
+                  { value: "3:2",    label: "3:2" },
+                  { value: "4:3",    label: "4:3" },
+                  { value: "16:9",   label: "16:9" },
+                  { value: "21:9",   label: "21:9" },
+                  { value: "9:16",   label: "9:16 (vertical)" },
+                  { value: "custom", label: "Custom" },
+                ]}
+                labelClassName="epx-row-label--section"
+              />
+            </FieldGroup>
+            {aspect === "custom" && (
+              <>
+                <NumberWithUnits
+                  label="Aspect W"
+                  value={(block.config.aspectRatioCustomW as string) || ""}
+                  onChange={(v) => onChange({ aspectRatioCustomW: v })}
+                  units={["px", "rem", "%"]}
+                />
+                <NumberWithUnits
+                  label="Aspect H"
+                  value={(block.config.aspectRatioCustomH as string) || ""}
+                  onChange={(v) => onChange({ aspectRatioCustomH: v })}
+                  units={["px", "rem", "%"]}
+                />
+              </>
+            )}
+            <CssFiltersControl
+              value={filterValue}
+              onChange={handleFilter}
+              breakpointIndicator={breakpointIndicator}
+            />
+          </div>
+        );
+      })()}
+
+      {activeTab === "style" && block.type === "icon" && (() => {
+        const normalColor = { color: style.iconColor as string | undefined, alpha: typeof style.iconColorAlpha === "number" ? (style.iconColorAlpha as number) : undefined };
+        const hoverColor = { color: styleHover.iconColor as string | undefined, alpha: typeof styleHover.iconColorAlpha === "number" ? (styleHover.iconColorAlpha as number) : undefined };
+        return (
+          <div className="epx-right-panel__fields">
+            <AlignControl
+              value={alignValue}
+              onChange={handleAlign}
+              breakpointIndicator={breakpointIndicator}
+            />
+            <ColorNormalHover
+              label="Icon Color"
+              normal={normalColor}
+              hover={hoverColor}
+              onNormalChange={(v) => onChange({ style: { ...style, iconColor: v.color, iconColorAlpha: v.alpha } })}
+              onHoverChange={(v) => onChange({ styleHover: { ...styleHover, iconColor: v.color, iconColorAlpha: v.alpha } })}
+              breakpointIndicator={breakpointIndicator}
+            />
+            <NumberWithUnits
+              label="Size"
+              value={(style.iconBlockSize as string) || ""}
+              onChange={(v) => onChange({ style: { ...style, iconBlockSize: v } })}
+              units={["px", "rem", "em", "%"]}
+              breakpointIndicator={breakpointIndicator}
+            />
+            <NumberWithUnits
+              label="Rotate"
+              value={(block.config.rotate as string) || ""}
+              onChange={(v) => onChange({ rotate: v })}
+              units={["deg", "turn"]}
+              allowNegative
+            />
+          </div>
+        );
+      })()}
+
+      {activeTab === "style" && block.type === "divider-spacer" && (
+        <div className="epx-right-panel__fields">
+          <p style={{ fontSize: 12, color: "var(--epx-text-faint)", padding: "12px", textAlign: "center" }}>
+            All settings for this block are in the Fields tab.
+          </p>
+        </div>
+      )}
+
+      {activeTab === "style" && (block.type === "container" || block.type === "image" || block.type === "testimonials" || block.type === "faq" || block.type === "pricing" || block.type === "button") && (
+        <div className="epx-right-panel__fields">
+          {block.type === "button" && (
+            <TypographyControl
+              value={typographyValue}
+              onChange={handleTypography}
+              breakpointIndicator={breakpointIndicator}
+            />
+          )}
           {def.styleFields?.map((field) => (
             <FieldRenderer
               key={field.key}

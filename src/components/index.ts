@@ -1,9 +1,14 @@
 import Testimonials from "./Testimonials.astro";
 import FaqSection from "./FaqSection.astro";
 import PricingSection from "./PricingSection.astro";
-import SpacerSection from "./SpacerSection.astro";
 import Text from "./Text.astro";
 import ImageBlock from "./Image.astro";
+import TextEditor from "./TextEditor.astro";
+import Video from "./Video.astro";
+import Button from "./Button.astro";
+import Icon from "./Icon.astro";
+import Html from "./Html.astro";
+import DividerSpacer from "./DividerSpacer.astro";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
 export { getBuilderLayout } from "./db.js";
@@ -14,7 +19,12 @@ export const blockComponents: Record<string, unknown> = {
   testimonials: Testimonials,
   faq: FaqSection,
   pricing: PricingSection,
-  spacer: SpacerSection,
   text: Text,
   image: ImageBlock,
+  "text-editor": TextEditor,
+  video: Video,
+  button: Button,
+  icon: Icon,
+  html: Html,
+  "divider-spacer": DividerSpacer,
 };

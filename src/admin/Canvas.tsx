@@ -11,7 +11,7 @@ import { isContainerType } from "../types.js";
 import { PREVIEW_COMPONENTS } from "./previews/index.js";
 import { BlockOverlay } from "./BlockOverlay.js";
 import { hexToRgbVals, hexToRgba, type GradientStop } from "./controls/BackgroundControl.js";
-import { buildHoverCss } from "../components/styleUtils.js";
+import { buildHoverCss, getCustomCss } from "../components/styleUtils.js";
 
 export const CANVAS_DROP_ID = "canvas-drop";
 
@@ -242,23 +242,21 @@ function resolveBlockStyle(config: Record<string, unknown>, bpStyle?: Record<str
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (innerStyle as any).WebkitTextStrokeColor = val;
   }
-  // Text shadow (X Y Blur Color — color falls back to currentColor)
+  // Text shadow (X Y Blur Color — defaults to #000000 if not set)
   {
     const tsx    = css(style.textShadowX);
     const tsy    = css(style.textShadowY);
     const tsblur = css(style.textShadowBlur);
     if (tsx || tsy || tsblur) {
-      let colorPart = "";
-      const tsColor = css(style.textShadowColor) as string | undefined;
-      if (tsColor) {
-        const tsa = typeof style.textShadowAlpha === "number" ? style.textShadowAlpha : 1;
-        if (tsa < 1) {
-          const hex = tsColor.replace("#", "").padEnd(6, "0");
-          const n = parseInt(hex.slice(0, 6), 16);
-          colorPart = ` rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${tsa})`;
-        } else {
-          colorPart = ` ${tsColor}`;
-        }
+      const tsColor = (css(style.textShadowColor) as string | undefined) || "#000000";
+      const tsa = typeof style.textShadowAlpha === "number" ? style.textShadowAlpha : 1;
+      let colorPart: string;
+      if (tsa < 1) {
+        const hex = tsColor.replace("#", "").padEnd(6, "0");
+        const n = parseInt(hex.slice(0, 6), 16);
+        colorPart = ` rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${tsa})`;
+      } else {
+        colorPart = ` ${tsColor}`;
       }
       innerStyle.textShadow = `${tsx ?? "0px"} ${tsy ?? "0px"} ${tsblur ?? "0px"}${colorPart}`;
     }
@@ -324,6 +322,16 @@ function collectHoverCss(sections: SectionBlock[], activeBreakpoint: BreakpointI
   return css;
 }
 
+function collectCustomCss(sections: SectionBlock[]): string {
+  let css = "";
+  for (const block of sections) {
+    css += getCustomCss(block.config as Record<string, unknown>, block.id);
+    if (block.children) css += collectCustomCss(block.children);
+    if (block.slots) block.slots.forEach((slot) => { css += collectCustomCss(slot); });
+  }
+  return css;
+}
+
 // ─── Canvas ───────────────────────────────────────────────────────────────────
 
 export function Canvas({
@@ -367,6 +375,17 @@ export function Canvas({
     return () => { el?.remove(); };
   }, [sections, activeBreakpoint]);
 
+  useEffect(() => {
+    let el = document.getElementById("epx-canvas-custom-css") as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement("style");
+      el.id = "epx-canvas-custom-css";
+      document.head.appendChild(el);
+    }
+    el.textContent = collectCustomCss(sections);
+    return () => { el?.remove(); };
+  }, [sections]);
+
   const handleResizeDragStart = useCallback((side: "left" | "right") => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -375,14 +394,24 @@ export function Canvas({
     const startWidth = effectiveWidth ?? resizeBounds.max;
     document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
+    document.body.classList.add("epx-resizing");
+    let pending: number | null = null;
+    let nextWidth = startWidth;
+    const apply = () => {
+      pending = null;
+      setLocalWidth(nextWidth);
+    };
     const onMove = (ev: MouseEvent) => {
       const delta = ev.clientX - startX;
       const raw = side === "right" ? startWidth + delta : startWidth - delta;
-      setLocalWidth(Math.round(Math.max(resizeBounds.min, Math.min(resizeBounds.max, raw))));
+      nextWidth = Math.round(Math.max(resizeBounds.min, Math.min(resizeBounds.max, raw)));
+      if (pending === null) pending = requestAnimationFrame(apply);
     };
     const onUp = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.classList.remove("epx-resizing");
+      if (pending !== null) cancelAnimationFrame(pending);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -393,7 +422,7 @@ export function Canvas({
   const showHandles = !!resizeBounds && !!effectiveWidth;
   const frameStyle = effectiveWidth
     ? showHandles
-      ? { overflow: "hidden", width: "100%", maxWidth: effectiveWidth, flexShrink: 0 as const }
+      ? { overflowX: "hidden" as const, width: "100%", maxWidth: effectiveWidth, flexShrink: 0 as const }
       : { maxWidth: effectiveWidth, width: "100%", margin: "0 auto" }
     : undefined;
 
@@ -562,7 +591,7 @@ function SortableBlock({
 
       <div data-epx-block={section.id} style={innerStyle} className={`epx-theme--${(section.config.theme as string) || "light"}`}>
         {Preview ? (
-          <Preview config={section.config} children={section.children} slots={section.slots} />
+          <Preview config={section.config} children={section.children} slots={section.slots} activeBreakpoint={activeBreakpoint} />
         ) : (
           <div style={{ padding: "12px 14px", color: "#888", fontSize: 12 }}>
             Unknown block: {section.type}

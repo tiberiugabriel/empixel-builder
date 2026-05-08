@@ -213,7 +213,8 @@ export function BoxShadowControl({ value, onChange, breakpointIndicator }: {
       {!expanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
-            <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Box Shadow{breakpointIndicator}</span>
+            <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Box Shadow</span>
+            {breakpointIndicator}
             <button type="button" className="epx-spacing-ctrl__caret"
               onClick={() => setExpanded(true)} title="Expand">▾</button>
           </div>

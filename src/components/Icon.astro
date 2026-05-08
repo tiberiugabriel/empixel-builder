@@ -1,0 +1,113 @@
+---
+import type { IconConfig } from "../types.js";
+import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+
+interface Props {
+  value: IconConfig;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const cfg = value as Record<string, unknown>;
+
+const advanced = cfg.advanced as Record<string, string> | undefined;
+const cssId = advanced?.cssId || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const icon = value.icon ?? {};
+const iconSrcUrl = icon.iconSrc?.storageKey
+  ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
+  : undefined;
+const iconAlt = icon.iconSrc?.alt ?? "";
+const filename = icon.iconSrc?.filename ?? "";
+const isSvg = /\.svg(\?|$)/i.test(filename);
+
+const style = (cfg.style ?? {}) as Record<string, unknown>;
+const size = icon.iconSize || (style.iconBlockSize as string) || "32px";
+const iconColor = (style.iconColor as string) || icon.iconColor;
+const iconColorAlpha = typeof style.iconColorAlpha === "number" ? (style.iconColorAlpha as number) : icon.iconColorAlpha;
+
+const rotate = value.rotate || "";
+const transform = rotate ? `transform:rotate(${rotate});` : "";
+
+const filterCss = "";
+
+const align = (style.textAlign as string) || "";
+const justify = align === "center" ? "center" : align === "right" || align === "end" ? "flex-end" : "flex-start";
+
+// Link attrs
+const linkHref = value.linkHref || undefined;
+const linkTarget = value.linkNewTab ? "_blank" : undefined;
+const linkRel = (() => {
+  const parts: string[] = [];
+  if (value.linkNewTab) parts.push("noopener", "noreferrer");
+  if (value.linkNofollow) parts.push("nofollow");
+  return parts.length ? parts.join(" ") : undefined;
+})();
+const linkCustomAttrs: Record<string, string> = {};
+if (value.linkCustomAttr) {
+  for (const pair of value.linkCustomAttr.split(",")) {
+    const sep = pair.indexOf("|");
+    if (sep > 0) {
+      const k = pair.slice(0, sep).trim();
+      const v = pair.slice(sep + 1).trim();
+      if (k) linkCustomAttrs[k] = v;
+    }
+  }
+}
+
+const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
+const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
+const customCss = blockId ? getCustomCss(cfg, blockId) : "";
+const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
+const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+
+const wrapperCss = blockId
+  ? `[data-epx-block="${blockId}"]{display:flex;justify-content:${justify};}`
+  : "";
+
+const svgWrapperCss = blockId && isSvg && iconColor
+  ? `[data-epx-block="${blockId}"] .epx-icon-svg{
+       width:${size};
+       height:${size};
+       background-color:${iconColor};
+       opacity:${iconColorAlpha ?? 1};
+       mask:url(${iconSrcUrl}) no-repeat center/contain;
+       -webkit-mask:url(${iconSrcUrl}) no-repeat center/contain;
+       ${transform}${filterCss}
+     }`
+  : "";
+
+const allCss = [wrapperCss, svgWrapperCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+
+const Tag = (linkHref ? "a" : "span") as astroHTML.JSX.HTMLTag;
+---
+
+<div
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+>
+  {iconSrcUrl && (
+    <Tag
+      href={linkHref}
+      target={linkTarget}
+      rel={linkRel}
+      {...linkCustomAttrs}
+    >
+      {isSvg && iconColor ? (
+        <span class="epx-icon-svg" role="img" aria-label={iconAlt} />
+      ) : (
+        <img
+          src={iconSrcUrl}
+          alt={iconAlt}
+          style={`width:${size};height:${size};${transform}${filterCss}`}
+          loading="lazy"
+          decoding="async"
+        />
+      )}
+    </Tag>
+  )}
+</div>
+
+{allCss && <style set:html={allCss} is:global />}

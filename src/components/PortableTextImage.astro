@@ -1,0 +1,45 @@
+---
+// Renderer for inline-image blocks inside Portable Text content.
+// Receives `{ node, index, isInline }` per astro-portabletext component spec.
+
+interface PortableImageNode {
+  _type?: string;
+  asset?: { storageKey?: string; url?: string; alt?: string };
+  storageKey?: string;
+  url?: string;
+  alt?: string;
+  caption?: string;
+  width?: number | string;
+  height?: number | string;
+}
+
+const { node } = Astro.props as { node?: PortableImageNode };
+const n = node ?? {};
+const sk = n.asset?.storageKey ?? n.storageKey;
+const url = n.url ?? n.asset?.url ?? (sk ? `/_emdash/api/media/file/${sk}` : undefined);
+const alt = n.alt ?? n.asset?.alt ?? "";
+const caption = n.caption;
+---
+
+{url && (
+  caption ? (
+    <figure style="margin:0 0 12px 0;">
+      <img
+        src={url}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        style="max-width:100%;height:auto;display:block;"
+      />
+      <figcaption style="font-size:0.875em;color:#666;margin-top:4px;">{caption}</figcaption>
+    </figure>
+  ) : (
+    <img
+      src={url}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      style="max-width:100%;height:auto;display:block;margin:8px 0;"
+    />
+  )
+)}

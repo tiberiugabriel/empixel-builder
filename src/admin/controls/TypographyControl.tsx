@@ -66,11 +66,14 @@ export interface TypographyValue {
   lineHeight?: string;
   letterSpacing?: string;
   wordSpacing?: string;
+  linkColor?: string;
+  linkColorAlpha?: number;
 }
 
 const TYPO_STR_KEYS = [
   "fontFamily", "color", "fontSize", "fontWeight", "textTransform",
   "fontStyle", "textDecoration", "lineHeight", "letterSpacing", "wordSpacing",
+  "linkColor",
 ] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,6 +84,7 @@ export function parseTypography(style: Record<string, unknown>): TypographyValue
     out[k] = (style[k] as string) ?? "";
   }
   out.colorAlpha = typeof style.colorAlpha === "number" ? style.colorAlpha : 1;
+  out.linkColorAlpha = typeof style.linkColorAlpha === "number" ? style.linkColorAlpha : 1;
   return out;
 }
 
@@ -90,6 +94,7 @@ export function serializeTypography(val: TypographyValue): Record<string, unknow
     out[k] = val[k] ?? "";
   }
   out.colorAlpha = val.colorAlpha ?? 1;
+  out.linkColorAlpha = val.linkColorAlpha ?? 1;
   return out;
 }
 
@@ -97,6 +102,7 @@ function emptyTypography(): TypographyValue {
   const out: TypographyValue = {};
   for (const k of TYPO_STR_KEYS) out[k] = "";
   out.colorAlpha = 1;
+  out.linkColorAlpha = 1;
   return out;
 }
 
@@ -114,8 +120,12 @@ export function TypographyControl({ value, onChange, breakpointIndicator }: {
   const [colorPos, setColorPos] = useState({ top: 0, left: 0 });
   const [colorFormat, setColorFormat] = useState<ColorFormat>("HEX");
   const swatchRef = useRef<HTMLButtonElement>(null);
+  const [linkColorOpen, setLinkColorOpen] = useState(false);
+  const [linkColorPos, setLinkColorPos] = useState({ top: 0, left: 0 });
+  const [linkColorFormat, setLinkColorFormat] = useState<ColorFormat>("HEX");
+  const linkSwatchRef = useRef<HTMLButtonElement>(null);
 
-  const isDirty = TYPO_STR_KEYS.some((k) => !!value[k]) || (value.colorAlpha ?? 1) < 1;
+  const isDirty = TYPO_STR_KEYS.some((k) => !!value[k]) || (value.colorAlpha ?? 1) < 1 || (value.linkColorAlpha ?? 1) < 1;
 
   const handleReset = () => onChange(emptyTypography());
 
@@ -128,6 +138,14 @@ export function TypographyControl({ value, onChange, breakpointIndicator }: {
       setColorPos({ top: r.bottom + 4, left: r.left - 180 });
     }
     setColorOpen((o) => !o);
+  };
+
+  const openLinkColor = () => {
+    if (linkSwatchRef.current) {
+      const r = linkSwatchRef.current.getBoundingClientRect();
+      setLinkColorPos({ top: r.bottom + 4, left: r.left - 180 });
+    }
+    setLinkColorOpen((o) => !o);
   };
 
   const sizeSV         = parseSide(value.fontSize);
@@ -145,7 +163,8 @@ export function TypographyControl({ value, onChange, breakpointIndicator }: {
       {!expanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
-            <span className="epx-side-input__label epx-side-input__label--full epx-side-input__label--has-suffix" style={{ cursor: "default" }}>Typography{breakpointIndicator}</span>
+            <span className="epx-side-input__label epx-side-input__label--full" style={{ cursor: "default" }}>Typography</span>
+            {breakpointIndicator}
             <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(true)}>▾</button>
           </div>
           {isDirty && (
@@ -157,7 +176,8 @@ export function TypographyControl({ value, onChange, breakpointIndicator }: {
       ) : (
         <div className="epx-spacing-ctrl__expanded">
           <div className="epx-spacing-ctrl__exp-header">
-            <span className="epx-spacing-ctrl__label">Typography{breakpointIndicator}</span>
+            <span className="epx-spacing-ctrl__label">Typography</span>
+            {breakpointIndicator}
             <div className="epx-spacing-ctrl__exp-actions">
               {isDirty && (
                 <button type="button" className="epx-reset-btn" onClick={handleReset} title="Reset">
@@ -245,6 +265,29 @@ export function TypographyControl({ value, onChange, breakpointIndicator }: {
             value={wordSpaceSV ?? ZERO}
             onChange={(sv) => setSide("wordSpacing", sv)}
           />
+
+          <div className="epx-side-input">
+            <span className="epx-side-input__label epx-side-input__label--row">Link Color</span>
+            <div className="epx-border-color-cell" style={{ flex: 1 }}>
+              <button ref={linkSwatchRef} type="button"
+                className="epx-border-color-swatch"
+                style={{ background: value.linkColor || "#0066cc", opacity: value.linkColorAlpha ?? 1 }}
+                onClick={openLinkColor}
+              />
+              <span className="epx-border-color-hex">{getColorDisplay(value.linkColor || "#0066cc", linkColorFormat)}</span>
+              {linkColorOpen && (
+                <ColorPicker
+                  value={value.linkColor || "#0066cc"}
+                  alpha={value.linkColorAlpha ?? 1}
+                  onChange={(hex, a) => onChange({ ...value, linkColor: hex, linkColorAlpha: a })}
+                  onClose={() => setLinkColorOpen(false)}
+                  position={linkColorPos}
+                  format={linkColorFormat}
+                  onFormatChange={setLinkColorFormat}
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

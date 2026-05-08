@@ -1,0 +1,151 @@
+---
+import type { TextEditorConfig } from "../types.js";
+import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+import PortableTextImage from "./PortableTextImage.astro";
+
+interface Props {
+  value: TextEditorConfig;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const cfg = value as Record<string, unknown>;
+
+const advanced = cfg.advanced as Record<string, string> | undefined;
+const cssId = advanced?.cssId || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const style = (cfg.style ?? {}) as Record<string, unknown>;
+
+const columnsRaw = (value.columns ?? "1") as string;
+const columnCount =
+  columnsRaw === "custom"
+    ? (value.columnsCustom ?? 2)
+    : Number(columnsRaw) || 1;
+const columnsGap = value.columnsGap && value.columnsGap.trim() ? value.columnsGap : "0px";
+
+const baseDcSize = (style.dropCapSize as string) || "3em";
+const baseDcLines = (style.dropCapLines as string) || "0.85";
+const baseDcMR = (style.dropCapMarginRight as string) || "6px";
+const dropCapCss = value.dropCap && blockId
+  ? `[data-epx-block="${blockId}"] > *:first-child::first-letter{
+       font-size:${baseDcSize};
+       line-height:${baseDcLines};
+       float:left;
+       margin-right:${baseDcMR};
+       margin-top:4px;
+     }`
+  : "";
+
+const paragraphSpacing = (style.paragraphSpacing as string) || "";
+const paraCss = paragraphSpacing && blockId
+  ? `[data-epx-block="${blockId}"] p + p{margin-top:${paragraphSpacing};}`
+  : "";
+
+const linkColor = (style.linkColor as string) || "";
+const linkAlpha = typeof style.linkColorAlpha === "number" ? (style.linkColorAlpha as number) : 1;
+const linkColorCss = linkColor && blockId
+  ? `[data-epx-block="${blockId}"] a{color:${linkColor};opacity:${linkAlpha};}`
+  : "";
+
+const columnsCss = blockId
+  ? `[data-epx-block="${blockId}"]{column-count:${columnCount};column-gap:${columnsGap};}`
+  : "";
+
+const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
+const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
+const customCss = blockId ? getCustomCss(cfg, blockId) : "";
+const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
+const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+
+// Per-breakpoint emission for text-editor-specific config + dropCap settings.
+let textEditorBpCss = "";
+if (blockId) {
+  const cfgBps = (cfg.configBreakpoints ?? {}) as Record<string, Record<string, unknown>>;
+  const styleBps = (cfg.styleBreakpoints ?? {}) as Record<string, Record<string, unknown>>;
+  const allBpKeys = new Set([...Object.keys(cfgBps), ...Object.keys(styleBps)]);
+  const bpEntries: Array<{ px: number; cfg: Record<string, unknown>; st: Record<string, unknown> }> = [];
+  for (const k of allBpKeys) {
+    const c = cfgBps[k] ?? {};
+    const s = styleBps[k] ?? {};
+    const px = (typeof c._px === "number" ? c._px : undefined) ?? (typeof s._px === "number" ? s._px : undefined);
+    if (typeof px === "number") bpEntries.push({ px, cfg: c, st: s });
+  }
+  bpEntries.sort((a, b) => b.px - a.px);
+
+  for (const e of bpEntries) {
+    const effDc =
+      (e.cfg.dropCap as boolean | undefined) ?? value.dropCap ?? false;
+    const effColsRaw =
+      (e.cfg.columns as string | undefined) ?? value.columns ?? "1";
+    const effColsCustom =
+      (e.cfg.columnsCustom as number | undefined) ?? value.columnsCustom;
+    const effColCount =
+      effColsRaw === "custom" ? effColsCustom ?? 1 : Number(effColsRaw) || 1;
+    const effColGapRaw =
+      (e.cfg.columnsGap as string | undefined) ?? value.columnsGap ?? "0px";
+    const effColGap = effColGapRaw && effColGapRaw.trim() ? effColGapRaw : "0px";
+    const effDcSize = (e.st.dropCapSize as string | undefined) ?? baseDcSize;
+    const effDcLines = (e.st.dropCapLines as string | undefined) ?? baseDcLines;
+    const effDcMR = (e.st.dropCapMarginRight as string | undefined) ?? baseDcMR;
+
+    let rule = "";
+    rule += `[data-epx-block="${blockId}"]{column-count:${effColCount};column-gap:${effColGap};}`;
+    if (effDc) {
+      rule += `[data-epx-block="${blockId}"] > *:first-child::first-letter{font-size:${effDcSize};line-height:${effDcLines};float:left;margin-right:${effDcMR};margin-top:4px;}`;
+    } else {
+      rule += `[data-epx-block="${blockId}"] > *:first-child::first-letter{font-size:inherit;line-height:inherit;float:none;margin-right:0;margin-top:0;}`;
+    }
+    textEditorBpCss += `@media(max-width:${e.px}px){${rule}}`;
+  }
+}
+
+const allCss = [blockCss, hoverCss, columnsCss, paraCss, dropCapCss, linkColorCss, customCss, bpCss, bpHoverCss, textEditorBpCss].filter(Boolean).join("");
+
+interface PortableBlock {
+  _type?: string;
+  style?: string;
+  children?: Array<{ text?: string; marks?: string[] }>;
+}
+
+function fallbackText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return (content as PortableBlock[])
+    .map((node) => (node?.children ?? []).map((c) => c?.text ?? "").join(""))
+    .join("\n\n");
+}
+
+// Try to load emdash/ui PortableText renderer dynamically. If unavailable
+// (peer dep version too old), render plain-text fallback.
+let PT: unknown = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod: any = await import("emdash/ui");
+  PT = mod?.PortableText ?? null;
+} catch {
+  PT = null;
+}
+
+const content = value.content ?? [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Renderer = PT as ((_: any) => unknown) | null;
+
+// Custom Portable Text component map: image type → media URL renderer.
+const ptComponents = {
+  type: {
+    image: PortableTextImage,
+  },
+};
+---
+
+<div
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+>
+  {Renderer
+    ? <Renderer value={content} components={ptComponents} />
+    : <div style="white-space:pre-wrap;" set:html={fallbackText(content)} />}
+</div>
+
+{allCss && <style set:html={allCss} is:global />}

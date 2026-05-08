@@ -4,3 +4,8 @@ dist
 uploads
 data.db
 .idea/
+.DS_Store
+new-blocks-prompt.json
+README_DEBUG.md
+rezumat-emdash-0.9.0.html
+swap-block-icons-prompt.json
