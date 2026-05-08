@@ -1,0 +1,58 @@
+/* Generated from BuilderStyles.tsx (audit M2). Edit here, not in TSX. */
+
+/* ── Theme variables (was epxVars in src/admin/epxVars.ts) ── */
+  :root {
+    --epx-bg:               #f5f5f5;
+    --epx-surface:          #ffffff;
+    --epx-surface-2:        #f8f8f8;
+    --epx-border:           #e0e0e0;
+    --epx-border-subtle:    #f0f0f0;
+    --epx-border-card:      #e5e7eb;
+    --epx-text:             #111111;
+    --epx-text-strong:      #222222;
+    --epx-text-2:           #444444;
+    --epx-text-mid:         #555555;
+    --epx-text-muted:       #888888;
+    --epx-text-faint:       #aaaaaa;
+    --epx-input-bg:         #fafafa;
+    --epx-ctrl-bg:          #efefef;
+    --epx-input-border:     #d0d0d0;
+    --epx-hover-bg:         #f0f0f0;
+    --epx-card-hover-bg:    #f0f4ff;
+    --epx-icon-bg:          #f3f4f6;
+    --epx-accent:           #2563eb;
+    --epx-accent-hover:     #1d4ed8;
+    --epx-accent-light:     #93c5fd;
+    --epx-accent-bg:        #eff6ff;
+    --epx-accent-bg-hover:  #dbeafe;
+    --epx-selected:         #86efac;
+    --epx-spinner-track:    #e0e0e0;
+  }
+
+  [data-mode="dark"] {
+    --epx-bg:               #111111;
+    --epx-surface:          #1c1c1c;
+    --epx-surface-2:        #242424;
+    --epx-border:           #2d2d2d;
+    --epx-border-subtle:    #222222;
+    --epx-border-card:      #2a2a2a;
+    --epx-text:             #f0f0f0;
+    --epx-text-strong:      #e0e0e0;
+    --epx-text-2:           #aaaaaa;
+    --epx-text-mid:         #999999;
+    --epx-text-muted:       #707070;
+    --epx-text-faint:       #555555;
+    --epx-input-bg:         #161616;
+    --epx-ctrl-bg:          #1f1f1f;
+    --epx-input-border:     #383838;
+    --epx-hover-bg:         #252525;
+    --epx-card-hover-bg:    #1a1f3a;
+    --epx-icon-bg:          #2a2a2a;
+    --epx-accent:           #2563eb;
+    --epx-accent-hover:     #1d4ed8;
+    --epx-accent-light:     #93c5fd;
+    --epx-accent-bg:        #0c1a30;
+    --epx-accent-bg-hover:  #1e3a5f;
+    --epx-selected:         #86efac;
+    --epx-spinner-track:    #333333;
+  }

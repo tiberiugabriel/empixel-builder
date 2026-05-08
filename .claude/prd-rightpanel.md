@@ -9,7 +9,10 @@ Any bp-aware control MUST show the `breakpointIndicator` next to its label on ev
 ## Architecture
 
 ```
-RightPanel.tsx (3 tabs: Fields, Style, Advanced)
+RightPanel.tsx (3 tabs: Fields, Style, Advanced)         # 1623 LOC
+├─ right-panel/                                          # audit M1, conservative slice
+│  ├─ icons.tsx  # IconFields, IconStyle, IconAdvanced, IconStateNormal, IconStateHover
+│  └─ types.ts   # AdvancedConfig — admin-only shape for `config.advanced`
 ├─ fields/
 │  ├─ FieldRenderer.tsx         # Generic field dispatcher (12 types)
 │  ├─ JsonArrayField.tsx        # Expandable item list
@@ -107,7 +110,7 @@ Image-element styling (no Background section; border/radius/shadow target inner 
 - Border Radius / Border / Box Shadow sections still appear and target the inner `<img>` via `buildImgVisualCss` on the frontend
 
 Hover styles are written to `block.config.styleHover`.
-Theme styles are written to `block.config.style` / `block.config.styleDark` / `block.config.styleAccent` via `getThemeStyleKey(theme)`.
+Theme styles are written to `block.config.style` / `block.config.styleDark` via `getThemeStyleKey(theme)`.
 Breakpoint styles are written to `block.config.styleBreakpoints[bpId]` / `block.config.styleHoverBreakpoints[bpId]`.
 
 ### Tab 3: Advanced
@@ -268,11 +271,10 @@ Single select for `mixBlendMode` (normal / multiply / screen / overlay / etc.).
 
 ## ThemeStyleToggle
 
-Segmented toggle: Light / Dark / Accent
+Segmented toggle: Light / Dark
 Sets `block.config.theme` and determines which style key is written to:
 - `"light"` → `style`
 - `"dark"` → `styleDark`
-- `"accent"` → `styleAccent`
 
 ## DimensionControl (FieldRow.tsx)
 
@@ -368,6 +370,5 @@ Dirty label: `color-mix(in srgb, var(--epx-text-faint), white 45%)`
 
 - [ ] Wire MediaPicker into FieldRenderer as a generic `image` field type (currently used inline only inside image block + Background)
 - [ ] Keyboard shortcuts within controls (Escape to cancel, Enter to confirm)
-- [ ] Surface accent-theme writes — `getThemeStyleKey("accent")` already returns `styleAccent`, but accent CSS is not yet rendered on the frontend
 - [x] Add rich-text field type (Portable Text editor) — v0.6
 - [x] Add code field type (multi-language CodeEditor) — v0.6

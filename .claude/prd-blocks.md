@@ -5,7 +5,7 @@ Define all block types, their configuration schemas, and metadata. Single source
 
 ## ⚠️ Status (v0.6) — manual QA pending
 
-All 12 blocks (testimonials, faq, pricing, container, text, image, text-editor, video, button, icon, html, divider-spacer) and their canvas previews + frontend Astro components require **manual testing and improvement**:
+All 9 blocks (container, text, image, text-editor, video, button, icon, html, divider-spacer) and their canvas previews + frontend Astro components require **manual testing and improvement**:
 
 - Drag each block from the palette into a container; confirm it accepts drops only inside containers (except container itself).
 - Edit every Field-tab control; confirm canvas reflects in real-time.
@@ -21,6 +21,30 @@ Update this section as blocks are vetted.
 ## Files
 - `src/types.ts` — TypeScript `BlockType` union + all config interfaces
 - `src/admin/blockDefinitions.ts` — `BLOCK_DEFINITIONS: BlockDef[]` array
+
+## Type model (audit M4)
+
+`types.ts` exposes two block shapes:
+
+| Type | Use for |
+|------|---------|
+| `SectionBlock` (broad) | Tree utilities, reducer, storage, anything that mutates blocks generically. `config: BaseBlockConfig` (open index signature). |
+| `TypedSectionBlock` (discriminated union) | Code that switches on `block.type` and wants `block.config` typed precisely. Convert via `asTyped(block)`. |
+
+`BaseBlockConfig` lifts every cross-cutting key (`theme`, `style`, `styleDark`,
+`styleHover`, `styleBreakpoints`, `styleHoverBreakpoints`, `advanced`,
+`configBreakpoints`) to one place; every per-block `*Config` interface
+extends it. New per-block keys go on the matching specific interface.
+
+`ContainerConfig` is the new specific interface for `type: "container"`
+(layout / flex / grid / htmlTag / link). Previously containers had no typed
+config — every read was `(config.foo as string)`. New consumers that read
+container fields should prefer `TypedSectionBlock` narrowing.
+
+Migration plan: move one consumer at a time from `SectionBlock` →
+`TypedSectionBlock`. Natural first targets are RightPanel per-block branches
+and BlockRenderer dispatch. Existing `as` casts keep compiling against the
+broad shape, so migration is incremental and non-blocking.
 
 ## Block Definition Schema
 
@@ -80,9 +104,6 @@ interface FieldDef {
 ### BlockType union (src/types.ts)
 ```ts
 export type BlockType =
-  | "testimonials"
-  | "faq"
-  | "pricing"
   | "container"
   | "text"
   | "image"
@@ -94,39 +115,25 @@ export type BlockType =
   | "divider-spacer"; // v0.6 (replaces "spacer")
 ```
 
-### 1. testimonials
-- Category: general
-- Fields: headline, layout (grid/carousel), items (json-array)
-- Item fields: quote, author, role, company, avatarUrl
-- Default: `{ layout: "grid", theme: "light", items: [] }`
+> Removed post-v0.6: `testimonials`, `faq`, `pricing`. Variant B — no DB
+> migration. Old layouts containing these types load successfully but render
+> nothing on the frontend and show "Unknown block" in the canvas.
 
-### 2. faq
-- Category: general
-- Fields: headline, subheadline, items (json-array)
-- Item fields: question, answer
-- Default: `{ theme: "light", items: [] }`
-
-### 3. pricing
-- Category: general
-- Fields: headline, subheadline, tiers (json-array)
-- Tier fields: name, price, period, description, features, ctaLabel, ctaUrl, highlighted
-- Default: `{ theme: "light", tiers: [] }`
-
-### 4. container
+### 1. container
 - Category: core
 - Fields: none (layout-only block)
 - Default: `{ theme: "light", layout: "flex", style: { paddingTop/Right/Bottom/Left: "12px", columnGap/rowGap: "6px" } }`
 - Holds: `children: SectionBlock[]`
 - Extra fields tab controls: LayoutControl, GapControl, OverflowControl, HTML Tag, LinkControl (if tag = "a")
 
-### 5. text
+### 2. text
 - Category: general
 - Fields: content (textarea), HTML Tag selector (default `p`; supports h1–h6, span, div, a), LinkControl (if tag = "a")
 - Default: `{ content: "", theme: "light" }`
 - **Style tab is custom**: Align / Typography / TextStroke / TextShadow / BlendMode (no Background/Border/Shadow sections)
 - Config: `TextConfig` — `content`, `htmlTag`, `linkHref`, `linkNewTab`, `linkNofollow`, `linkCustomAttr`, `theme`
 
-### 6. image
+### 3. image
 - Category: general
 - Fields: caption (textarea), MediaPicker thumbnail row, Resolution selector (full / thumbnail / medium / large), LinkControl (always available)
 - Default: `{ theme: "light", resolution: "full" }`
@@ -159,42 +166,42 @@ interface ImageElementStyle {
 - Frontend `TextEditor.astro` emits per-bp `@media(max-width:_px){...}` rules walking the union of `configBreakpoints` + `styleBreakpoints` for `column-count`, `column-gap`, and ::first-letter rule (drop cap on/off + size/lines/margin-right). Image inserts in PortableText render via `PortableTextImage.astro` (custom `components.type.image`). Defaults: `columns="1"`, `columnsGap="0px"`, `dropCap=false`. `column-count` + `column-gap` always emitted (also at 1/0px) so DevTools shows the rule.
 - Canvas preview ([TextEditorPreview.tsx](../src/admin/previews/TextEditorPreview.tsx)) receives `activeBreakpoint` via `PreviewProps` and bp-merges before rendering. Renders Portable Text via mini renderer (paragraphs, headings, marks, image type).
 
-### 7. text-editor (v0.6)
+### 4. text-editor (v0.6)
 - Category: general
 - Fields: content (rich-text → Portable Text JSON), dropCap toggle, columns (1/2/3/custom), columnsCustom, columnsGap (number-units)
 - Default: `{ content: [], theme: "light", columns: "1", columnsGap: "32px", dropCap: false }`
 - **Style tab is custom**: Align, Typography (with linkColor), TextShadow, ParagraphSpacing, DropCap group (Size/Lines/MarginRight when `dropCap=true`)
 - Frontend: renders Portable Text via `<PortableText>` from `emdash/ui` (lazy-imported, falls back to plain text)
 
-### 8. video (v0.6)
+### 5. video (v0.6)
 - Category: general
 - Fields tab (custom): VideoSourceControl (Media | URL with provider auto-detect: YT/Vimeo/mp4/webm/mov), Image Overlay group (image, resolution, size, position, IconGroup)
 - Default: `{ theme: "light", video: { src: "url", controls: true, lazyLoad: true, mute: true }, aspectRatio: "16:9" }`
 - **Style tab**: AspectRatio (1:1, 3:2, 4:3, 16:9, 21:9, 9:16, custom W/H), CssFiltersControl (blur/brightness/contrast/saturate/hue-rotate/grayscale/sepia/invert)
 - Frontend: provider switch builds embed URL with selected params; image overlay → click-to-play swaps `data-epx-src` into iframe/video src
 
-### 9. button (v0.6)
+### 6. button (v0.6)
 - Category: general
 - Fields: text (textarea), LinkControl (custom branch), IconGroup (with showPosition: left/right/top/bottom)
 - Default: `{ theme: "light", text: "Click me", icon: { iconPosition: "left", iconSize: "16px" } }`
 - **Style tab**: TypographyControl + Background + Border + BorderRadius (uses default style branch + Typography prepended)
 - Frontend: renders `<a>` when `linkHref` set, else `<button type="button">`. Icon positioning via flex-direction.
 
-### 10. icon (v0.6)
+### 7. icon (v0.6)
 - Category: general
 - Fields: IconGroup (showPosition: false), LinkControl (custom branch)
 - Default: `{ theme: "light", icon: { iconSize: "32px" } }`
 - **Style tab is custom**: Align, ColorNormalHover (Normal/Hover toggle), Size (NumberWithUnits), Rotate (deg/turn)
 - Frontend: SVG → CSS-mask block (so `iconColor` recolors); PNG → `<img>` (color ignored, admin shows note). Wrap in `<a>` when link set. Rotate via transform.
 
-### 11. html (v0.6)
+### 8. html (v0.6)
 - Category: core
 - Fields: code (CodeEditor with `language="html"` — token coloring + tag/attr autocomplete)
 - Default: `{ theme: "light", code: "" }`
 - **No Style tab** — placeholder message instead.
 - Frontend: `<div data-epx-block ... set:html={code}>`. SECURITY: trusted user input, not sanitized (raw-html block intent).
 
-### 12. divider-spacer (v0.6, replaces `spacer`)
+### 9. divider-spacer (v0.6, replaces `spacer`)
 - Category: core
 - Fields: space (number-units; vertical height of the block), Divider sub-group (collapsible) — style (none/solid/dashed/dotted/double/groove/ridge/gradient/wavy/zigzag), width (NumberWithUnits), length (NumberWithUnits — % of container or absolute), color, align (left/center/right), IconGroup with showPosition (left/right/center/above/below)
 - Default: `{ theme: "light", space: "48px", divider: { style: "none", width: "1px", length: "100%", color: "#000000", colorAlpha: 0.12, align: "center" } }`
@@ -241,10 +248,9 @@ Leaf blocks must be dropped inside a container.
 
 Each block's config may contain any combination of:
 - Block-specific keys (e.g. `items`, `tiers`, `layout`)
-- `theme` — "light" | "dark" | "accent"
+- `theme` — "light" | "dark"
 - `style` — CSS properties for normal/light state
 - `styleDark` — CSS properties for dark theme
-- `styleAccent` — CSS properties for accent theme
 - `styleHover` — CSS properties for hover state
 - `styleBreakpoints` — `{ [bpId]: { _px, ...cssProps } }` breakpoint overrides
 - `styleHoverBreakpoints` — `{ [bpId]: { _px, ...cssProps } }` hover breakpoint overrides

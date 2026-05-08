@@ -1,6 +1,6 @@
 ---
 import type { ButtonConfig } from "../types.js";
-import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+import { buildBlockChromeCss } from "./styleUtils.js";
 
 interface Props {
   value: ButtonConfig;
@@ -52,17 +52,13 @@ const flexDir = (() => {
   return "row";
 })();
 
-const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
-const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
-const customCss = blockId ? getCustomCss(cfg, blockId) : "";
-const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
-const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+const chromeCss = buildBlockChromeCss(cfg, blockId);
 
 const flexCss = blockId
   ? `[data-epx-block="${blockId}"]{display:inline-flex;align-items:center;gap:6px;flex-direction:${flexDir};text-decoration:none;}`
   : "";
 
-const allCss = [flexCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+const allCss = [flexCss, chromeCss].filter(Boolean).join("");
 
 const Tag = (linkHref ? "a" : "button") as astroHTML.JSX.HTMLTag;
 ---

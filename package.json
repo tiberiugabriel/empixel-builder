@@ -1,6 +1,6 @@
 {
   "name": "empixel-builder",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Professional page builder for EmDash and Astro",
   "author": "Tiberiu Gabriel",
   "license": "GPL-3.0",
@@ -40,10 +40,10 @@
     "./astro": "./src/components/index.ts"
   },
   "peerDependencies": {
+    "@emdash-cms/admin": "*",
     "astro": ">=6.0.0",
     "better-sqlite3": ">=9.0.0",
     "emdash": ">=0.4.0",
-    "@emdash-cms/admin": "*",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0"
   },
@@ -59,8 +59,11 @@
   },
   "scripts": {
     "lint": "eslint src/",
-    "build": "tsc",
-    "prepublishOnly": "npm run lint && npm run build"
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -69,6 +72,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.5.0",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.59.0"
+    "typescript-eslint": "^8.59.0",
+    "vitest": "^4.1.5"
   }
 }

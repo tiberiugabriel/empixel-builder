@@ -1,6 +1,6 @@
 ---
 import type { TextEditorConfig } from "../types.js";
-import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+import { buildBlockChromeCss } from "./styleUtils.js";
 import PortableTextImage from "./PortableTextImage.astro";
 
 interface Props {
@@ -52,11 +52,7 @@ const columnsCss = blockId
   ? `[data-epx-block="${blockId}"]{column-count:${columnCount};column-gap:${columnsGap};}`
   : "";
 
-const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
-const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
-const customCss = blockId ? getCustomCss(cfg, blockId) : "";
-const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
-const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+const chromeCss = buildBlockChromeCss(cfg, blockId);
 
 // Per-breakpoint emission for text-editor-specific config + dropCap settings.
 let textEditorBpCss = "";
@@ -100,7 +96,7 @@ if (blockId) {
   }
 }
 
-const allCss = [blockCss, hoverCss, columnsCss, paraCss, dropCapCss, linkColorCss, customCss, bpCss, bpHoverCss, textEditorBpCss].filter(Boolean).join("");
+const allCss = [chromeCss, columnsCss, paraCss, dropCapCss, linkColorCss, textEditorBpCss].filter(Boolean).join("");
 
 interface PortableBlock {
   _type?: string;

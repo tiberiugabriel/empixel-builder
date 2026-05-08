@@ -12,6 +12,14 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 
 All routes are under `/_emdash/api/plugins/empixel-builder/<route>`.
 
+### Collection name validation
+
+Every route that interpolates `collection` into a SQL identifier
+(`ec_${collection}`) MUST call `isValidCollection(name)` first. Helper at the
+top of `plugin.ts` enforces the regex `/^[a-z0-9_]+$/`. Currently used by:
+`layout` (GET + POST), `entries` (GET), `toggle` (POST). Skipping the check
+re-introduces SQL injection — see audit C1.
+
 ### `layout` — GET + POST
 **GET** `?pageId=<id>&collection=<name>` → Load layout.
 - Resolves slug ↔ ULID automatically (tries `ec_<collection>` table)

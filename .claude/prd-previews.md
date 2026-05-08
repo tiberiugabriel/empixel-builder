@@ -7,10 +7,7 @@ Live preview components in the admin UI Canvas. Show real-time feedback as users
 
 ```
 src/admin/previews/
-├─ index.ts                    # PREVIEW_COMPONENTS map export (12 entries)
-├─ TestimonialsPreview.tsx
-├─ FaqPreview.tsx
-├─ PricingPreview.tsx
+├─ index.ts                    # PREVIEW_COMPONENTS map export (9 entries)
 ├─ ContainerPreview.tsx
 ├─ TextPreview.tsx
 ├─ ImagePreview.tsx
@@ -33,9 +30,6 @@ export interface PreviewProps {
 }
 
 export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewProps>> = {
-  testimonials: TestimonialsPreview,
-  faq: FaqPreview,
-  pricing: PricingPreview,
   container: ContainerPreview,
   text: TextPreview,
   image: ImagePreview,
@@ -55,11 +49,10 @@ Every `BlockType` in `types.ts` must have an entry here.
 Each preview receives `PreviewProps` (not the full `SectionBlock`):
 
 ```tsx
-export function TestimonialsPreview({ config, children, slots }: PreviewProps) {
+export function TextPreview({ config }: PreviewProps) {
   return (
-    <div className="epx-preview-testimonials">
-      <h3>{(config.headline as string) || "Testimonials"}</h3>
-      {/* Render based on config values */}
+    <div className="epx-preview-text">
+      {(config.content as string) || "Empty text block"}
     </div>
   );
 }
@@ -90,22 +83,20 @@ Previews **must reflect config changes in real time**. No hardcoded values.
 - `children` — child blocks (for container)
 - `slots` — slot arrays (for columns)
 
-## Current Previews (12)
+## Current Previews (9)
 
-1. **TestimonialsPreview** — Grid/carousel of testimonial cards
-2. **FaqPreview** — Accordion items list
-3. **PricingPreview** — Pricing tiers grid
-4. **ContainerPreview** — Renders children recursively via PREVIEW_COMPONENTS
-5. **TextPreview** — Renders `config.content` with the chosen `htmlTag`
-6. **ImagePreview** — Renders `config.image` (via `/_emdash/api/media/file/<storageKey>`) with caption + link
-7. **TextEditorPreview** (v0.6) — Joins Portable Text content as plain text, applies column-count + optional drop cap
-8. **VideoPreview** (v0.6) — Aspect-ratio framed div; renders overlay image if set; centered ▶ marker
-9. **ButtonPreview** (v0.6) — Inline-flex `<button>` with text + optional icon; `flex-direction` follows `iconPosition`
-10. **IconPreview** (v0.6) — Aligned `<img>` with size + rotate transform
-11. **HtmlPreview** (v0.6) — `dangerouslySetInnerHTML` mirrors frontend trusted-input behavior
-12. **DividerSpacerPreview** (v0.6) — Fixed-height block; if divider active, inline-flex line(s) + optional centered icon
+1. **ContainerPreview** — Renders children recursively via PREVIEW_COMPONENTS
+2. **TextPreview** — Renders `config.content` with the chosen `htmlTag`
+3. **ImagePreview** — Renders `config.image` (via `/_emdash/api/media/file/<storageKey>`) with caption + link
+4. **TextEditorPreview** (v0.6) — Joins Portable Text content as plain text, applies column-count + optional drop cap
+5. **VideoPreview** (v0.6) — Aspect-ratio framed div; renders overlay image if set; centered ▶ marker
+6. **ButtonPreview** (v0.6) — Inline-flex `<button>` with text + optional icon; `flex-direction` follows `iconPosition`
+7. **IconPreview** (v0.6) — Aligned `<img>` with size + rotate transform
+8. **HtmlPreview** (v0.6) — `dangerouslySetInnerHTML` mirrors frontend trusted-input behavior
+9. **DividerSpacerPreview** (v0.6) — Fixed-height block; if divider active, inline-flex line(s) + optional centered icon
 
 (SpacerPreview removed in v0.6 — replaced by DividerSpacerPreview after one-time DB migration.)
+(TestimonialsPreview / FaqPreview / PricingPreview removed post-v0.6 — variant B, no DB migration. Old layouts that still contain those types render no preview and show "Unknown block" placeholder.)
 
 ## v0.6+ — TextEditorPreview / HtmlPreview
 

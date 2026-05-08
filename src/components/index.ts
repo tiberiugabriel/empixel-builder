@@ -1,6 +1,3 @@
-import Testimonials from "./Testimonials.astro";
-import FaqSection from "./FaqSection.astro";
-import PricingSection from "./PricingSection.astro";
 import Text from "./Text.astro";
 import ImageBlock from "./Image.astro";
 import TextEditor from "./TextEditor.astro";
@@ -16,9 +13,6 @@ export { LayoutRenderer };
 export { default as BuilderWrapper } from "./BuilderWrapper.astro";
 
 export const blockComponents: Record<string, unknown> = {
-  testimonials: Testimonials,
-  faq: FaqSection,
-  pricing: PricingSection,
   text: Text,
   image: ImageBlock,
   "text-editor": TextEditor,

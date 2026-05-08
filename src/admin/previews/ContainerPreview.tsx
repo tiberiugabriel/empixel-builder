@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import type { SectionBlock } from "../../types.js";
-import { hexToRgbVals, hexToRgba, type GradientStop } from "../controls/BackgroundControl.js";
+import { hexToRgbVals, hexToRgba, type GradientStop } from "../controls/colorUtils.js";
 
 function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   const type = style.backgroundType as string | undefined;

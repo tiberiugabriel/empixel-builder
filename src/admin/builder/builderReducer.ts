@@ -152,3 +152,83 @@ export const initialState: State = {
   error: null,
   saveError: null,
 };
+
+// ─── Undo / Redo (meta-reducer) ──────────────────────────────────────────────
+//
+// Keeps the existing `State` shape untouched. A meta-reducer wraps the
+// existing reducer and tracks `past` + `future` snapshots of `sections`.
+// Outside callers use `historyState.present` exactly like the previous
+// `state`. Snapshots taken on every mutating action; transient ones (select,
+// load/save lifecycle, the undo/redo flips themselves) are passed through
+// without touching history.
+
+const HISTORY_LIMIT = 50;
+
+const NON_HISTORIC_ACTIONS: ReadonlySet<Action["type"]> = new Set<Action["type"]>([
+  "SELECT",
+  "LOAD_START",
+  "LOAD_SUCCESS",
+  "LOAD_ERROR",
+  "SAVE_START",
+  "SAVE_SUCCESS",
+  "SAVE_ERROR",
+]);
+
+export interface HistoryState {
+  past: SectionBlock[][];
+  present: State;
+  future: SectionBlock[][];
+}
+
+export type HistoryAction = Action | { type: "UNDO" } | { type: "REDO" };
+
+export const initialHistoryState: HistoryState = {
+  past: [],
+  present: initialState,
+  future: [],
+};
+
+export function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
+  if (action.type === "UNDO") {
+    if (state.past.length === 0) return state;
+    const prev = state.past[state.past.length - 1];
+    return {
+      past: state.past.slice(0, -1),
+      present: { ...state.present, sections: prev, isDirty: true },
+      future: [state.present.sections, ...state.future].slice(0, HISTORY_LIMIT),
+    };
+  }
+  if (action.type === "REDO") {
+    if (state.future.length === 0) return state;
+    const next = state.future[0];
+    return {
+      past: [...state.past, state.present.sections].slice(-HISTORY_LIMIT),
+      present: { ...state.present, sections: next, isDirty: true },
+      future: state.future.slice(1),
+    };
+  }
+
+  const nextPresent = reducer(state.present, action);
+  if (nextPresent === state.present) return state;
+
+  // Non-historic actions (selection, load / save lifecycle) update present
+  // without touching history. LOAD_SUCCESS additionally clears history,
+  // because pre-load history snapshots refer to a different page entirely.
+  if (NON_HISTORIC_ACTIONS.has(action.type)) {
+    if (action.type === "LOAD_SUCCESS") {
+      return { past: [], present: nextPresent, future: [] };
+    }
+    return { ...state, present: nextPresent };
+  }
+
+  // Mutating action — only snapshot when sections actually changed.
+  if (nextPresent.sections === state.present.sections) {
+    return { ...state, present: nextPresent };
+  }
+
+  return {
+    past: [...state.past, state.present.sections].slice(-HISTORY_LIMIT),
+    present: nextPresent,
+    future: [],
+  };
+}

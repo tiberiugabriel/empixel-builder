@@ -176,5 +176,4 @@ The indicator is a sibling of the label span (NOT nested inside) — placed imme
 - [x] Render breakpoint style tags in `BlockRenderer.astro` / `SectionContainer.astro`
 - [x] Render hover styles as `:hover` pseudo-selector CSS (`buildHoverCss`)
 - [x] Render `styleDark` (merged via `getEffectiveStyle` when `theme === "dark"`)
-- [ ] Render `styleAccent` via `data-theme="accent"` attribute / selector
 - [ ] Allow per-page breakpoint overrides (currently global only)

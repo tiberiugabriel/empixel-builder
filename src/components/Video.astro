@@ -1,6 +1,6 @@
 ---
 import type { VideoConfig, VideoSourceValue, VideoOverlayValue } from "../types.js";
-import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+import { buildBlockChromeCss } from "./styleUtils.js";
 
 interface Props {
   value: VideoConfig;
@@ -95,11 +95,7 @@ const vimeoUrl = provider === "vimeo" && videoUrl ? (() => { const id = vimeoId(
 
 const lazy = video.lazyLoad ?? true;
 
-const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
-const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
-const customCss = blockId ? getCustomCss(cfg, blockId) : "";
-const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
-const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+const chromeCss = buildBlockChromeCss(cfg, blockId);
 
 const wrapperCss = blockId
   ? `[data-epx-block="${blockId}"]{position:relative;width:100%;aspect-ratio:${aspectRatioCss};overflow:hidden;}
@@ -107,7 +103,7 @@ const wrapperCss = blockId
      [data-epx-block="${blockId}"] > video{position:absolute;inset:0;width:100%;height:100%;border:0;}`
   : "";
 
-const allCss = [wrapperCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+const allCss = [wrapperCss, chromeCss].filter(Boolean).join("");
 ---
 
 <div

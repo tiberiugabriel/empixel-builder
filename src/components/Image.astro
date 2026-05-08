@@ -1,6 +1,6 @@
 ---
 import type { ImageConfig } from "../types.js";
-import { buildBlockCss, buildHoverCss, buildImgVisualCss, buildImgVisualHoverCss, getCustomCss } from "./styleUtils.js";
+import { buildBlockChromeCss } from "./styleUtils.js";
 
 interface Props {
   value: ImageConfig;
@@ -77,12 +77,8 @@ const imgInline = (() => {
   return out.join(";");
 })();
 
-const config   = value as Record<string, unknown>;
-const blockCss = blockId ? buildBlockCss(config, blockId, { imgScoped: true }) : "";
-const hoverCss = blockId ? buildHoverCss(config, blockId, { imgScoped: true }) : "";
-const imgVisualCss      = blockId ? buildImgVisualCss(config, blockId)      : "";
-const imgVisualHoverCss = blockId ? buildImgVisualHoverCss(config, blockId) : "";
-const customCss = blockId ? getCustomCss(config, blockId) : "";
+const config = value as Record<string, unknown>;
+const chromeCss = buildBlockChromeCss(config, blockId, { imgScoped: true });
 
 const styleCfg = (cfg.style ?? {}) as Record<string, string | undefined>;
 const alignVal = (styleCfg.textAlign || "").trim();
@@ -91,7 +87,7 @@ const frameCss = blockId && justify
   ? `[data-epx-block="${blockId}"] > .epx-img-frame{display:flex;justify-content:${justify};}`
   : "";
 
-const allCss = [blockCss, hoverCss, imgVisualCss, imgVisualHoverCss, customCss, frameCss].filter(Boolean).join("");
+const allCss = [chromeCss, frameCss].filter(Boolean).join("");
 
 const RootTag = ((caption ? "figure" : (linkHref ? "a" : "div")) as astroHTML.JSX.HTMLTag);
 const rootIsLink = RootTag === "a";

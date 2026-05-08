@@ -3,13 +3,30 @@ import type { RouteContext } from "emdash";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
-import { DEFAULT_BREAKPOINTS_CONFIG } from "./types.js";
+import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
 
 const KV_ENABLED = "settings:enabledCollections";
 const KV_BREAKPOINTS = "settings:breakpoints";
 
 const NON_REMOVABLE_BREAKPOINTS: BreakpointId[] = ["desktop", "tablet-portrait", "mobile-portrait"];
 const _require = createRequire(import.meta.url);
+
+// Whitelist for SQL identifiers built from the `collection` user input. The
+// collection name is interpolated into table names like `ec_${collection}`,
+// so it MUST be validated before any dynamic statement is prepared. Anything
+// else risks SQL injection.
+const COLLECTION_RE = /^[a-z0-9_]+$/;
+
+function isValidCollection(name: unknown): name is string {
+  return typeof name === "string" && COLLECTION_RE.test(name);
+}
+
+function badRequest(message: string): Response {
+  return new Response(
+    JSON.stringify({ error: { message } }),
+    { status: 400, headers: { "Content-Type": "application/json" } }
+  );
+}
 
 interface SqliteStatement {
   get(...args: unknown[]): unknown;
@@ -172,7 +189,7 @@ function runSpacerMigration(db: SqliteDb): void {
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
-    version: "0.6.0",
+    version: "0.7.0",
     capabilities: ["read:content"],
     routes: {
       // GET  ?pageId=&collection=  → load layout
@@ -186,10 +203,10 @@ export function createPlugin() {
             let pageId = url.searchParams.get("pageId");
             const collection = url.searchParams.get("collection");
             if (!pageId || !collection) {
-              return new Response(
-                JSON.stringify({ error: { message: "pageId and collection are required" } }),
-                { status: 400, headers: { "Content-Type": "application/json" } }
-              );
+              return badRequest("pageId and collection are required");
+            }
+            if (!isValidCollection(collection)) {
+              return badRequest("Invalid collection name");
             }
 
             const db = getDb();
@@ -216,10 +233,15 @@ export function createPlugin() {
                const fallbackRow = db
                  .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
                  .get(collection, originalSlug) as { sections: string } | undefined;
-               if (fallbackRow) return { data: { sections: JSON.parse(fallbackRow.sections) } };
+               if (fallbackRow) {
+                 const fallbackSections = stripUnknownBlocks(JSON.parse(fallbackRow.sections) as SectionBlock[]);
+                 return { data: { sections: fallbackSections } };
+               }
             }
 
-            return { data: row ? { sections: JSON.parse(row.sections) } : null };
+            if (!row) return { data: null };
+            const sections = stripUnknownBlocks(JSON.parse(row.sections) as SectionBlock[]);
+            return { data: { sections } };
           }
 
           if (method === "POST") {
@@ -227,10 +249,10 @@ export function createPlugin() {
             let { pageId } = body ?? {};
             const { collection, sections } = body ?? {};
             if (!pageId || !collection || !sections) {
-              return new Response(
-                JSON.stringify({ error: { message: "pageId, collection and sections are required" } }),
-                { status: 400, headers: { "Content-Type": "application/json" } }
-              );
+              return badRequest("pageId, collection and sections are required");
+            }
+            if (!isValidCollection(collection)) {
+              return badRequest("Invalid collection name");
             }
 
             const db = getDb();
@@ -294,7 +316,7 @@ export function createPlugin() {
           const collection = url.searchParams.get("collection") ?? "pages";
           const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10), 200);
 
-          if (!/^[a-z0-9_]+$/.test(collection)) {
+          if (!isValidCollection(collection)) {
             return { error: "Invalid collection name" };
           }
 
@@ -358,9 +380,12 @@ export function createPlugin() {
           const body = ctx.input as { entryId?: string; collection?: string; enabled?: boolean } | undefined;
           let entryId = body?.entryId;
           const collection = body?.collection;
-          
+
           if (!entryId || !collection) {
             return { error: "entryId and collection are required" };
+          }
+          if (!isValidCollection(collection)) {
+            return { error: "Invalid collection name" };
           }
 
           const db = getDb();

@@ -1,8 +1,5 @@
 ---
 import type { SectionBlock } from "../types.js";
-import Testimonials from "./Testimonials.astro";
-import FaqSection from "./FaqSection.astro";
-import PricingSection from "./PricingSection.astro";
 import Text from "./Text.astro";
 import ImageBlock from "./Image.astro";
 import TextEditor from "./TextEditor.astro";
@@ -11,30 +8,24 @@ import Button from "./Button.astro";
 import Icon from "./Icon.astro";
 import Html from "./Html.astro";
 import DividerSpacer from "./DividerSpacer.astro";
-import { buildBlockCss, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LEAF_COMPONENTS: Record<string, any> = {
-  testimonials: Testimonials,
-  faq: FaqSection,
-  pricing: PricingSection,
-};
 
 interface Props {
   block: SectionBlock;
 }
 
 const { block } = Astro.props;
-const Component = LEAF_COMPONENTS[block.type];
 
-const config      = block.config as Record<string, unknown>;
-const blockCss    = buildBlockCss(config, block.id);
-const videoSrc    = getVideoBackground(config);
-const blockId     = getBlockId(config);
-const extraClass  = getBlockClass(config);
-const customCss   = getCustomCss(config, block.id);
-const hoverCss    = buildHoverCss(config, block.id);
-const allCss      = [blockCss, hoverCss, customCss].filter(Boolean).join("");
+// Single dispatch — every leaf block component is self-contained: it owns
+// its own semantic root tag and emits data-epx-block + advanced.cssId +
+// advanced.cssClasses + the full CSS bundle (block + hover + breakpoint +
+// breakpoint-hover + custom) via buildBlockChromeCss in styleUtils.ts.
+// HTML block stays special only because the iframe IS the data-epx-block
+// element (not a wrapper around an iframe) — but it follows the same chrome
+// contract internally. See audit H2.
+//
+// Legacy `testimonials` / `faq` / `pricing` blocks (removed) are silently
+// ignored — no branch matches their type so nothing renders. Old layouts
+// will still load; the orphan entries persist in the JSON until next save.
 ---
 
 {block.type === "text" && (
@@ -68,27 +59,3 @@ const allCss      = [blockCss, hoverCss, customCss].filter(Boolean).join("");
 {block.type === "divider-spacer" && (
   <DividerSpacer value={block.config} blockId={block.id} />
 )}
-
-{Component && (
-  <div
-    data-epx-block={block.id}
-    id={blockId ?? undefined}
-    class={extraClass || undefined}
-  >
-    {videoSrc && (
-      <video
-        autoplay
-        muted
-        loop
-        playsinline
-        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;"
-        src={videoSrc}
-      />
-    )}
-    <div style={videoSrc ? "position:relative;z-index:1;" : undefined}>
-      <Component value={block.config} />
-    </div>
-  </div>
-)}
-
-{Component && allCss && <style set:html={allCss} is:global />}

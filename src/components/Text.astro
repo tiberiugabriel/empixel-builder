@@ -1,6 +1,6 @@
 ---
 import type { TextConfig } from "../types.js";
-import { buildBlockCss, buildHoverCss, getCustomCss } from "./styleUtils.js";
+import { buildBlockChromeCss } from "./styleUtils.js";
 
 interface Props {
   value: TextConfig;
@@ -39,11 +39,8 @@ if (linkCustomAttr) {
   }
 }
 
-const config   = value as Record<string, unknown>;
-const blockCss = blockId ? buildBlockCss(config, blockId) : "";
-const hoverCss = blockId ? buildHoverCss(config, blockId) : "";
-const customCss = blockId ? getCustomCss(config, blockId) : "";
-const allCss   = [blockCss, hoverCss, customCss].filter(Boolean).join("");
+const config = value as Record<string, unknown>;
+const allCss = buildBlockChromeCss(config, blockId);
 ---
 
 <Tag

@@ -1,12 +1,11 @@
 type GradStop = { color: string; alpha: number; pos: number };
 
+// Light-variant style. Dark is a separate variant emitted as its own scoped
+// rule (see buildBlockCss). config.theme is purely an authoring marker and
+// is NOT consulted at render time — the frontend emits BOTH variants and
+// the `[data-theme="dark"]` ancestor (host site theme switch) cascades.
 function getEffectiveStyle(config: Record<string, unknown>): Record<string, unknown> {
-  const style = (config.style ?? {}) as Record<string, unknown>;
-  if ((config.theme as string) === "dark") {
-    const styleDark = (config.styleDark ?? {}) as Record<string, unknown>;
-    return { ...style, ...styleDark };
-  }
-  return style;
+  return (config.style ?? {}) as Record<string, unknown>;
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -109,11 +108,18 @@ const IMG_VISUAL_PROPS = [
 ] as const;
 const IMG_VISUAL_PROP_SET: Set<string> = new Set(IMG_VISUAL_PROPS);
 
-export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean }): string {
-  const style    = getEffectiveStyle(config);
-  const advanced = (config.advanced ?? {}) as Record<string, unknown>;
+/**
+ * Iterate a single style object + advanced bag and produce the CSS body
+ * (no selector). Pulled out of `buildBlockStyle` so the same code can emit
+ * the light variant (style + advanced) and the dark variant (styleDark
+ * only — advanced is shared and lives on the light rule).
+ */
+function buildStyleBodyFromObject(
+  style: Record<string, unknown>,
+  advanced: Record<string, unknown>,
+  opts?: { imgScoped?: boolean },
+): string {
   const imgScoped = !!opts?.imgScoped;
-
   const parts: string[] = [];
 
   // Background
@@ -221,6 +227,24 @@ export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgSco
   }
 
   return parts.join(";");
+}
+
+export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean }): string {
+  const style    = getEffectiveStyle(config);
+  const advanced = (config.advanced ?? {}) as Record<string, unknown>;
+  return buildStyleBodyFromObject(style, advanced, opts);
+}
+
+/**
+ * CSS body for the dark-theme override, scoped via the compound selector
+ * in `buildBlockCss`. Advanced (position/zIndex) lives on the light rule
+ * and is intentionally NOT repeated here — the dark rule only carries the
+ * declarations that change between modes.
+ */
+export function buildDarkBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean }): string {
+  const styleDark = (config.styleDark ?? {}) as Record<string, unknown>;
+  if (Object.keys(styleDark).length === 0) return "";
+  return buildStyleBodyFromObject(styleDark, {}, opts);
 }
 
 // Build CSS body for the visual subset (border / radii / shadow) — used to
@@ -388,8 +412,23 @@ export function wrapBlockCss(styleStr: string, blockId: string): string {
   return `[data-epx-block="${blockId}"]{${styleStr}}`;
 }
 
+/**
+ * Compound selector that matches the block element when EITHER an ancestor
+ * has `data-theme="dark"` (host-driven theme switch on `<html>` or
+ * `<body>`) OR the block element itself does (per-block author override
+ * applied by the canvas in admin). Use for any rule that should fire when
+ * "the block is currently in dark mode".
+ */
+function darkBlockSelector(blockId: string): string {
+  return `[data-theme="dark"] [data-epx-block="${blockId}"],[data-epx-block="${blockId}"][data-theme="dark"]`;
+}
+
 export function buildBlockCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean }): string {
-  return wrapBlockCss(buildBlockStyle(config, opts), blockId);
+  if (!blockId) return "";
+  const lightRule = wrapBlockCss(buildBlockStyle(config, opts), blockId);
+  const darkBody = buildDarkBlockStyle(config, opts);
+  if (!darkBody) return lightRule;
+  return `${lightRule}${darkBlockSelector(blockId)}{${darkBody}}`;
 }
 
 // ─── Per-breakpoint Hover CSS ─────────────────────────────────────────────────
@@ -547,6 +586,33 @@ export function buildBreakpointCss(
     css += `@media(max-width:${px}px){${mq}}`;
   }
   return css;
+}
+
+// ─── Combined chrome CSS (single helper used by every Astro block) ───────────
+//
+// Every block component used to build its own combined CSS string by calling
+// buildBlockCss + buildHoverCss + buildBreakpointCss + buildBreakpointHoverCss
+// + getCustomCss in the same order. Some components missed one or two helpers
+// — Text and Image notably skipped breakpoint variants — leading to silent
+// parity drift with the canvas (audit H2). Use this helper everywhere instead.
+export function buildBlockChromeCss(
+  config: Record<string, unknown>,
+  blockId: string | undefined,
+  opts?: { imgScoped?: boolean },
+): string {
+  if (!blockId) return "";
+  const parts = [
+    buildBlockCss(config, blockId, opts),
+    buildHoverCss(config, blockId, opts),
+    buildBreakpointCss(config, blockId),
+    buildBreakpointHoverCss(config, blockId),
+    getCustomCss(config, blockId),
+  ];
+  if (opts?.imgScoped) {
+    parts.push(buildImgVisualCss(config, blockId));
+    parts.push(buildImgVisualHoverCss(config, blockId));
+  }
+  return parts.filter(Boolean).join("");
 }
 
 // ─── HTML attribute helpers ───────────────────────────────────────────────────

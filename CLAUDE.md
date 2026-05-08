@@ -7,7 +7,7 @@ Drag-and-drop page builder plugin. Layouts stored as JSON in SQLite, rendered vi
 Read these two files at the start of every chat before doing any work:
 
 1. **`.claude/prd-index.md`** — architecture overview, full file tree, data flow, key concepts, terminology
-2. **`.claude/prd.md`** — current version (v0.6.0), completed features, what's in progress, next priorities
+2. **`.claude/prd.md`** — current version (v0.7.0), completed features, what's in progress, next priorities
 
 Then load the relevant sub-PRD based on the task:
 
@@ -29,8 +29,8 @@ TypeScript strict · React (admin UI) · Astro (frontend) · SQLite (`better-sql
 
 ## Key Constraint
 
-7 block types exist right now: `testimonials`, `faq`, `pricing`, `container`, `spacer`, `text`, `image`.
-Only container blocks can be placed at the canvas root level — all others must be inside a container.
+9 block types exist right now: `container`, `text`, `image`, `text-editor`, `video`, `button`, `icon`, `html`, `divider-spacer`.
+Root-allowed block types (may sit at the canvas root, no container needed): `container`, `html`, `divider-spacer`. All other leaves MUST be placed inside a container. See `isRootAllowedType` in `src/types.ts`.
 
 ## Keep PRDs in Sync
 

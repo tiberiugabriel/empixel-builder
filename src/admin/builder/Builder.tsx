@@ -5,32 +5,34 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  type DragStartEvent,
-  type DragOverEvent,
-  type DragEndEvent,
 } from "@dnd-kit/core";
-import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
-import type { SectionBlock, BlockType, BreakpointId, BreakpointsConfig, PageLayout } from "../../types.js";
-import { isContainerType, BREAKPOINT_DEFS, DEFAULT_BREAKPOINTS_CONFIG } from "../../types.js";
+import type { SectionBlock, BlockType, BreakpointId } from "../../types.js";
+import { isContainerType, isRootAllowedType, BREAKPOINT_DEFS, DEFAULT_BREAKPOINTS_CONFIG } from "../../types.js";
 import { getBlockDef } from "../blockDefinitions.js";
 import { LeftPanel } from "../LeftPanel.js";
-import { Canvas, CANVAS_DROP_ID, type BlockDragData, type EmptyZoneData } from "../Canvas.js";
+import { Canvas } from "../Canvas.js";
 import { RightPanel } from "../RightPanel.js";
 import { StructurePanel, type StructureDropTarget } from "../StructurePanel.js";
 import { ContextMenu } from "../ContextMenu.js";
 import {
   findBlockById,
   findPath,
-  isDescendant,
   deepCloneBlock,
 } from "../treeUtils.js";
-import { reducer, initialState } from "./builderReducer.js";
+import { historyReducer, initialHistoryState } from "./builderReducer.js";
 import { ThemeToggle } from "../components/ThemeToggle.js";
 import { BreakpointSwitcher } from "../components/BreakpointSwitcher.js";
 import { DragGhost } from "../components/DragGhost.js";
+import { useResizeHandle } from "./hooks/useResizeHandle.js";
+import { useBlockClipboard } from "./hooks/useBlockClipboard.js";
+import { useBuilderPersistence } from "./hooks/useBuilderPersistence.js";
+import { useDragHandlers } from "./hooks/useDragHandlers.js";
 
 export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pageTitle: string; collection: string; onBack: () => void }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [historyState, dispatch] = useReducer(historyReducer, initialHistoryState);
+  // `state` keeps the previous shape so existing reads stay unchanged. The
+  // history wrapper lives one level up and feeds Undo / Redo.
+  const state = historyState.present;
   const [showBackWarning, setShowBackWarning] = useState(false);
   const backUrl = new URLSearchParams(window.location.search).get("back") ?? null;
 
@@ -47,22 +49,17 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
     _setStructureDropTarget(val);
   }, []);
 
-  // Panel resize
-  const [leftWidth, setLeftWidth] = useState(220);
-  const [rightWidth, setRightWidth] = useState(280);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  const prevLeftWidth = useRef(220);
-  const prevRightWidth = useRef(280);
-
-  // Structure panel state
-  const [structureHeight, setStructureHeight] = useState(240);
+  // Panel resize — three near-identical drag handlers replaced by one hook.
+  const left = useResizeHandle({ axis: "x", min: 160, max: 420, initial: 220, collapsible: true });
+  const right = useResizeHandle({ axis: "x", invert: true, min: 200, max: 520, initial: 280, collapsible: true });
+  const structure = useResizeHandle({ axis: "y", invert: true, min: 120, max: 600, initial: 240 });
   const [structureCollapsed, setStructureCollapsed] = useState(false);
 
-  // Context menu & clipboard
+  // Context menu
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; blockId: string } | null>(null);
-  const [clipboardBlock, setClipboardBlock] = useState<SectionBlock | null>(null);
-  const [clipboardSettings, setClipboardSettings] = useState<Record<string, unknown> | null>(null);
+
+  // Block clipboard (full block + settings-only) extracted into a hook.
+  const clipboard = useBlockClipboard(sectionsRef);
 
   // Breakpoints
   const [activeBreakpoint, setActiveBreakpoint_] = useState<BreakpointId>("desktop");
@@ -71,277 +68,30 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
     setActiveBreakpoint_(id);
     setLiveCanvasWidth(null);
   }, []);
-  const [breakpointsConfig, setBreakpointsConfig] = useState<BreakpointsConfig>(DEFAULT_BREAKPOINTS_CONFIG);
-  const [isBreakpointsDirty, setIsBreakpointsDirty] = useState(false);
-
-  const handleBreakpointsChange = useCallback((config: BreakpointsConfig) => {
-    setBreakpointsConfig(config);
-    setIsBreakpointsDirty(true);
-  }, []);
-
-  const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
-    if (leftCollapsed) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = leftWidth;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: MouseEvent) => setLeftWidth(Math.max(160, Math.min(420, startWidth + (ev.clientX - startX))));
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [leftWidth, leftCollapsed]);
-
-  const handleLeftDoubleClick = useCallback(() => {
-    if (leftCollapsed) {
-      setLeftCollapsed(false);
-      setLeftWidth(prevLeftWidth.current);
-    } else {
-      prevLeftWidth.current = leftWidth;
-      setLeftCollapsed(true);
-    }
-  }, [leftCollapsed, leftWidth]);
-
-  const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
-    if (rightCollapsed) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = rightWidth;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: MouseEvent) => setRightWidth(Math.max(200, Math.min(520, startWidth - (ev.clientX - startX))));
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [rightWidth, rightCollapsed]);
-
-  const handleRightDoubleClick = useCallback(() => {
-    if (rightCollapsed) {
-      setRightCollapsed(false);
-      setRightWidth(prevRightWidth.current);
-    } else {
-      prevRightWidth.current = rightWidth;
-      setRightCollapsed(true);
-    }
-  }, [rightCollapsed, rightWidth]);
-
-  const handleStructureResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startH = structureHeight;
-    document.body.style.cursor = "row-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: MouseEvent) =>
-      setStructureHeight(Math.max(120, Math.min(600, startH + (startY - ev.clientY))));
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [structureHeight]);
+  // Layout + breakpoints persistence (load + save + beforeunload guard).
+  const persistence = useBuilderPersistence({
+    pageId,
+    collection,
+    sections: state.sections,
+    isDirty: state.isDirty,
+    dispatch,
+  });
+  const { breakpointsConfig, setBreakpointsConfig, isBreakpointsDirty, save } = persistence;
+  const handleBreakpointsChange = setBreakpointsConfig;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
-  useEffect(() => {
-    dispatch({ type: "LOAD_START" });
-    apiFetch(`/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(pageId)}&collection=${encodeURIComponent(collection)}`)
-      .then((res) => parseApiResponse<{ data: PageLayout | null }>(res, "Failed to load layout"))
-      .then(({ data }) => dispatch({ type: "LOAD_SUCCESS", sections: data?.sections ?? [] }))
-      .catch((err: unknown) => dispatch({ type: "LOAD_ERROR", error: String(err) }));
-  }, [pageId, collection]);
-
-  useEffect(() => {
-    apiFetch("/_emdash/api/plugins/empixel-builder/breakpoints")
-      .then((res) => parseApiResponse<{ data: BreakpointsConfig }>(res, "Failed to load breakpoints"))
-      .then(({ data }) => {
-        if (data) {
-          setBreakpointsConfig({
-            enabled: Array.isArray(data.enabled) ? data.enabled : DEFAULT_BREAKPOINTS_CONFIG.enabled,
-            overrides: Array.isArray(data.overrides) ? data.overrides : [],
-          });
-        }
-      })
-      .catch(() => { });
-  }, []);
-
-  const handleDragStart = useCallback((_: DragStartEvent) => {
-    // ghost is rendered via DragGhost which reads from useDndContext directly
-  }, []);
-
-  const handleDragOver = useCallback(({ active, over, delta, activatorEvent }: DragOverEvent) => {
-    const data = active.data.current as { kind: string } | undefined;
-
-    if (data?.kind === "structure-block") {
-      if (!over) { setStructureDropTarget(null); return; }
-      const overData = over.data.current as { kind?: string; blockId?: string; isContainer?: boolean } | undefined;
-      if (overData?.kind !== "struct-row") { setStructureDropTarget(null); return; }
-      const sourceBlockId = (data as { blockId?: string }).blockId;
-      // never set self as target
-      if (overData.blockId === sourceBlockId) { setStructureDropTarget(null); return; }
-      const overRect = over.rect;
-      const pointerY = (activatorEvent as MouseEvent).clientY + delta.y;
-      const relY = (pointerY - overRect.top) / overRect.height;
-      const position = overData.isContainer
-        ? (relY < 0.28 ? "before" : relY > 0.72 ? "after" : "inside")
-        : (relY < 0.5 ? "before" : "after");
-      setStructureDropTarget({ id: overData.blockId!, position });
-      return;
-    }
-
-    if (data?.kind === "new-block") {
-      const overData = over?.data.current as { kind: string } | undefined;
-      setOverBlockId(over && overData?.kind === "block" ? String(over.id) : null);
-    }
-  }, [setStructureDropTarget]);
-
-  const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
-    setOverBlockId(null);
-
-    const sections = sectionsRef.current;
-    const activeData = active.data.current as BlockDragData | { kind: "new-block"; blockType: BlockType } | { kind: "structure-block"; blockId: string } | undefined;
-
-    // ── Structure panel drag ──
-    if (activeData?.kind === "structure-block") {
-      const target = structureDropTargetRef.current;
-      setStructureDropTarget(null);
-      if (!target) return;
-      const sourceId = (activeData as { kind: "structure-block"; blockId: string }).blockId;
-      const { id: targetId, position } = target;
-      if (sourceId === targetId) return;
-      if (isDescendant(sourceId, targetId, sections)) return;
-
-      if (position === "before" || position === "after") {
-        const path = findPath(targetId, sections);
-        if (!path) return;
-        dispatch({
-          type: "MOVE_BLOCK", sourceId,
-          targetContainerId: path.level === "container" ? path.containerId : null,
-          targetSlotIndex: path.level === "container" ? path.slotIndex : null,
-          targetIndex: position === "before" ? path.index : path.index + 1,
-        });
-      } else {
-        const container = findBlockById(targetId, sections);
-        dispatch({
-          type: "MOVE_BLOCK", sourceId,
-          targetContainerId: targetId, targetSlotIndex: null,
-          targetIndex: container?.children?.length ?? 0,
-        });
-      }
-      return;
-    }
-
-    // ── New block dragged from sidebar ──
-    if (activeData?.kind === "new-block") {
-      const { blockType } = activeData as { kind: "new-block"; blockType: BlockType };
-      const def = getBlockDef(blockType);
-      if (!def) return;
-      const newBlock: SectionBlock = { id: crypto.randomUUID(), type: blockType, config: { ...def.defaultConfig } };
-
-      if (!over) return;
-      const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
-
-      // Dropped on canvas background → only containers allowed at top level
-      if (over.id === CANVAS_DROP_ID) {
-        if (!isContainerType(blockType)) return;
-        dispatch({ type: "ADD_BLOCK", block: newBlock });
-        return;
-      }
-      // Dropped on empty zone inside container
-      if (overData?.kind === "empty-zone") {
-        const ezd = overData as EmptyZoneData;
-        dispatch({ type: "ADD_TO_CONTAINER", containerId: ezd.containerId, slotIndex: ezd.slotIndex ?? undefined, block: newBlock });
-        return;
-      }
-      // Dropped on a container block itself → add inside it
-      if ((overData as BlockDragData)?.isContainer) {
-        dispatch({ type: "ADD_TO_CONTAINER", containerId: String(over.id), block: newBlock });
-        return;
-      }
-      // Dropped on a specific block → insert after it
-      dispatch({ type: "INSERT_AFTER", afterId: String(over.id), block: newBlock });
-      return;
-    }
-
-    // ── Canvas block reorder / move ──
-    if (activeData?.kind !== "block") return;
-    if (active.id === over?.id) return;
-    if (!over) return;
-
-    const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
-
-    // Dropped on empty zone → move to container slot
-    if (overData?.kind === "empty-zone") {
-      const ezd = overData as EmptyZoneData;
-      dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: ezd.containerId, targetSlotIndex: ezd.slotIndex, targetIndex: 0 });
-      return;
-    }
-
-    const activeBlockData = activeData as BlockDragData;
-    const overBlockData = overData as BlockDragData | undefined;
-    const activeContainerId = activeBlockData.containerId;
-    const activeSlotIndex = activeBlockData.slotIndex ?? null;
-    const overContainerId = overBlockData?.containerId ?? null;
-    const overSlotIndex = overBlockData?.slotIndex ?? null;
-
-    // Dropped directly on a container block → move inside it (append)
-    if (overBlockData?.isContainer && !activeBlockData.isContainer) {
-      const container = findBlockById(String(over.id), sections);
-      const targetIndex = container?.children?.length ?? 0;
-      dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: String(over.id), targetSlotIndex: null, targetIndex });
-      return;
-    }
-
-    // Same container (or both top-level) → reorder
-    if (activeContainerId === overContainerId && activeSlotIndex === overSlotIndex) {
-      if (activeContainerId === null) {
-        // Top-level reorder
-        const oldIdx = sections.findIndex((s) => s.id === active.id);
-        const newIdx = sections.findIndex((s) => s.id === over.id);
-        if (oldIdx !== -1 && newIdx !== -1) {
-          const next = [...sections];
-          const [removed] = next.splice(oldIdx, 1);
-          next.splice(newIdx, 0, removed);
-          dispatch({ type: "REORDER", sections: next });
-        }
-      } else {
-        // Reorder within container/slot
-        const container = findBlockById(activeContainerId, sections);
-        if (!container) return;
-        const items = activeSlotIndex !== null
-          ? (container.slots?.[activeSlotIndex] ?? [])
-          : (container.children ?? []);
-        const oldIdx = items.findIndex((s) => s.id === active.id);
-        const newIdx = items.findIndex((s) => s.id === over.id);
-        if (oldIdx !== -1 && newIdx !== -1) {
-          const next = [...items];
-          const [removed] = next.splice(oldIdx, 1);
-          next.splice(newIdx, 0, removed);
-          dispatch({ type: "REORDER_IN_CONTAINER", containerId: activeContainerId, slotIndex: activeSlotIndex, newOrder: next });
-        }
-      }
-      return;
-    }
-
-    // Different containers → move
-    const path = findPath(String(over.id), sections);
-    const targetIndex = path ? path.index : 0;
-    dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: overContainerId, targetSlotIndex: overSlotIndex, targetIndex });
-  }, [setStructureDropTarget]);
+  // Drag handlers — same three branches (structure / new-block / canvas) as
+  // before, just relocated to the dedicated hook (audit H4 finalize).
+  const { onDragStart: handleDragStart, onDragOver: handleDragOver, onDragEnd: handleDragEnd } = useDragHandlers({
+    sectionsRef,
+    dispatch,
+    setOverBlockId,
+    structureDropTargetRef,
+    setStructureDropTarget,
+  });
 
   const addBlock = useCallback((type: BlockType) => {
     const def = getBlockDef(type);
@@ -365,8 +115,9 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
       }
     }
 
-    // No container context for non-containers → can't add at top level
-    if (!isContainerType(type)) return;
+    // No container context — only root-allowed blocks (container / html /
+    // divider-spacer) may sit at the canvas root.
+    if (!isRootAllowedType(type)) return;
 
     dispatch({ type: "ADD_BLOCK", block });
   }, [state.selectedId, state.sections]);
@@ -401,26 +152,16 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
     dispatch({ type: "DUPLICATE_BLOCK", id });
   }, []);
 
-  const copyBlock = useCallback((id: string) => {
-    const block = findBlockById(id, sectionsRef.current);
-    if (block) setClipboardBlock(deepCloneBlock(block));
-  }, []);
-
-  const copyBlockSettings = useCallback((id: string) => {
-    const block = findBlockById(id, sectionsRef.current);
-    if (block) setClipboardSettings({ ...block.config });
-  }, []);
-
   const pasteBlock = useCallback((afterId: string) => {
-    if (!clipboardBlock) return;
-    const clone = deepCloneBlock(clipboardBlock);
+    if (!clipboard.clipboardBlock) return;
+    const clone = deepCloneBlock(clipboard.clipboardBlock);
     dispatch({ type: "INSERT_AFTER", afterId, block: clone });
-  }, [clipboardBlock]);
+  }, [clipboard.clipboardBlock]);
 
   const pasteBlockSettings = useCallback((id: string) => {
-    if (!clipboardSettings) return;
-    dispatch({ type: "PASTE_SETTINGS", id, config: clipboardSettings });
-  }, [clipboardSettings]);
+    if (!clipboard.clipboardSettings) return;
+    dispatch({ type: "PASTE_SETTINGS", id, config: clipboard.clipboardSettings });
+  }, [clipboard.clipboardSettings]);
 
   const showContextMenu = useCallback((e: React.MouseEvent, blockId: string) => {
     e.preventDefault();
@@ -428,42 +169,32 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
     setContextMenu({ x: e.clientX, y: e.clientY, blockId });
   }, []);
 
-  const save = useCallback(async () => {
-    dispatch({ type: "SAVE_START" });
-    try {
-      const res = await apiFetch("/_emdash/api/plugins/empixel-builder/layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId, collection, sections: state.sections }),
-      });
-      if (!res.ok) {
-        dispatch({ type: "SAVE_ERROR", error: await res.text() || "Save failed" });
-        return;
-      }
-      if (isBreakpointsDirty) {
-        const bpRes = await apiFetch("/_emdash/api/plugins/empixel-builder/breakpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(breakpointsConfig),
-        });
-        if (!bpRes.ok) {
-          dispatch({ type: "SAVE_ERROR", error: await bpRes.text() || "Save failed" });
-          return;
-        }
-        setIsBreakpointsDirty(false);
-      }
-      dispatch({ type: "SAVE_SUCCESS" });
-    } catch (err) {
-      dispatch({ type: "SAVE_ERROR", error: String(err) });
-    }
-  }, [pageId, collection, state.sections, isBreakpointsDirty, breakpointsConfig]);
-
+  // Cmd/Ctrl+Z → UNDO; Cmd/Ctrl+Shift+Z (or Cmd/Ctrl+Y) → REDO.
+  // Skipped when an editable element has focus, so typing inside fields
+  // keeps the browser-native undo behaviour for text inputs.
   useEffect(() => {
-    if (!state.isDirty && !isBreakpointsDirty) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [state.isDirty, isBreakpointsDirty]);
+    function isEditableTarget(el: EventTarget | null): boolean {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      return el.isContentEditable;
+    }
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (isEditableTarget(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        dispatch({ type: "UNDO" });
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        dispatch({ type: "REDO" });
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Detect overflow on labels so CSS ::after can show "..." indicator.
   useEffect(() => {
@@ -612,16 +343,16 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
           </div>
         </header>
 
-        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftCollapsed ? 0 : leftWidth}px 4px 1fr 4px ${rightCollapsed ? 0 : rightWidth}px` }}>
+        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${left.collapsed ? 0 : left.size}px 4px 1fr 4px ${right.collapsed ? 0 : right.size}px` }}>
           <LeftPanel
             onAddBlock={addBlock}
             breakpointsConfig={breakpointsConfig}
             onBreakpointsChange={handleBreakpointsChange}
           />
           <div
-            className={`epx-resize-handle${leftCollapsed ? " is-collapsed" : ""}`}
-            onMouseDown={handleLeftResizeStart}
-            onDoubleClick={handleLeftDoubleClick}
+            className={`epx-resize-handle${left.collapsed ? " is-collapsed" : ""}`}
+            onMouseDown={left.onMouseDown}
+            onDoubleClick={left.onDoubleClick}
           />
           <Canvas
             sections={state.sections}
@@ -638,9 +369,9 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
             activeBreakpoint={activeBreakpoint}
           />
           <div
-            className={`epx-resize-handle${rightCollapsed ? " is-collapsed" : ""}`}
-            onMouseDown={handleRightResizeStart}
-            onDoubleClick={handleRightDoubleClick}
+            className={`epx-resize-handle${right.collapsed ? " is-collapsed" : ""}`}
+            onMouseDown={right.onMouseDown}
+            onDoubleClick={right.onDoubleClick}
           />
           <div className="epx-right-column">
             {selectedBlock && (
@@ -649,7 +380,7 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
                   className="epx-right-column__settings"
                   style={structureCollapsed
                     ? { flex: 1 }
-                    : { height: `calc(100% - ${structureHeight}px - 4px)` }
+                    : { height: `calc(100% - ${structure.size}px - 4px)` }
                   }
                 >
                   <RightPanel
@@ -662,7 +393,7 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
                 {!structureCollapsed && (
                   <div
                     className="epx-resize-handle epx-resize-handle--row"
-                    onMouseDown={handleStructureResizeStart}
+                    onMouseDown={structure.onMouseDown}
                   />
                 )}
               </>
@@ -678,7 +409,7 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
               style={structureCollapsed
                 ? { flexShrink: 0, marginTop: "auto" }
                 : selectedBlock
-                  ? { height: structureHeight, flexShrink: 0 }
+                  ? { height: structure.size, flexShrink: 0 }
                   : { flex: 1 }
               }
             />
@@ -694,12 +425,12 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          canPaste={clipboardBlock !== null}
-          canPasteSettings={clipboardSettings !== null}
+          canPaste={clipboard.canPaste}
+          canPasteSettings={clipboard.canPasteSettings}
           onEdit={() => { selectBlock(contextMenu.blockId); setContextMenu(null); }}
           onDuplicate={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}
-          onCopy={() => { copyBlock(contextMenu.blockId); setContextMenu(null); }}
-          onCopySettings={() => { copyBlockSettings(contextMenu.blockId); setContextMenu(null); }}
+          onCopy={() => { clipboard.copyBlock(contextMenu.blockId); setContextMenu(null); }}
+          onCopySettings={() => { clipboard.copySettings(contextMenu.blockId); setContextMenu(null); }}
           onPaste={() => { pasteBlock(contextMenu.blockId); setContextMenu(null); }}
           onPasteSettings={() => { pasteBlockSettings(contextMenu.blockId); setContextMenu(null); }}
           onDelete={() => { removeBlock(contextMenu.blockId); setContextMenu(null); }}

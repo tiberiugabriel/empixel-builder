@@ -16,7 +16,7 @@ Drag-and-drop page builder plugin for EmDash. Users visually compose pages using
 | RightPanel | React | `src/admin/RightPanel.tsx` + controls | ✅ Done |
 | Breakpoints | React + Astro | `BreakpointSwitcher.tsx` + `styleUtils.ts` | ✅ Done (admin + frontend) |
 
-## Current State (v0.6.0)
+## Current State (v0.7.0)
 
 ### Completed
 ✅ 3-panel builder UI with drag-drop (`@dnd-kit`)
@@ -53,34 +53,38 @@ Drag-and-drop page builder plugin for EmDash. Users visually compose pages using
 ✅ Canvas width preview for non-desktop breakpoints
 
 ### In Progress
-🟢 Block definitions (12 defined: testimonials, faq, pricing, container, text, image, text-editor, video, button, icon, html, divider-spacer)
-🟢 Preview components (12)
-🟢 Frontend Astro components (12 + LayoutRenderer + BlockRenderer + SectionContainer)
+🟢 Block definitions (9 defined: container, text, image, text-editor, video, button, icon, html, divider-spacer)
+🟢 Preview components (9)
+🟢 Frontend Astro components (9 + LayoutRenderer + BlockRenderer + SectionContainer)
 
 ### Not Started
 ⬜ Undo/Redo stack (no UNDO action in reducer)
 ⬜ Block search/filter in LeftPanel
 ⬜ Additional block types (hero, features-grid, image-text, cta, stats, gallery, columns)
-⬜ Accent-theme rendering on frontend (`styleAccent` parsed in editor but not rendered)
 
 ## Block Inventory
 
-**Defined in types.ts + blockDefinitions.ts (12):**
-- testimonials, faq, pricing, container, text, image
-- **text-editor, video, button, icon, html, divider-spacer** (added in v0.6)
+**Defined in types.ts + blockDefinitions.ts (9):**
+- container, text, image, text-editor, video, button, icon, html, divider-spacer
 
-**Preview components (12):**
-- TestimonialsPreview, FaqPreview, PricingPreview, ContainerPreview, TextPreview, ImagePreview
-- TextEditorPreview, VideoPreview, ButtonPreview, IconPreview, HtmlPreview, DividerSpacerPreview
+**Preview components (9):**
+- ContainerPreview, TextPreview, ImagePreview, TextEditorPreview, VideoPreview, ButtonPreview, IconPreview, HtmlPreview, DividerSpacerPreview
 
-**Frontend Astro components (12 + 3 infra):**
-- Testimonials.astro, FaqSection.astro, PricingSection.astro, Text.astro, Image.astro, SectionContainer.astro
-- TextEditor.astro, Video.astro, Button.astro, Icon.astro, Html.astro, DividerSpacer.astro
+**Frontend Astro components (9 + 3 infra):**
+- Text.astro, Image.astro, SectionContainer.astro, TextEditor.astro, Video.astro, Button.astro, Icon.astro, Html.astro, DividerSpacer.astro
 - LayoutRenderer.astro (root renderer), BlockRenderer.astro (leaf dispatcher), BuilderWrapper.astro
 
 **Removed in v0.6:**
 - `spacer` BlockType (replaced by `divider-spacer`; one-time DB migration runs on plugin init)
 - SpacerPreview.tsx, SpacerSection.astro, SpacerConfig type
+
+**Removed post-v0.6 (variant B — no DB migration):**
+- `testimonials`, `faq`, `pricing` BlockTypes + their configs / previews / Astro
+  components / RightPanel branches / docs. Old layouts that still contain
+  these block types load fine; entries are silently skipped by both
+  `BlockRenderer.astro` (no matching dispatch) and the canvas
+  (`PREVIEW_COMPONENTS` lookup returns undefined → "Unknown block"
+  placeholder). Re-saving the layout drops the orphan entries.
 
 **To add:**
 - hero, features-grid, image-text, cta, stats, gallery, columns
@@ -104,8 +108,7 @@ Drag-and-drop page builder plugin for EmDash. Users visually compose pages using
 2. **Create preview components** — 1:1 with new block definitions
 3. **Create Astro frontend components** — 1:1 with new block definitions
 4. **Undo/Redo** — UNDO action + history stack in reducer + topbar buttons
-5. **Accent theme frontend rendering** — extend `getEffectiveStyle` to merge `styleAccent` via `data-theme="accent"` selector
-6. **Generic image FieldDef type** — wire MediaPicker into FieldRenderer for non-image blocks (image-group already covers icons)
+5. **Generic image FieldDef type** — wire MediaPicker into FieldRenderer for non-image blocks (image-group already covers icons)
 
 ## v0.6+ Highlights — recent updates
 

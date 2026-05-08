@@ -19,16 +19,15 @@ import { MediaPicker } from "./MediaPicker.js";
 import type { MediaRef } from "./MediaPicker.js";
 export type { MediaRef } from "./MediaPicker.js";
 import { ImagePreviewCard } from "./ImagePreviewCard.js";
+import { hexToRgba, hexToRgbVals, type GradientStop } from "./colorUtils.js";
+
+// Re-export so existing import sites keep working (audit M3 migration).
+export { hexToRgba, hexToRgbVals } from "./colorUtils.js";
+export type { GradientStop } from "./colorUtils.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type BackgroundType = "color" | "gradient" | "image" | "video" | "slideshow";
-
-export interface GradientStop {
-  color: string;
-  alpha: number;
-  pos: number;
-}
 
 export interface BackgroundConfig {
   type?: BackgroundType;
@@ -166,18 +165,6 @@ export function serializeBackground(cfg: BackgroundConfig): Record<string, unkno
 }
 
 // ─── Exported CSS helper (used by preview + SectionContainer) ─────────────────
-
-export function hexToRgbVals(hex: string): [number, number, number] {
-  const c    = hex.replace("#", "");
-  const full = c.length === 3 ? c.split("").map(x => x + x).join("") : c.slice(0, 6);
-  const n    = parseInt(full.padEnd(6, "0"), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-export function hexToRgba(hex: string, alpha: number): string {
-  const [r, g, b] = hexToRgbVals(hex);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
 
 export function buildBackgroundCss(style: Record<string, unknown>): string {
   const type = style.backgroundType as BackgroundType | undefined;

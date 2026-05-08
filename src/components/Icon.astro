@@ -1,6 +1,6 @@
 ---
 import type { IconConfig } from "../types.js";
-import { buildBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getCustomCss } from "./styleUtils.js";
+import { buildBlockChromeCss } from "./styleUtils.js";
 
 interface Props {
   value: IconConfig;
@@ -56,11 +56,7 @@ if (value.linkCustomAttr) {
   }
 }
 
-const blockCss = blockId ? buildBlockCss(cfg, blockId) : "";
-const hoverCss = blockId ? buildHoverCss(cfg, blockId) : "";
-const customCss = blockId ? getCustomCss(cfg, blockId) : "";
-const bpCss = blockId ? buildBreakpointCss(cfg, blockId) : "";
-const bpHoverCss = blockId ? buildBreakpointHoverCss(cfg, blockId) : "";
+const chromeCss = buildBlockChromeCss(cfg, blockId);
 
 const wrapperCss = blockId
   ? `[data-epx-block="${blockId}"]{display:flex;justify-content:${justify};}`
@@ -78,7 +74,7 @@ const svgWrapperCss = blockId && isSvg && iconColor
      }`
   : "";
 
-const allCss = [wrapperCss, svgWrapperCss, blockCss, hoverCss, customCss, bpCss, bpHoverCss].filter(Boolean).join("");
+const allCss = [wrapperCss, svgWrapperCss, chromeCss].filter(Boolean).join("");
 
 const Tag = (linkHref ? "a" : "span") as astroHTML.JSX.HTMLTag;
 ---

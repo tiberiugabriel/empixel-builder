@@ -14,9 +14,6 @@ src/components/
 ├─ BuilderWrapper.astro  # Wrapper for builder-enabled pages
 ├─ styleUtils.ts         # CSS generation from block config (selector-based)
 ├─ db.ts                 # getBuilderLayout() database query
-├─ Testimonials.astro    # testimonials block
-├─ FaqSection.astro      # faq block
-├─ PricingSection.astro  # pricing block
 ├─ Text.astro            # text block
 ├─ Image.astro           # image block
 ├─ TextEditor.astro      # v0.6 — Portable Text via emdash/ui (lazy import, plain-text fallback)
@@ -31,9 +28,6 @@ src/components/
 
 ```ts
 export const blockComponents: Record<string, unknown> = {
-  testimonials: Testimonials,
-  faq: FaqSection,
-  pricing: PricingSection,
   text: Text,
   image: ImageBlock,
   "text-editor": TextEditor,
@@ -72,7 +66,6 @@ Routes to the correct Astro component by `block.type`. Builds CSS via `buildBloc
 
 - `text` → `<Text value={block.config} blockId={block.id} />`
 - `image` → `<ImageBlock value={block.config} blockId={block.id} />`
-- `testimonials` / `faq` / `pricing` / `spacer` → `<Component value={block.config} />` inside a wrapper `<div data-epx-block>` (which also hosts an optional video background overlay)
 
 ## SectionContainer.astro
 
@@ -137,7 +130,7 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 | `buildBreakpointHoverCss(config, blockId)` | `@media + :hover` rules from `styleHoverBreakpoints` |
 | `buildImgVisualCss(config, blockId)` | `[data-epx-block="<id>"] img{…}` — border/radius/shadow scoped to inner `<img>` |
 | `buildImgVisualHoverCss(config, blockId)` | Same as above for `:hover img` |
-| `getEffectiveStyle(config)` | Merges `style` + `styleDark` when `theme === "dark"` (accent not yet implemented) |
+| `getEffectiveStyle(config)` | Returns `config.style` (light variant). Dark emits as a separate scoped rule via `buildDarkBlockStyle`. |
 | `getVideoBackground(config)` | Resolves video URL from storage key or external URL |
 | `getVideoInfo(config)` | Detects YouTube / Vimeo / HTML5 from URL pattern |
 | `buildYouTubeEmbedUrl(id, opts)` / `buildVimeoEmbedUrl(id, opts)` | Embed URL construction with autoplay/mute/loop/start/end |
@@ -194,8 +187,48 @@ Wraps pages with builder-related metadata/attributes. Usage TBD.
 - **No duplicate logic** between admin previews and frontend components
 - **Cache pages** that query layouts (`Astro.cache.set(cacheHint)`)
 
+## v0.7 — Theme model
+
+The `theme` field in a block's config is **purely an authoring marker** —
+it tracks which variant the author was last editing in the canvas via
+ThemeStyleToggle. Frontend rendering does NOT consult `config.theme`;
+it always emits BOTH variants:
+
+- light: `[data-epx-block="<id>"]{...config.style...}`
+- dark (only if `config.styleDark` has any entry):
+  `[data-theme="dark"] [data-epx-block="<id>"], [data-epx-block="<id>"][data-theme="dark"]{...config.styleDark...}`
+
+The host site is expected to flip a `data-theme="dark"` attribute on
+`<html>` (or `<body>`) when its dark-mode toggle is active. The cascade
+then promotes every block's dark variant. No re-render needed.
+
+The compound selector also matches when `data-theme="dark"` is on the
+block element itself — used by Canvas (admin) so the ThemeStyleToggle
+preview can show one block in dark while the rest stay light.
+
+Hover and per-breakpoint variants are theme-independent (one set of
+hover / breakpoint declarations applies to both modes; further per-theme
+overrides are not supported at this time).
+
 ## v0.6+ — frontend updates
 
+- **Block removal: testimonials / faq / pricing (variant B, no migration)** —
+  These three section-level blocks were removed after the audit. No DB
+  migration ran; layouts that still contain entries of those types load
+  without error but render nothing on the frontend (no matching dispatch
+  in `BlockRenderer.astro`) and show "Unknown block" in the canvas. Re-saving
+  the layout drops the orphan entries.
+- **Single render path for all blocks (audit H2)** — `BlockRenderer.astro`
+  no longer splits between an inline conditional path and a
+  `LEAF_COMPONENTS` map + bespoke wrapper. Every block component is
+  self-contained: it picks its own semantic root tag (`<p>` / `<button>` /
+  `<iframe>` / etc.), sets `data-epx-block` and `advanced.cssId` /
+  `advanced.cssClasses` on that root, and emits the full CSS bundle
+  (block + hover + breakpoint + breakpoint-hover + custom) via the
+  `buildBlockChromeCss(config, blockId, opts?)` helper from `styleUtils.ts`.
+  Text and Image — previously skipping `buildBreakpointCss` /
+  `buildBreakpointHoverCss` — now get parity with every other leaf via the
+  helper.
 - **HTML block** rendered inside a sandboxed iframe with `srcdoc` (`sandbox="allow-scripts allow-same-origin"`, `scrolling="no"`) so site CSS doesn't cross in and the block's `<style>`/`<script>` doesn't leak out. If user code already has `<html>`, srcdoc reuses it; else minimal shell wraps the fragment. Auto-resize via parent script (idempotent global flag) reads `iframe.contentDocument.documentElement.scrollHeight` after `load` + `ResizeObserver` + `MutationObserver` + img loads + 100ms polling for first 2s. Iframe collapsed to `0px` before measurement to neutralize `vh`/`100%` body height feedback. Iframe IS the `data-epx-block` element (no wrapper `<div>`); inline style + global rule force `width: 100%; border: none` regardless of flex/grid parent.
 - **Text Editor block** (`TextEditor.astro`) emits per-breakpoint media queries by walking the union of `configBreakpoints` + `styleBreakpoints` for `column-count`, `column-gap`, and `::first-letter` rule (drop cap toggle + size/lines/margin-right). Image inserts inside PortableText render via custom `components.type.image` → [PortableTextImage.astro](../src/components/PortableTextImage.astro) which builds the URL from `node.asset.storageKey` / `node.storageKey` / `node.url`. Renderer pulled from `emdash/ui` lazily; falls back to plain text when unavailable.
 - **`getCustomCss(config, blockId)`** in `styleUtils.ts` substitutes the `selector` keyword (`/\bselector\b/g`) with `[data-epx-block="<id>"]`. If user CSS contains `{` it's emitted as-is (full rules with selectors); else it's wrapped as bare declarations under the block's selector. Powers the Custom CSS editor + the same on canvas (Canvas.tsx walks tree and injects via `<style id="epx-canvas-custom-css">`).
@@ -223,7 +256,6 @@ Wraps pages with builder-related metadata/attributes. Usage TBD.
 - [x] Implement breakpoint media queries (`buildBreakpointCss` / `buildBreakpointHoverCss`)
 - [x] Apply hover CSS via `:hover` pseudo-selector from `styleHover`
 - [x] Apply dark-theme CSS from `styleDark` (via `getEffectiveStyle`)
-- [ ] Apply accent-theme CSS from `styleAccent` (scoped via `data-theme="accent"`)
 - [ ] Add responsive image optimization (`<picture>` / `srcset`)
 - [ ] Add SEO metadata (og:image, schema.org)
 - [ ] Test nested containers (3+ levels deep)

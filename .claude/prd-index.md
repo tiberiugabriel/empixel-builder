@@ -63,7 +63,7 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 1. Astro page calls `getBuilderLayout(entryId, collection)` → queries SQLite
 2. Page renders `<LayoutRenderer sections={layout.sections} />`
 3. LayoutRenderer iterates sections — containers go to `SectionContainer.astro`, leaves to `BlockRenderer.astro`
-4. `BlockRenderer` dispatches leaves (testimonials/faq/pricing/text/image/text-editor/video/button/icon/html/divider-spacer) by `block.type`
+4. `BlockRenderer` dispatches leaves (text/image/text-editor/video/button/icon/html/divider-spacer) by `block.type`
 5. Each component builds CSS via `buildBlockCss` / `buildHoverCss` / `buildBreakpointCss` / `getCustomCss` and injects it as a global `<style>` tag, with `[data-epx-block="<id>"]` selectors
 
 ## Key Concepts
@@ -72,7 +72,7 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 ```ts
 {
   id: string;                            // UUID
-  type: BlockType;                       // "container", "testimonials", etc.
+  type: BlockType;                       // "container", "text", "image", etc.
   config: Record<string, any>;           // All block settings
   children?: SectionBlock[];             // Container: nested blocks
   slots?: SectionBlock[][];             // Columns: slot arrays
@@ -96,10 +96,9 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 ### Config Key Conventions
 | Key | Type | Purpose |
 |-----|------|---------|
-| `theme` | "light"\|"dark"\|"accent" | Active theme |
+| `theme` | "light"\|"dark" | Active theme |
 | `style` | CSSProps | Desktop + light-theme styles |
 | `styleDark` | CSSProps | Dark-theme overrides |
-| `styleAccent` | CSSProps | Accent-theme overrides |
 | `styleHover` | CSSProps | Hover state styles |
 | `styleBreakpoints` | `{ [bpId]: {_px, ...CSSProps} }` | Per-breakpoint overrides |
 | `styleHoverBreakpoints` | `{ [bpId]: {_px, ...CSSProps} }` | Hover per-breakpoint |
@@ -194,10 +193,7 @@ src/
 │  │  └─ RichTextField.tsx               # v0.6 — wraps @emdash-cms/admin PortableTextEditor (lazy)
 │  │
 │  └─ previews/                          # Live preview components
-│     ├─ index.ts                        # PREVIEW_COMPONENTS export
-│     ├─ TestimonialsPreview.tsx
-│     ├─ FaqPreview.tsx
-│     ├─ PricingPreview.tsx
+│     ├─ index.ts                        # PREVIEW_COMPONENTS export (9 entries)
 │     ├─ ContainerPreview.tsx
 │     ├─ TextPreview.tsx
 │     ├─ ImagePreview.tsx
@@ -209,16 +205,13 @@ src/
 │     └─ DividerSpacerPreview.tsx        # v0.6
 │
 └─ components/                           # Frontend (Astro)
-   ├─ index.ts                           # Exports + blockComponents map
-   ├─ BlockRenderer.astro                # Leaf block dispatcher (12 leaves)
+   ├─ index.ts                           # Exports + blockComponents map (9 entries)
+   ├─ BlockRenderer.astro                # Leaf block dispatcher (8 leaves; container goes to SectionContainer)
    ├─ LayoutRenderer.astro               # Root layout renderer
    ├─ SectionContainer.astro             # container block (recursive)
    ├─ BuilderWrapper.astro               # Builder-page wrapper
    ├─ styleUtils.ts                      # CSS generation (selector-based; aspectRatio + filter added v0.6)
    ├─ db.ts                              # getBuilderLayout()
-   ├─ Testimonials.astro
-   ├─ FaqSection.astro
-   ├─ PricingSection.astro
    ├─ Text.astro
    ├─ Image.astro
    ├─ TextEditor.astro                   # v0.6 — Portable Text via emdash/ui
@@ -240,7 +233,6 @@ src/
 ### Short-term
 - Undo/Redo (UNDO action + history stack + topbar buttons)
 - Rich-text field type (Portable Text)
-- Accent-theme rendering on frontend (`styleAccent` via `data-theme="accent"` selector)
 - Block search/filter in LeftPanel
 
 ### Done (was on roadmap)
@@ -259,7 +251,7 @@ src/
 
 | Term | Definition |
 |------|-----------|
-| Block | A page element (container, testimonials, etc.) |
+| Block | A page element (container, text, image, button, etc.) |
 | Layout | Serialized tree of SectionBlocks for one page |
 | SectionBlock | In-memory block (id, type, config, children, slots) |
 | BlockDef | Schema definition (fields, defaults, label, icon) |

@@ -64,13 +64,10 @@ export function removeFromTree(id: string, sections: SectionBlock[]): SectionBlo
   return sections
     .filter((b) => b.id !== id)
     .map((b) => {
-      if (b.children) {
-        return { ...b, children: removeFromTree(id, b.children) };
-      }
-      if (b.slots) {
-        return { ...b, slots: b.slots.map((slot) => removeFromTree(id, slot)) };
-      }
-      return b;
+      let next = b;
+      if (b.children) next = { ...next, children: removeFromTree(id, b.children) };
+      if (b.slots) next = { ...next, slots: b.slots.map((slot) => removeFromTree(id, slot)) };
+      return next;
     });
 }
 
@@ -84,9 +81,10 @@ export function updateBlockInTree(
 ): SectionBlock[] {
   return sections.map((b) => {
     if (b.id === id) return { ...b, config: { ...b.config, ...config } };
-    if (b.children) return { ...b, children: updateBlockInTree(id, config, b.children) };
-    if (b.slots) return { ...b, slots: b.slots.map((slot) => updateBlockInTree(id, config, slot)) };
-    return b;
+    let next = b;
+    if (b.children) next = { ...next, children: updateBlockInTree(id, config, b.children) };
+    if (b.slots) next = { ...next, slots: b.slots.map((slot) => updateBlockInTree(id, config, slot)) };
+    return next;
   });
 }
 
@@ -119,9 +117,10 @@ export function insertAtPath(
         return { ...b, slots: nextSlots };
       }
     }
-    if (b.children) return { ...b, children: insertAtPath(block, path, b.children) };
-    if (b.slots) return { ...b, slots: b.slots.map((slot) => insertAtPath(block, path, slot)) };
-    return b;
+    let next = b;
+    if (b.children) next = { ...next, children: insertAtPath(block, path, b.children) };
+    if (b.slots) next = { ...next, slots: b.slots.map((slot) => insertAtPath(block, path, slot)) };
+    return next;
   });
 }
 
@@ -139,13 +138,12 @@ export function reorderInContainer(
       const nextSlots = (b.slots ?? []).map((slot, i) => (i === slotIndex ? newOrder : slot));
       return { ...b, slots: nextSlots };
     }
-    if (b.children) return { ...b, children: reorderInContainer(containerId, slotIndex, newOrder, b.children) };
-    if (b.slots) return { ...b, slots: b.slots.map((slot) => reorderInContainer(containerId, slotIndex, newOrder, slot)) };
-    return b;
+    let next = b;
+    if (b.children) next = { ...next, children: reorderInContainer(containerId, slotIndex, newOrder, b.children) };
+    if (b.slots) next = { ...next, slots: b.slots.map((slot) => reorderInContainer(containerId, slotIndex, newOrder, slot)) };
+    return next;
   });
 }
-
-// ─── addToContainer ──────────────────────────────────────────────────────────
 
 // ─── isDescendant ────────────────────────────────────────────────────────────
 
@@ -158,9 +156,19 @@ export function isDescendant(ancestorId: string, targetId: string, sections: Sec
 // ─── deepCloneBlock ───────────────────────────────────────────────────────────
 
 export function deepCloneBlock(block: SectionBlock): SectionBlock {
+  // `structuredClone` deep-copies the config map so a future caller that
+  // mutates `clone.config.X` won't corrupt the original. Falls back to a
+  // JSON round-trip if running under an older runtime (Node 16- / very old
+  // browsers); both engines we target (Node 18+, evergreen browsers) ship
+  // structuredClone natively.
+  const clonedConfig =
+    typeof structuredClone === "function"
+      ? structuredClone(block.config)
+      : (JSON.parse(JSON.stringify(block.config)) as typeof block.config);
   return {
     ...block,
     id: crypto.randomUUID(),
+    config: clonedConfig,
     children: block.children?.map(deepCloneBlock),
     slots: block.slots?.map((slot) => slot.map(deepCloneBlock)),
   };
@@ -184,8 +192,9 @@ export function addToContainer(
       );
       return { ...b, slots: nextSlots };
     }
-    if (b.children) return { ...b, children: addToContainer(containerId, slotIndex, block, b.children) };
-    if (b.slots) return { ...b, slots: b.slots.map((slot) => addToContainer(containerId, slotIndex, block, slot)) };
-    return b;
+    let next = b;
+    if (b.children) next = { ...next, children: addToContainer(containerId, slotIndex, block, b.children) };
+    if (b.slots) next = { ...next, slots: b.slots.map((slot) => addToContainer(containerId, slotIndex, block, slot)) };
+    return next;
   });
 }

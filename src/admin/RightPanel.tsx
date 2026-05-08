@@ -30,6 +30,14 @@ import { CssFiltersControl, parseFilter, serializeFilter, type CssFiltersValue }
 import { VideoSourceControl } from "./controls/VideoSourceControl.js";
 import { ColorPicker, getColorDisplay, type ColorFormat } from "./controls/ColorPicker.js";
 import type { VideoSourceValue, VideoOverlayValue, DividerConfig, DividerStyle, DividerGradient, DividerGradientStop } from "../types.js";
+import {
+  IconFields,
+  IconStyle,
+  IconAdvanced,
+  IconStateNormal,
+  IconStateHover,
+} from "./right-panel/icons.js";
+import type { AdvancedConfig } from "./right-panel/types.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -45,68 +53,7 @@ function getEffectiveBpPx(bpId: BreakpointId, config: BreakpointsConfig): number
   return BREAKPOINT_DEFS.find((b) => b.id === bpId)?.defaultPx ?? 992;
 }
 
-// ─── Tab icons (inline SVG) ───────────────────────────────────────────────────
-
-function IconFields() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="1" y="3" width="13" height="1.5" rx="0.75" fill="currentColor"/>
-      <rect x="1" y="6.75" width="13" height="1.5" rx="0.75" fill="currentColor"/>
-      <rect x="1" y="10.5" width="8" height="1.5" rx="0.75" fill="currentColor"/>
-    </svg>
-  );
-}
-
-function IconStyle() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.4"/>
-      <path d="M7.5 1.5C7.5 1.5 11.5 4.5 11.5 7.5C11.5 9.71 9.71 11.5 7.5 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function IconAdvanced() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeLinecap="square" strokeMiterlimit="10" strokeWidth="2"/>
-      <path d="m22,13.25v-2.5l-2.318-.966c-.167-.581-.395-1.135-.682-1.654l.954-2.318-1.768-1.768-2.318.954c-.518-.287-1.073-.515-1.654-.682l-.966-2.318h-2.5l-.966,2.318c-.581.167-1.135.395-1.654.682l-2.318-.954-1.768,1.768.954,2.318c-.287.518-.515,1.073-.682,1.654l-2.318.966v2.5l2.318.966c.167.581.395,1.135.682,1.654l-.954,2.318,1.768,1.768,2.318-.954c.518.287,1.073.515,1.654.682l.966,2.318h2.5l.966-2.318c.581-.167,1.135-.395,1.654-.682l2.318.954,1.768-1.768-.954-2.318c.287-.518.515-1.073.682-1.654l2.318-.966Z" fill="none" stroke="currentColor" strokeLinecap="square" strokeMiterlimit="10" strokeWidth="2"/>
-    </svg>
-  );
-}
-
-// ─── State & theme icons ──────────────────────────────────────────────────────
-
-function IconStateNormal() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="6.5" cy="6.5" r="3" fill="currentColor"/>
-      <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.2" opacity="0.35"/>
-    </svg>
-  );
-}
-
-function IconStateHover() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M3 2.5L3 10L5.5 7.5L7 11L8.5 10.4L7 7H10.5L3 2.5Z" fill="currentColor" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-// ─── Advanced Tab ─────────────────────────────────────────────────────────────
-
-type AdvancedConfig = {
-  position?: string;
-  top?: string;
-  right?: string;
-  bottom?: string;
-  left?: string;
-  zIndex?: number | string;
-  cssId?: string;
-  cssClasses?: string;
-  customCss?: string;
-};
+// Tab icons + AdvancedConfig moved to ./right-panel/{icons,types}.ts (audit M1).
 
 // ─── Divider ──────────────────────────────────────────────────────────────────
 
@@ -392,7 +339,55 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
   }
 
   const def = getBlockDef(block.type);
-  if (!def) return null;
+  if (!def) {
+    // Block type isn't in the current registry — usually a hand-edited DB,
+    // a removed block type that bypassed the load-time strip, or a corrupt
+    // entry. Render a minimal panel so the user can still edit Advanced
+    // fields (cssId / cssClasses / customCss) or delete the orphan via the
+    // canvas right-click menu instead of seeing a silently empty panel.
+    const adv = (block.config.advanced ?? {}) as AdvancedConfig;
+    const writeAdv = (patch: Partial<AdvancedConfig>) =>
+      onChange({ advanced: { ...adv, ...patch } });
+    return (
+      <aside className="epx-right-panel">
+        <header className="epx-right-panel__header">
+          <span className="epx-right-panel__title">Unknown block</span>
+        </header>
+        <div className="epx-right-panel__body">
+          <div className="epx-field" style={{ padding: "10px 12px", fontSize: 12, lineHeight: 1.4, color: "var(--epx-text-muted)" }}>
+            <strong style={{ color: "var(--epx-text)" }}>Type: <code>{block.type}</code></strong>
+            <p style={{ margin: "6px 0 0" }}>
+              No registered <code>BlockDef</code> matches this type. The block may
+              have been removed in a later release or the JSON is corrupted.
+              Right-click the block on the canvas to delete it. Advanced
+              attributes below still work.
+            </p>
+          </div>
+          <PanelDivider />
+          <div className="epx-field">
+            <label className="epx-field__label" htmlFor="adv-cssid">CSS ID</label>
+            <input
+              id="adv-cssid"
+              type="text"
+              className="epx-field__input"
+              value={adv.cssId ?? ""}
+              onChange={(e) => writeAdv({ cssId: e.target.value })}
+            />
+          </div>
+          <div className="epx-field">
+            <label className="epx-field__label" htmlFor="adv-cssclasses">CSS Classes</label>
+            <input
+              id="adv-cssclasses"
+              type="text"
+              className="epx-field__input"
+              value={adv.cssClasses ?? ""}
+              onChange={(e) => writeAdv({ cssClasses: e.target.value })}
+            />
+          </div>
+        </div>
+      </aside>
+    );
+  }
 
   const theme = (block.config.theme as string) || "light";
   const handleTheme = (v: string) => onChange({ theme: v });
@@ -1473,7 +1468,7 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
         </div>
       )}
 
-      {activeTab === "style" && (block.type === "container" || block.type === "image" || block.type === "testimonials" || block.type === "faq" || block.type === "pricing" || block.type === "button") && (
+      {activeTab === "style" && (block.type === "container" || block.type === "image" || block.type === "button") && (
         <div className="epx-right-panel__fields">
           {block.type === "button" && (
             <TypographyControl
