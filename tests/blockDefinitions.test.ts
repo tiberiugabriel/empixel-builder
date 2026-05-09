@@ -94,22 +94,27 @@ describe("getBlockDef", () => {
   });
 });
 
-// ─── F3.5.2 — migrated instance shape ─────────────────────────────────────────
+// ─── F3.5.2 + F3.5.6 — migrated instance shape ───────────────────────────────
 
-describe("F3.5.2 — migrated BlockDef instances", () => {
+describe("F3.5.2 + F3.5.6 — migrated BlockDef instances", () => {
   // Block-by-block coverage. The exact `styleTab` length is asserted so
   // accidental regressions surface (e.g. someone removing the
   // `borderRadius` entry from `image`).
+  //
+  // F3.5.6 added `kind: "custom"` Fields-tab entries to every block
+  // whose Fields tab carried bespoke widgets (text, image, text-editor,
+  // video, button, icon, container, divider-spacer). The fieldsTab
+  // counts below include both standard FieldDefs and custom entries.
   const EXPECTED: Record<string, { fieldsTab: number; styleTab: number | "absent" }> = {
-    text:             { fieldsTab: 1, styleTab: 5 },
-    image:            { fieldsTab: 1, styleTab: 6 },
-    "text-editor":    { fieldsTab: 1, styleTab: 4 },
-    video:            { fieldsTab: 0, styleTab: 1 },
-    button:           { fieldsTab: 2, styleTab: 6 },
-    icon:             { fieldsTab: 1, styleTab: 2 },
+    text:             { fieldsTab: 2, styleTab: 5 }, // content + custom(extras)
+    image:            { fieldsTab: 2, styleTab: 6 }, // caption + custom(image fields)
+    "text-editor":    { fieldsTab: 2, styleTab: 4 }, // content + custom(extras)
+    video:            { fieldsTab: 1, styleTab: 1 }, // custom(video fields)
+    button:           { fieldsTab: 3, styleTab: 6 }, // text + icon + custom(link)
+    icon:             { fieldsTab: 2, styleTab: 2 }, // icon + custom(link)
     html:             { fieldsTab: 1, styleTab: "absent" },
-    "divider-spacer": { fieldsTab: 1, styleTab: 1 },
-    container:        { fieldsTab: 0, styleTab: 5 },
+    "divider-spacer": { fieldsTab: 1, styleTab: 1 }, // space (divider line moved to styleTab)
+    container:        { fieldsTab: 1, styleTab: 5 }, // custom(layout)
   };
 
   for (const [type, expected] of Object.entries(EXPECTED)) {

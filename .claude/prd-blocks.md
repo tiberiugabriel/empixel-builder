@@ -105,7 +105,8 @@ Deprecation timeline:
 - **F3.5.1** — types added, no instances migrated
 - **F3.5.2** (shipped) — 9 BlockDef instances populate `fieldsTab` + `styleTab` directly. Custom Style logic extracted into `src/admin/right-panel/sections/`. Imperative `block.type ===` branches in `RightPanel.tsx` still own rendering until F3.5.6.
 - **F3.5.3 + .4** — `SectionRenderer.tsx` + `TabRenderer.tsx` consume the declarative lists
-- **F3.5.6** — `RightPanel.tsx` drops imperative branches; `fields` / `styleFields` removed
+- **F3.5.5** (shipped) — universal `<AdvancedTab />` extracted; wired into `TabRenderer`.
+- **F3.5.6** (shipped) — `RightPanel.tsx` rewrites onto the declarative pipeline (1671 LOC → 162). All 9 imperative `block.type ===` branches deleted; tab visibility driven by `getVisibleTabs(block)`. `FieldDef` extended with `kind: "custom"` so `container` and `video` (and the per-block extras for `text` / `image` / `text-editor` / `button` / `icon`) declare their Fields tabs through `fieldsTab`. `fields` / `styleFields` aliases kept for one more release; F3.5.7 / .8 retire them.
 
 ### F3.5.2 — migrated instance shapes
 
@@ -116,12 +117,12 @@ Each of the 9 entries now declares its Fields and Style tabs through the new sch
 | `text` | `[content]` (1) | `[alignment, typography, textStroke, textShadow, blendMode]` (5) |
 | `image` | `[caption]` (1) | `[imgVisual, alignment, opacity, borderRadius, border, boxShadow]` (6) |
 | `text-editor` | `[content]` (1) | `[alignment, typography, textShadow, custom(TextEditorDropCapSection)]` (4) |
-| `video` | (0 — Fields branch keeps the imperative `VideoSourceControl` + overlay group until F3.5.6) | `[custom(VideoSourceSection)]` (1) |
-| `button` | `[text, icon]` (2) | `[typography, theme, background, borderRadius, border, boxShadow]` (6) |
-| `icon` | `[icon]` (1) | `[alignment, custom(IconBlockStyleSection)]` (2) |
-| `html` | `[code]` (1) | absent — `html` block hides the Style tab entirely (RightPanel.tsx ~line 583) |
+| `video` | `[custom(VideoFieldsSection)]` (1) — F3.5.6 routes the imperative `VideoSourceControl` + overlay group through `kind: "custom"` | `[custom(VideoSourceSection)]` (1) |
+| `button` | `[text, icon, custom(LinkFieldsSection)]` (3) — F3.5.6 adds the link entry as `kind: "custom"` | `[typography, theme, background, borderRadius, border, boxShadow]` (6) |
+| `icon` | `[icon, custom(LinkFieldsSection)]` (2) | `[alignment, custom(IconBlockStyleSection)]` (2) |
+| `html` | `[code]` (1) | absent — `html` block hides the Style tab entirely (`getVisibleTabs` returns `["fields", "advanced"]`) |
 | `divider-spacer` | `[space]` (1) | `[custom(DividerLineSection)]` (1) — divider-line picker lifted from Fields → Style |
-| `container` | (0 — Fields branch keeps the imperative `LayoutControl` / `GapControl` / `OverflowControl` / HTML Tag / `LinkControl` stack until F3.5.6) | `[theme, background, borderRadius, border, boxShadow]` (5) |
+| `container` | `[custom(ContainerLayoutPicker)]` (1) — F3.5.6 routes `LayoutControl` / `GapControl` / `OverflowControl` / HTML Tag / `LinkControl` through `kind: "custom"` | `[theme, background, borderRadius, border, boxShadow]` (5) |
 
 Two example shapes:
 
@@ -160,8 +161,16 @@ Custom renderers live under `src/admin/right-panel/sections/`:
 `SectionRenderProps` (`{ block, onChange, activeBreakpoint }`) does not yet carry `breakpointsConfig`, so custom renderers fall back to `BREAKPOINT_DEFS[bp].defaultPx` for the `_px` field on `styleBreakpoints[bpId]` writes — F3.5.4's `TabRenderer.tsx` may extend the prop shape if host-customised breakpoints need to flow in.
 
 ### FieldDef interface
+
+F3.5.6 widened `FieldDef` into a discriminated union of two variants:
+the existing standard input-driven shape and a new `kind: "custom"`
+escape hatch for bespoke renderers (used by `container`, `video`, etc.).
+
 ```ts
-interface FieldDef {
+type FieldDef = StandardFieldDef | CustomFieldDef;
+
+interface StandardFieldDef {
+  kind?: "standard";   // optional — defaults to "standard"
   key: string;
   label: string;
   type:
@@ -178,7 +187,27 @@ interface FieldDef {
   showPosition?: boolean;                         // For type='icon-group'
   units?: Array<"px"|"rem"|"em"|"%"|"vh"|"vw"|"deg"|"turn">; // For type='number-units'
 }
+
+interface CustomFieldDef {
+  kind: "custom";
+  key: string;
+  render: (props: FieldRenderProps) => ReactNode;
+  showWhen?: { key: string; value: string };
+}
+
+interface FieldRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
 ```
+
+`FieldRenderer` dispatches on `kind` first: `kind === "custom"` calls
+the renderer's `render({ block, onChange, activeBreakpoint })` with
+the panel's context (passed through as `customCtx`); standard entries
+keep their `(value, onChange)` flow. `JsonArrayField` filters out
+`kind: "custom"` entries from `itemFields` — sub-fields inside a
+JSON-array item must be standard `StandardFieldDef`.
 
 ### FieldType values
 | Type | Rendered as | Value stored |

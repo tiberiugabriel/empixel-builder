@@ -21,7 +21,75 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
-## 2026-05-09 19:50 · F3.5.5 started
+## 2026-05-09 20:30 · F3.5.6 started
+
+Branch: `feature/agentC-F3.5.6`. Worktree at latest `main` (`16356ef`).
+Wiring `RightPanel.tsx` onto the declarative `BlockDef.fieldsTab` /
+`styleTab` pipeline shipped in F3.5.1—F3.5.5. Goal: 1671 LOC → < 400.
+
+**Branch inventory** (every `block.type ===` fork / Style-tab-hide gate
+counted before edits):
+
+Fields-tab branches (active tab = "fields"):
+- L631 `block.type === "text-editor"` — drop cap toggle, columns
+  select with custom-pen + scrub label + leftAddon, columns gap
+  SideInput. All bp-aware via `writeBpConfig`.
+- L779 `block.type === "text"` — HTML tag SelectRow + LinkControl
+  when tag=`a`.
+- L798 `block.type === "image"` — ImagePreviewCard +
+  Resolution SelectRow + LinkControl + MediaPicker portal.
+- L839 `block.type === "container"` — LayoutControl (bp-aware).
+- L849 `block.type === "container"` — GapControl (bp-aware).
+- L852 `block.type === "container"` — OverflowControl + HTML tag
+  + LinkControl when tag=`a`.
+- L875 `block.type === "video"` — VideoSourceControl + Image
+  Overlay group (ImagePreviewCard + MediaPicker + resolution +
+  size + position + IconGroup).
+- L952 `block.type === "button"` — LinkControl.
+- L955 `block.type === "icon"` — LinkControl.
+- L958 `block.type === "divider-spacer"` — full divider line
+  picker (lifts to `styleTab` per F3.5.2 declaration).
+
+Style-tab branches (active tab = "style"):
+- L1271 `text` — alignment + typography stack (no
+  bg/border/shadow).
+- L1301 `text-editor` — alignment + typography (base only) +
+  text shadow + paragraph spacing + dropCap subgroup.
+- L1372 `video` — aspect ratio + CssFilters.
+- L1427 `icon` — alignment + color/size/rotate group.
+- L1463 `divider-spacer` — placeholder text.
+- L1471 `container || image || button` — typography (button
+  only) + styleFields alias renderer + image-only group
+  (W/H/fit/pos/align/opacity) + bg toggle (non-image only) +
+  borderRadius/border/boxShadow stateful triplet.
+
+Tab-shell gate:
+- L583 `hideStyleTab = block.type === "html"`.
+
+**Strategy** chosen for F3.5.6:
+1. Add `FieldDef` `kind: "custom"` variant (lives in
+   `blockDefinitions.ts` — Agent C's column; verified `src/types.ts`
+   has no `FieldDef` declaration today). Discriminator: optional
+   `kind` defaulting to `"standard"`. The existing 12 `type`
+   variants stay unchanged so we don't migrate the 9 BlockDef
+   entries' shape — we just allow a second variant.
+2. Extend `FieldRenderer.tsx` to dispatch on `kind === "custom"`
+   via the renderer's `render` prop.
+3. Migrate `container`'s `fieldsTab` from `[]` to a single
+   `kind: "custom"` entry pointing at a new
+   `right-panel/sections/ContainerLayoutPicker.tsx` (extract from
+   L839/L849/L852).
+4. Same for `video` → `right-panel/sections/VideoFieldsSection.tsx`
+   (extract from L875).
+5. Extract per-block leaf Fields renderers (text/image/text-editor/
+   button/icon/divider-spacer) into the `fieldsTab` declarations as
+   `kind: "custom"` entries — the simplest path that preserves the
+   bespoke widgets the existing FieldDefs can't model. Saves
+   re-implementing every section as a plain FieldDef (which would
+   require 6 new FieldDef variants we don't need).
+6. Rewrite `RightPanel.tsx` to a thin shell: `<TabRenderer />` body
+   + the `unknown block` placeholder + the theme/handlers needed
+   for `useAutoSelectTab`. Drop every imperative branch.
 
 Branch: `feature/agentC-F3.5.5`. Worktree at latest `main` (`7bb17d3`).
 Extracting universal `<AdvancedTab />` into
@@ -83,6 +151,160 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-09 20:55 · F3.5.6 done
+
+Branch: `feature/agentC-F3.5.6`. Single commit (about to land).
+
+**Files changed**:
+- `src/admin/RightPanel.tsx` — rewritten. 1671 LOC → 162 LOC. Now a
+  thin shell: header (icon + label + description), unknown-block
+  panel, and `<TabRenderer />` body. State that used to live here
+  (state-toggle modes, picker open flags, divider gradient editor
+  cursor positions, `trackedId` reset, `hideStyleTab` gate, etc.) is
+  gone — owned by the matching section components or by
+  `useAutoSelectTab`. Re-exports `PanelDivider` so existing imports
+  stay green.
+- `src/admin/blockDefinitions.ts` — `FieldDef` widened to a
+  discriminated union (`StandardFieldDef` + `CustomFieldDef`). Added
+  `FieldRenderProps`. Each `*_FIELDS` array gained the matching
+  `kind: "custom"` entry: `TextFieldsExtras`, `ImageFieldsSection`,
+  `TextEditorFieldsSection`, `VideoFieldsSection`,
+  `LinkFieldsSection` (button + icon), `ContainerLayoutPicker`. The
+  `divider-spacer` Fields-tab no longer carries the divider-line
+  picker (lifted to `styleTab` already in F3.5.2).
+- `src/admin/fields/FieldRenderer.tsx` — new `kind: "custom"`
+  dispatch path with optional `customCtx` prop carrying
+  `{ block, panelOnChange, activeBreakpoint }`. Standard renderers
+  take the existing `(field, value, onChange)` shape unchanged.
+- `src/admin/fields/JsonArrayField.tsx` — narrowed sub-field types
+  to `StandardFieldDef` (custom entries can't be JSON-array
+  children).
+- `src/admin/right-panel/TabRenderer.tsx` — Fields-tab dispatch
+  rewritten on top of the new `FieldRenderer.customCtx` API. The
+  KISS placeholder for `kind: "custom"` from F3.5.4 is replaced with
+  the real path.
+- `src/admin/right-panel/sections/ContainerLayoutPicker.tsx` — new.
+- `src/admin/right-panel/sections/VideoFieldsSection.tsx` — new.
+- `src/admin/right-panel/sections/ImageFieldsSection.tsx` — new.
+- `src/admin/right-panel/sections/TextFieldsExtras.tsx` — new.
+- `src/admin/right-panel/sections/LinkFieldsSection.tsx` — new.
+- `src/admin/right-panel/sections/TextEditorFieldsSection.tsx` — new.
+- `tests/rightPanel.test.ts` — new (27 tests). 9-block-Fields-tab
+  dispatch sentinels, 8-block Style-body smoke renders, 9-block
+  Advanced smoke renders, html-omits-Style guard, unknown-block
+  fallback, branch-elimination guards, BlockDef internal
+  consistency.
+- `tests/blockDefinitions.test.ts` — F3.5.6 fieldsTab counts updated
+  per-block (text 1→2, image 1→2, text-editor 1→2, video 0→1,
+  button 2→3, icon 1→2, container 0→1).
+- `CHANGELOG.md` — F3.5.6 entry above F3.5.5.
+- `.claude/prd-rightpanel.md` — F3.5.6 row flipped to ✅; new
+  "F3.5.6 — `RightPanel.tsx` on the declarative pipeline"
+  subsection (architecture + per-block table + state-handoff list).
+  File tree expanded to include the 6 new section files.
+- `.claude/prd-blocks.md` — `FieldDef` documented as a
+  discriminated union with the `CustomFieldDef` variant. Per-block
+  `fieldsTab` / `styleTab` table updated. Deprecation timeline
+  flipped F3.5.6 to shipped.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test && npm run build` all green. **198 tests pass** (171 → 198, +27 new in `rightPanel.test.ts`).
+
+**LOC**: `wc -l src/admin/RightPanel.tsx` → **162**. Acceptance < 400.
+
+**Branch-elimination audit**:
+
+Tab-shell gate:
+- L583 `hideStyleTab = block.type === "html"` → deleted. Replaced by
+  `getVisibleTabs(block)` in `TabRenderer.tsx` (returns
+  `["fields", "advanced"]` when `def.styleTab` is missing).
+
+Fields-tab branches:
+- L631 `block.type === "text-editor"` (drop cap + columns) → moved to
+  `TextEditorFieldsSection.tsx`, declared via
+  `kind: "custom"` on `TEXT_EDITOR_FIELDS`.
+- L779 `block.type === "text"` (HTML tag + conditional Link) → moved
+  to `TextFieldsExtras.tsx`, declared via `kind: "custom"` on
+  `TEXT_FIELDS`.
+- L798 `block.type === "image"` (preview + resolution + Link +
+  MediaPicker) → moved to `ImageFieldsSection.tsx`, declared via
+  `kind: "custom"` on `IMAGE_FIELDS`.
+- L839 / L849 / L852 `block.type === "container"` (LayoutControl +
+  GapControl + OverflowControl + HTML tag + Link) → moved to
+  `ContainerLayoutPicker.tsx`, declared via `kind: "custom"` on
+  `CONTAINER_FIELDS`. Single section; the three legacy branches were
+  consecutive `block.type === "container"` checks against shared
+  state.
+- L875 `block.type === "video"` (VideoSourceControl + image overlay
+  group) → moved to `VideoFieldsSection.tsx`, declared via
+  `kind: "custom"` on `VIDEO_FIELDS`. The `videoOverlayPickerOpen`
+  useState moved down here too.
+- L952 `block.type === "button"` (LinkControl) → declared via
+  `kind: "custom" → LinkFieldsSection` on `BUTTON_FIELDS`.
+- L955 `block.type === "icon"` (LinkControl) → same path on
+  `ICON_FIELDS`.
+- L958 `block.type === "divider-spacer"` (full divider-line picker)
+  → already declared as `kind: "custom" → DividerLineSection` on
+  the divider-spacer's `styleTab` in F3.5.2. F3.5.6 stops rendering
+  it on Fields and lets the Style tab take ownership; matches the
+  PRD note that the picker logically belongs there.
+
+Style-tab branches:
+- L1271 `block.type === "text"` → consumed via the existing
+  `text.styleTab = [alignment, typography, textStroke, textShadow,
+  blendMode]` declaration through `<SectionRenderer />`.
+- L1301 `block.type === "text-editor"` → consumed via
+  `text-editor.styleTab = [alignment, typography, textShadow,
+  custom(TextEditorDropCapSection)]`.
+- L1372 `block.type === "video"` → consumed via
+  `video.styleTab = [custom(VideoSourceSection)]`.
+- L1427 `block.type === "icon"` → consumed via
+  `icon.styleTab = [alignment, custom(IconBlockStyleSection)]`.
+- L1463 `block.type === "divider-spacer"` (placeholder text) →
+  consumed via `divider-spacer.styleTab = [custom(DividerLineSection)]`.
+  The placeholder copy ("All settings ... in the Fields tab.") is
+  retired — the Style tab now actually carries the divider line.
+- L1471 `block.type === "container" || ... === "image" || ... === "button"`
+  (shared default stack) → consumed via the per-block declarative
+  `styleTab` lists (`container`: theme/bg/borderRadius/border/
+  boxShadow; `image`: imgVisual/alignment/opacity/borderRadius/
+  border/boxShadow; `button`: typography/theme/bg/borderRadius/
+  border/boxShadow). The Normal/Hover state toggles that this branch
+  contained inline are owned by `BackgroundSection` and
+  `StatefulStyleSection` from F3.5.3.
+
+**`FieldDef` `kind: "custom"` added in `blockDefinitions.ts`** — NOT
+via `types-proposals.md`. Verified `src/types.ts` carries no
+`FieldDef` declaration today (`grep -n "FieldDef" src/types.ts` →
+zero matches). The local discriminated union lives in Agent C's
+column; no shared-type change.
+
+**Visual parity caveats**:
+1. `divider-spacer` Fields tab no longer renders the divider line
+   picker — it now lives only in Style. This MOVES UI without losing
+   it (the picker is still reachable). If the F3.5.7 browser test
+   surfaces user surprise, F3.5.7 can mirror the section back into
+   Fields by adding a second `kind: "custom"` entry pointing at
+   `DividerLineSection`. Flagged for the orchestrator's review.
+2. The `unknown block` panel previously rendered inline in
+   `RightPanel.tsx`; F3.5.6 extracted it into a local
+   `UnknownBlockPanel` component. Markup classes preserved
+   verbatim. Not a behavior change.
+3. `breakpointsConfig` prop: passed in but not consumed by the
+   new pipeline. Sections fall back to `BREAKPOINT_DEFS[bp].defaultPx`
+   for `_px` writes. Same behavior as F3.5.2's section extractions —
+   confirmed parity by tracing `getEffectiveBpPx` in the legacy code:
+   it only differs from the default when the host site declared
+   `BreakpointsConfig.overrides`, which is rare. F3.5.7 / .8 can
+   thread the override map through `SectionRenderProps` /
+   `FieldRenderProps` if needed.
+
+**No `types-proposals.md` proposal**: see above. All new code
+admin-UI-only.
+
+**Surprises / blockers**: none. `breakpointsConfig` parity caveat
+above is the only behavioral nuance worth orchestrator review;
+otherwise the swap is a pure refactor.
 
 ## 2026-05-09 20:05 · F3.5.5 done
 

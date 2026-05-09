@@ -17,7 +17,7 @@ The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for th
 | F3.5.3 | ✅ shipped (0.9.5 prep) | `right-panel/SectionRenderer.tsx` — pure switch on `StyleSection.kind`, renders the matching control. 109 LOC, exhaustive via `assertNever`. Dispatcher added in this PR; wired into `RightPanel.tsx` by F3.5.6. |
 | F3.5.4 | ✅ shipped (0.9.5 prep) | `right-panel/TabRenderer.tsx` — owns the 3-tab shell. Exports `getVisibleTabs(block)` (drives Style auto-hide for `html` and any block missing `styleTab`), the `TabRenderer` JSX component, and the `useAutoSelectTab(block, activeTab, setActiveTab)` hook. Body dispatches Fields → `<FieldRenderer>`, Style → `<SectionRenderer>`, Advanced → placeholder until F3.5.5. `RightPanel.tsx` unchanged; F3.5.6 owns the swap. |
 | F3.5.5 | ✅ shipped (0.9.5 prep) | `right-panel/AdvancedTab.tsx` — extract universal Advanced tab. One component covers every block — no per-type branching. `TabRenderer` plugs it into the `advanced` case (replaces the F3.5.4 placeholder). |
-| F3.5.6 | ⬜ planned | Drop imperative `block.type ===` branches in `RightPanel.tsx`; retire `fields` / `styleFields` aliases. |
+| F3.5.6 | ✅ shipped (0.9.5 prep) | Rewrite `RightPanel.tsx` on top of the declarative pipeline. All 9 imperative `block.type ===` branches deleted; tab visibility driven by `getVisibleTabs(block)`. New `FieldDef` `kind: "custom"` variant powers the bespoke Fields tabs (`container`, `video`, `image`, `text`, `text-editor`, `button`, `icon`). RightPanel.tsx 1671 LOC → 162. `fields` / `styleFields` deprecated aliases kept for one more release. |
 | F3.5.7 | ⬜ planned | Code-split per-block panels (lazy import). |
 | F3.5.8 | ⬜ planned | Polish + docs sweep. |
 
@@ -126,20 +126,113 @@ Dispatch shape:
 
 Wiring: `TabRenderer.tsx`'s `case "advanced":` now returns `<AdvancedTab block={block} onChange={onChange} activeBreakpoint={activeBreakpoint} />`. The F3.5.4 placeholder is gone. `RightPanel.tsx` still owns its inline `AdvancedTab` function until F3.5.6 swaps the panel over to `<TabRenderer />`.
 
+### F3.5.6 — `RightPanel.tsx` on the declarative pipeline
+
+`RightPanel.tsx` is now a thin shell (~160 LOC) on top of the
+`BlockDef.fieldsTab` / `styleTab` declarations. Every per-block
+imperative branch (9 across Fields + Style tabs) is gone. The shell
+owns: `useState<Tab>` for the active tab + `useAutoSelectTab` to snap
+back when the block type changes, the `epx-right-panel` `<aside>`
+frame, the `getBlockDef`-driven header (icon + label + description),
+and the unknown-block fallback panel for orphan rows. Tab body
+dispatch goes through `<TabRenderer />` → `<FieldRenderer />` /
+`<SectionRenderer />` / `<AdvancedTab />`.
+
+**`FieldDef` gained a `kind: "custom"` variant** so the Fields tab can
+declare bespoke renderers without an imperative branch. The shape
+mirrors `StyleSection { kind: "custom" }`:
+
+```ts
+interface CustomFieldDef {
+  kind: "custom";
+  key: string;                       // stable React key
+  render: (props: FieldRenderProps) => ReactNode;
+  showWhen?: { key: string; value: string };
+}
+
+interface FieldRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+```
+
+Existing declarations stay as `StandardFieldDef` (the discriminator is
+optional, defaulting to `"standard"`). `FieldRenderer` accepts an
+optional `customCtx` prop carrying the panel context so custom
+renderers receive `(block, panelOnChange, activeBreakpoint)` while
+standard fields keep their `(value, onChange)` flow.
+
+**Per-block Fields-tab content** (was: imperative branches; now:
+`fieldsTab` entries):
+
+| Block | Standard fields | Custom entries |
+|---|---|---|
+| `text` | `content` (textarea) | `TextFieldsExtras` (HTML Tag + conditional Link) |
+| `image` | `caption` (textarea) | `ImageFieldsSection` (preview + resolution + link + MediaPicker) |
+| `text-editor` | `content` (rich-text) | `TextEditorFieldsSection` (drop cap + columns + columns gap) |
+| `video` | — | `VideoFieldsSection` (VideoSourceControl + image overlay) |
+| `button` | `text` (textarea), `icon` (icon-group) | `LinkFieldsSection` |
+| `icon` | `icon` (icon-group) | `LinkFieldsSection` |
+| `html` | `code` (code) | — |
+| `divider-spacer` | `space` (number-units) | — (divider line moved to `styleTab`) |
+| `container` | — | `ContainerLayoutPicker` (LayoutControl + GapControl + OverflowControl + HTML Tag + conditional Link) |
+
+**`getVisibleTabs(block)` replaces `hideStyleTab`.** The legacy
+`hideStyleTab = block.type === "html"` gate is gone — Style auto-hides
+when `def.styleTab` is missing or empty (`html` legitimately omits
+`styleTab`). Unknown block types fall through to
+`["fields", "advanced"]` with the unknown-block placeholder body.
+
+**State that used to live in `RightPanel.tsx`** is now owned by the
+matching section components:
+- `radiusMode` / `borderMode` / `shadowMode` / `bgMode` / `opacityMode`
+  → `StatefulShell` / `BackgroundSection` / `OpacitySection` (each
+  section keeps its own Normal/Hover toggle).
+- `imagePickerOpen` → `ImageFieldsSection`.
+- `videoOverlayPickerOpen` → `VideoFieldsSection`.
+- `divColorOpen`, `divGradPickerKey`, `divColorFormat`,
+  `divGradColorFormat`, `divColorSwatchRef`, etc. → `DividerLineSection`.
+- `trackedId` reset effect → no longer needed; each section is a
+  fresh React subtree per block (mount-keyed indirectly via the panel
+  re-rendering with a new `block`). The auto-tab snap that the legacy
+  `trackedId` reset was responsible for now lives in `useAutoSelectTab`.
+
+**`breakpointsConfig` prop** is preserved on `RightPanel`'s public
+shape but the new pipeline reads per-breakpoint default px values via
+`BREAKPOINT_DEFS` directly inside each section. If a future change
+needs host-customised breakpoints to flow in, `SectionRenderProps` /
+`FieldRenderProps` extend with the override map.
+
 ## Architecture
 
 ```
-RightPanel.tsx (3 tabs: Fields, Style, Advanced)         # 1671 LOC
-├─ right-panel/                                          # audit M1, conservative slice
+RightPanel.tsx (thin shell — header + frame + unknown-block panel)  # 162 LOC
+├─ right-panel/                                          # declarative pipeline core
 │  ├─ icons.tsx           # IconFields, IconStyle, IconAdvanced, IconStateNormal, IconStateHover
 │  ├─ types.ts            # AdvancedConfig — admin-only shape for `config.advanced`
 │  ├─ SectionRenderer.tsx # F3.5.3 — pure dispatcher on `StyleSection.kind` (Style tab)
 │  ├─ TabRenderer.tsx     # F3.5.4 — 3-tab shell + getVisibleTabs / useAutoSelectTab
 │  ├─ AdvancedTab.tsx     # F3.5.5 — universal Advanced tab (Width/Height/Padding/Margin/Position/Z-Index/CSS ID/Classes/Custom CSS)
-│  └─ sections/           # F3.5.2 — extracted custom Style-tab renderers
+│  └─ sections/           # extracted custom renderers (Fields + Style)
+│     ├─ ContainerLayoutPicker.tsx   # F3.5.6 — container Fields (LayoutControl + Gap + Overflow + HTML tag + Link)
+│     ├─ VideoFieldsSection.tsx      # F3.5.6 — video Fields (VideoSourceControl + image overlay group)
+│     ├─ ImageFieldsSection.tsx      # F3.5.6 — image Fields (ImagePreviewCard + Resolution + Link + MediaPicker)
+│     ├─ TextFieldsExtras.tsx        # F3.5.6 — text Fields extras (HTML tag + conditional Link)
+│     ├─ TextEditorFieldsSection.tsx # F3.5.6 — text-editor Fields extras (Drop Cap + Columns + Gap)
+│     ├─ LinkFieldsSection.tsx       # F3.5.6 — bare LinkControl (button + icon)
+│     ├─ TextEditorDropCapSection.tsx # F3.5.2 — Style: paragraph spacing + drop cap subgroup
+│     ├─ VideoSourceSection.tsx      # F3.5.2 — Style: aspect ratio + filter
+│     ├─ DividerLineSection.tsx      # F3.5.2 — Style: divider line picker
+│     ├─ IconBlockStyleSection.tsx   # F3.5.2 — Style: icon color + size + rotate
+│     ├─ BackgroundSection.tsx       # F3.5.3 — Style: Normal/Hover BG + theme
+│     ├─ StatefulStyleSection.tsx    # F3.5.3 — Style: Border/BorderRadius/BoxShadow shell
+│     ├─ OpacitySection.tsx          # F3.5.3 — Style: image opacity
+│     ├─ ImgVisualSection.tsx        # F3.5.3 — Style: image W/H/fit/position/align
+│     └─ BpAwareStyleSections.tsx    # F3.5.3 — Style: alignment/typography/textStroke/textShadow/blendMode/filter/overflow/spacing
 ├─ fields/
-│  ├─ FieldRenderer.tsx         # Generic field dispatcher (12 types)
-│  ├─ JsonArrayField.tsx        # Expandable item list
+│  ├─ FieldRenderer.tsx         # Generic field dispatcher (12 standard types + `kind: "custom"`)
+│  ├─ JsonArrayField.tsx        # Expandable item list (StandardFieldDef-only sub-fields)
 │  ├─ PageBuilderField.tsx      # Drag-drop layout field
 │  └─ RichTextField.tsx         # v0.6 — wraps @emdash-cms/admin PortableTextEditor (lazy)
 └─ controls/

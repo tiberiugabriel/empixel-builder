@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import type { FieldDef } from "../blockDefinitions.js";
+import type { StandardFieldDef } from "../blockDefinitions.js";
 
 interface Props {
-  field: FieldDef;
+  field: StandardFieldDef;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   value: Record<string, any>[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,9 +12,16 @@ interface Props {
 export function JsonArrayField({ field, value, onChange }: Props) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
+  // Only standard sub-fields are renderable here. Custom (`kind:"custom"`)
+  // entries are top-level only and never appear inside JsonArrayField's
+  // `itemFields` schema.
+  const subFields = (field.itemFields ?? []).filter(
+    (f): f is StandardFieldDef => f.kind !== "custom",
+  );
+
   const addItem = () => {
     const emptyItem = Object.fromEntries(
-      (field.itemFields ?? []).map((f) => [f.key, f.type === "toggle" ? false : ""])
+      subFields.map((f) => [f.key, f.type === "toggle" ? false : ""])
     );
     const next = [...value, emptyItem];
     onChange(next);
@@ -88,7 +95,7 @@ export function JsonArrayField({ field, value, onChange }: Props) {
 
             {expandedIndex === i && (
               <div className="epx-json-array__item-body">
-                {(field.itemFields ?? []).map((subField) => (
+                {subFields.map((subField) => (
                   <SubField
                     key={subField.key}
                     field={subField}
@@ -114,7 +121,7 @@ function SubField({
   value,
   onChange,
 }: {
-  field: FieldDef;
+  field: StandardFieldDef;
   value: unknown;
   onChange: (val: unknown) => void;
 }) {

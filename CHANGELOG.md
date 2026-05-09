@@ -5,6 +5,43 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **F3.5.6 — rewrite `RightPanel.tsx` on the declarative pipeline.**
+  `RightPanel.tsx` is now a thin shell on top of the
+  `BlockDef.fieldsTab` / `styleTab` declarations introduced in
+  F3.5.1—F3.5.5. Every per-block imperative branch (9 across the
+  Fields and Style tabs) is gone; tab visibility is driven by
+  `getVisibleTabs(block)` (replaces the hardcoded
+  `hideStyleTab = block.type === "html"` gate). Body dispatch goes
+  through `<TabRenderer />` → `<FieldRenderer />` /
+  `<SectionRenderer />` / `<AdvancedTab />`.
+  - `FieldDef` gained a `kind: "custom"` variant alongside the
+    existing `kind: "standard"` (default) shape — mirrors the
+    Style-tab equivalent and lets blocks declare their bespoke
+    Fields-tab content (`container` LayoutControl/Gap/Overflow/HTML
+    tag/link, `video` source + image overlay, `image` preview/
+    resolution/link, etc.) through `fieldsTab` without an imperative
+    branch. The discriminator is optional on the standard variant so
+    every existing declaration compiles unchanged. `FieldRenderer`
+    extended with a `customCtx` prop carrying `{ block, panelOnChange,
+    activeBreakpoint }` for `kind: "custom"` entries.
+  - Six new section components extracted under
+    `src/admin/right-panel/sections/`:
+    `ContainerLayoutPicker.tsx`, `VideoFieldsSection.tsx`,
+    `ImageFieldsSection.tsx`, `TextFieldsExtras.tsx`,
+    `LinkFieldsSection.tsx`, `TextEditorFieldsSection.tsx`.
+    Each owns the previously-inline state (e.g. `pickerOpen` for the
+    image / video media picker, the columns scrub handler) so the
+    shell stays state-free.
+  - `divider-spacer` Fields tab no longer renders the divider-line
+    picker — it lives on the Style tab now (already declared as
+    `kind: "custom"` in F3.5.2).
+  - `RightPanel.tsx`: 1671 LOC → 162 LOC. The deprecated `fields` /
+    `styleFields` aliases on `BlockDef` are kept for one more release
+    (still pointed at the same arrays as `fieldsTab`) — F3.5.7 / .8
+    can drop them once external consumers (if any) finish migrating.
+  - Tests: 171 → 198 (+27 across `rightPanel.test.ts`,
+    `blockDefinitions.test.ts` field-count assertions updated).
+
 - **F3.5.5 — universal `<AdvancedTab />` component.** Extract
   `src/admin/right-panel/AdvancedTab.tsx`. One component covers
   Width / Height / Padding / Margin / Position+Offset / Z-Index /

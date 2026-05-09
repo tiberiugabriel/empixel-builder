@@ -6,6 +6,12 @@ import { TextEditorDropCapSection } from "./right-panel/sections/TextEditorDropC
 import { VideoSourceSection } from "./right-panel/sections/VideoSourceSection.js";
 import { DividerLineSection } from "./right-panel/sections/DividerLineSection.js";
 import { IconBlockStyleSection } from "./right-panel/sections/IconBlockStyleSection.js";
+import { ContainerLayoutPicker } from "./right-panel/sections/ContainerLayoutPicker.js";
+import { VideoFieldsSection } from "./right-panel/sections/VideoFieldsSection.js";
+import { TextFieldsExtras } from "./right-panel/sections/TextFieldsExtras.js";
+import { ImageFieldsSection } from "./right-panel/sections/ImageFieldsSection.js";
+import { LinkFieldsSection } from "./right-panel/sections/LinkFieldsSection.js";
+import { TextEditorFieldsSection } from "./right-panel/sections/TextEditorFieldsSection.js";
 
 // ─── Field Schema ─────────────────────────────────────────────────────────────
 
@@ -33,7 +39,16 @@ export type FieldType =
  * row variants (`SelectRow`, `<input>` row, switch). Do NOT introduce new
  * one-off styled wrappers — reuse `FieldGroup` + the existing row primitives.
  */
-export interface FieldDef {
+export interface StandardFieldDef {
+  /**
+   * Discriminator. Optional and defaults to `"standard"` so existing
+   * declarations that omit it stay valid. F3.5.6 introduced the union
+   * with `CustomFieldDef` to support the bespoke Fields-tab content
+   * (`container` LayoutControl + GapControl + Overflow + HTML tag,
+   * `video` VideoSourceControl + image overlay, etc.) that doesn't
+   * fit the standard input-driven shape.
+   */
+  kind?: "standard";
   key: string;
   label: string;
   type: FieldType;
@@ -52,6 +67,47 @@ export interface FieldDef {
   /** For type='number-units': allowed unit set */
   units?: Array<"px" | "rem" | "em" | "%" | "vh" | "vw" | "deg" | "turn">;
 }
+
+/**
+ * Render props passed to a `kind: "custom"` Fields-tab renderer.
+ * Mirrors `SectionRenderProps` so a renderer can be reused on either
+ * tab, but kept as a separate name to advertise intent at the call
+ * site. Custom Fields renderers handle their own bp routing through
+ * `activeBreakpoint` (e.g. `container` LayoutControl writes to
+ * `styleBreakpoints[bpId]` on non-desktop).
+ */
+export interface FieldRenderProps {
+  block: SectionBlock;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+
+/**
+ * Bespoke Fields-tab entry. F3.5.6 introduced this variant so the
+ * `container` and `video` blocks can declare their Fields tabs
+ * through `BlockDef.fieldsTab` without an imperative branch in
+ * `RightPanel.tsx`. Mirrors the Style-tab equivalent
+ * (`StyleSection { kind: "custom"; render: ... }`). The renderer
+ * receives the same `FieldRenderProps` shape and returns React nodes.
+ */
+export interface CustomFieldDef {
+  kind: "custom";
+  /**
+   * Stable identifier used for React keys. Doesn't have to map to a
+   * `block.config[key]` slot — the renderer can write multiple keys
+   * via the dispatched `onChange` patches.
+   */
+  key: string;
+  render: (props: FieldRenderProps) => ReactNode;
+  /** Show this entry only when another field's value matches. */
+  showWhen?: { key: string; value: string };
+}
+
+/** Discriminated union of standard input-style fields and bespoke
+ *  renderers. F3.5.6 introduced the `kind: "custom"` variant; existing
+ *  declarations that omit `kind` are inferred as `"standard"`. */
+export type FieldDef = StandardFieldDef | CustomFieldDef;
 
 // ─── Style Section Schema (declarative Style tab) ────────────────────────────
 
@@ -179,37 +235,49 @@ export interface BlockDef {
 // retires `fields`).
 const TEXT_FIELDS: FieldDef[] = [
   { key: "content", label: "Content", type: "textarea", placeholder: "Enter text...", labelClassName: "epx-row-label--section" },
+  // F3.5.6 — HTML Tag selector + conditional LinkControl (when tag=`a`)
+  // declared as a `kind: "custom"` entry. Original imperative branch in
+  // `RightPanel.tsx` (~line 779) replaced by `TextFieldsExtras`.
+  { kind: "custom", key: "text-extras", render: TextFieldsExtras },
 ];
 
 const IMAGE_FIELDS: FieldDef[] = [
   { key: "caption", label: "Caption", type: "textarea", placeholder: "Optional caption…", labelClassName: "epx-row-label--section" },
+  // F3.5.6 — image preview / resolution / link / MediaPicker block.
+  // Original imperative branch in `RightPanel.tsx` (~line 798) replaced
+  // by `ImageFieldsSection`.
+  { kind: "custom", key: "image-fields", render: ImageFieldsSection },
 ];
 
 const TEXT_EDITOR_FIELDS: FieldDef[] = [
   { key: "content", label: "Content", type: "rich-text", labelClassName: "epx-row-label--section" },
-  // dropCap, columns, columnsCustom, columnsGap rendered via custom
-  // branch in RightPanel.tsx (text-editor block) — they support per-
-  // breakpoint overrides through configBreakpoints[bpId]. Until F3.5.6
-  // refactors the panel onto fieldsTab, the inline panel branch owns
-  // these rows; declaring them here as plain FieldDefs would break the
-  // bp-aware writes.
+  // F3.5.6 — drop cap / columns (with custom-pen + scrub label) /
+  // columns gap. All bp-aware via `configBreakpoints[bpId]`. Original
+  // imperative branch in `RightPanel.tsx` (~line 631) replaced by
+  // `TextEditorFieldsSection`.
+  { kind: "custom", key: "text-editor-extras", render: TextEditorFieldsSection },
 ];
 
 const VIDEO_FIELDS: FieldDef[] = [
-  // VideoSourceControl + ImageOverlay group rendered via the imperative
-  // branch in RightPanel.tsx (video block). Both rely on direct config
-  // mutation patterns FieldRenderer does not (yet) support, so the
-  // declarative `fieldsTab` stays empty until F3.5.6 introduces a
-  // Fields-tab `kind: "custom"` hook (mirrors the Style-tab equivalent).
+  // F3.5.6 — `VideoSourceControl` + image overlay group declared as a
+  // `kind: "custom"` entry. Original imperative branch in
+  // `RightPanel.tsx` (~line 875) replaced by `VideoFieldsSection`.
+  { kind: "custom", key: "video-fields", render: VideoFieldsSection },
 ];
 
 const BUTTON_FIELDS: FieldDef[] = [
   { key: "text", label: "Text", type: "textarea", placeholder: "Click me", labelClassName: "epx-row-label--section" },
   { key: "icon", label: "Icon", type: "icon-group", showPosition: true },
+  // F3.5.6 — `LinkControl`. Original imperative branch in
+  // `RightPanel.tsx` (~line 952) replaced by `LinkFieldsSection`.
+  { kind: "custom", key: "button-link", render: LinkFieldsSection },
 ];
 
 const ICON_FIELDS: FieldDef[] = [
   { key: "icon", label: "Icon", type: "icon-group", showPosition: false },
+  // F3.5.6 — `LinkControl`. Original imperative branch in
+  // `RightPanel.tsx` (~line 955) replaced by `LinkFieldsSection`.
+  { kind: "custom", key: "icon-link", render: LinkFieldsSection },
 ];
 
 const HTML_FIELDS: FieldDef[] = [
@@ -219,18 +287,17 @@ const HTML_FIELDS: FieldDef[] = [
 const DIVIDER_SPACER_FIELDS: FieldDef[] = [
   { key: "space", label: "Space", type: "number-units", units: ["px", "rem", "em", "vh", "%"], labelClassName: "epx-row-label--section" },
   // Divider sub-fields (style/width/length/color/gradient/align/IconGroup)
-  // are extracted into `right-panel/sections/DividerLineSection.tsx` and
-  // declared via `styleTab` below — F3.5.6 routes them through the new
-  // declarative path on the Style tab.
+  // moved to `styleTab` via `DividerLineSection` in F3.5.6 — they
+  // logically belong to Style. The Fields tab now only carries the
+  // top-level `space` field.
 ];
 
 const CONTAINER_FIELDS: FieldDef[] = [
-  // LayoutControl + GapControl + OverflowControl + HTML Tag selector +
-  // LinkControl all live in the imperative `block.type === "container"`
-  // Fields branch in RightPanel.tsx. They write CSS keys (gap/overflow/
-  // layout) and a flat `htmlTag` plus link fields through bespoke
-  // patterns FieldRenderer doesn't model. Stays empty until F3.5.6
-  // introduces a Fields-tab `kind: "custom"` hook.
+  // F3.5.6 — `LayoutControl` + `GapControl` + `OverflowControl` + HTML
+  // Tag + conditional `LinkControl` declared as a `kind: "custom"`
+  // entry. Original imperative branches in `RightPanel.tsx` (~lines
+  // 839 / 849 / 852) replaced by `ContainerLayoutPicker`.
+  { kind: "custom", key: "container-layout", render: ContainerLayoutPicker },
 ];
 
 export const BLOCK_DEFINITIONS: BlockDef[] = [
@@ -390,9 +457,9 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     fields: HTML_FIELDS,
     fieldsTab: HTML_FIELDS,
     // No styleTab — `html` block hides the Style tab entirely.
-    // RightPanel.tsx ~line 583 (`hideStyleTab = block.type === "html"`).
-    // Expressed as the absence of the property; F3.5.6's TabRenderer
-    // treats `styleTab === undefined` as "hide the Style tab".
+    // Expressed as the absence of the property; F3.5.4's `TabRenderer`
+    // (and F3.5.6's `getVisibleTabs`) treat `styleTab === undefined` as
+    // "hide the Style tab" without any hardcoded type check.
   },
 
   {

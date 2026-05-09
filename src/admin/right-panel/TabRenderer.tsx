@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { BreakpointId, SectionBlock } from "../../types.js";
 import { getBlockDef } from "../blockDefinitions.js";
@@ -9,8 +9,8 @@ import { IconFields, IconStyle, IconAdvanced } from "./icons.js";
 
 /**
  * Tab shell for the new declarative right-panel path (F3.5.4). Replaces
- * the hardcoded `hideStyleTab = block.type === "html"` branch in
- * `RightPanel.tsx` today. Tab visibility derives from `BlockDef`:
+ * the hardcoded `html`-only branch in `RightPanel.tsx` that toggled
+ * Style off. Tab visibility derives from `BlockDef`:
  *
  * - Fields: visible when `fieldsTab` (or back-compat `fields`) is set.
  * - Style: visible when `styleTab` is non-empty. Hidden for `html` and
@@ -119,22 +119,16 @@ export function TabRenderer(props: TabRendererProps): ReactNode {
           {(def?.fieldsTab ?? def?.fields ?? [])
             .filter((field) => !field.showWhen || block.config[field.showWhen.key] === field.showWhen.value)
             .map((field) => {
-              // Anticipates F3.5.6's Fields-tab `kind: "custom"` hook
-              // (mirrors the Style-tab equivalent). Today no FieldDef
-              // declares `kind` so the branch is unreachable; KISS slot
-              // for the future kind to drop in without re-plumbing.
-              const fieldKind = (field as { kind?: string }).kind;
-              if (fieldKind === "custom") {
-                const customField = field as unknown as {
-                  render?: (args: {
-                    block: SectionBlock;
-                    onChange: (next: Record<string, unknown>) => void;
-                    activeBreakpoint: BreakpointId;
-                  }) => ReactNode;
-                };
-                return customField.render
-                  ? <React.Fragment key={field.key}>{customField.render({ block, onChange, activeBreakpoint })}</React.Fragment>
-                  : null;
+              if (field.kind === "custom") {
+                return (
+                  <FieldRenderer
+                    key={field.key}
+                    field={field}
+                    value={undefined}
+                    onChange={() => {}}
+                    customCtx={{ block, panelOnChange: onChange, activeBreakpoint }}
+                  />
+                );
               }
               const defaultVal = def?.defaultConfig?.[field.key];
               const currentVal = block.config[field.key];

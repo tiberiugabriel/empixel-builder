@@ -1,5 +1,5 @@
 import React from "react";
-import type { FieldDef, FieldType } from "../blockDefinitions.js";
+import type { FieldDef, FieldType, StandardFieldDef, CustomFieldDef, FieldRenderProps } from "../blockDefinitions.js";
 import { JsonArrayField } from "./JsonArrayField.js";
 import { LinkControl, type LinkValue } from "../controls/LinkControl.js";
 import { FieldGroup, SelectRow } from "../controls/FieldRow.js";
@@ -7,10 +7,15 @@ import { NumberWithUnits } from "../controls/NumberWithUnits.js";
 import { CodeEditor } from "../controls/CodeEditor.js";
 import { IconGroup } from "../controls/IconGroup.js";
 import { RichTextField } from "./RichTextField.js";
-import type { IconGroupValue } from "../../types.js";
+import type { IconGroupValue, BreakpointId, SectionBlock } from "../../types.js";
 
+/**
+ * Standard `FieldDef` props — read by the per-`type` renderers below.
+ * Custom `FieldDef` (`kind: "custom"`) takes a separate render path
+ * (see `FieldRenderer` dispatch) and never enters this map.
+ */
 interface Props {
-  field: FieldDef;
+  field: StandardFieldDef;
   value: unknown;
   onChange: (value: unknown) => void;
   isDirty?: boolean;
@@ -200,7 +205,59 @@ const RENDERERS: Record<FieldType, FieldComponent> = {
   url: Text,
 };
 
-export function FieldRenderer(props: Props) {
-  const Renderer = RENDERERS[props.field.type];
-  return <Renderer {...props} />;
+/**
+ * Public dispatcher. Accepts the full `FieldDef` union — standard
+ * input-style entries route through the per-`type` map; `kind:"custom"`
+ * entries call their own `render` prop with `FieldRenderProps`.
+ *
+ * Custom fields receive `block` / `onChange` / `activeBreakpoint` from
+ * the panel (passed through as `customCtx`) and dispatch their own
+ * patches; they bypass the standard `(value, onChange)` flow because
+ * they typically write multiple keys at once. F3.5.6 introduced this
+ * variant for `container` and `video` Fields tabs.
+ */
+export interface FieldRendererProps {
+  field: FieldDef;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  isDirty?: boolean;
+  /**
+   * Context for `kind: "custom"` renderers. The Fields-tab dispatcher
+   * (`TabRenderer`) passes this through; standard-`type` renderers
+   * ignore it. Optional so existing callers compile.
+   */
+  customCtx?: {
+    block: SectionBlock;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    panelOnChange: (next: Record<string, any>) => void;
+    activeBreakpoint: BreakpointId;
+  };
+}
+
+export function FieldRenderer(props: FieldRendererProps) {
+  if (props.field.kind === "custom") {
+    if (!props.customCtx) {
+      // Defensive — TabRenderer always supplies `customCtx` for the
+      // Fields tab. If a non-context caller hits a custom field, render
+      // nothing rather than crash.
+      return null;
+    }
+    const fieldRenderProps: FieldRenderProps = {
+      block: props.customCtx.block,
+      onChange: props.customCtx.panelOnChange,
+      activeBreakpoint: props.customCtx.activeBreakpoint,
+    };
+    const node = (props.field as CustomFieldDef).render(fieldRenderProps);
+    return <>{node}</>;
+  }
+  const standard = props.field as StandardFieldDef;
+  const Renderer = RENDERERS[standard.type];
+  return (
+    <Renderer
+      field={standard}
+      value={props.value}
+      onChange={props.onChange}
+      isDirty={props.isDirty}
+    />
+  );
 }
