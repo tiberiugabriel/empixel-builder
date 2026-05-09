@@ -38,6 +38,33 @@ mysteriously falls back to the unresolved slug, or why an entry table read
 returned nothing. Control flow is unchanged either way; this is purely a
 visibility lever.
 
+## Auto-augment `empixel_builder` column (v0.8.0)
+
+`ensureEmpixelBuilderColumn(db, collection, ctx)` (in `src/plugin.ts`) runs
+the DDL
+
+```sql
+ALTER TABLE ec_<collection> ADD COLUMN empixel_builder INTEGER NOT NULL DEFAULT 0
+```
+
+so hosts no longer need to declare the column in `seed.json`. Called from
+`POST /settings` (first enable per collection) and `POST /toggle` (first
+per-entry enable on a collection that skipped `/settings`). Idempotent —
+SQLite's `"duplicate column name"` error is swallowed and the helper
+returns silently. Any other ALTER failure (table missing, locked DB,
+corrupt schema) is routed through `logCaught(ctx, ...)` so it's visible
+in the host's log without breaking the route.
+
+**Security**: the caller is responsible for validating `collection` via
+`isValidCollection(...)` before the helper runs. SQLite doesn't accept
+identifiers as bound parameters, so the collection name is interpolated
+into the DDL — bypassing the regex allowlist re-introduces SQL injection
+(see audit C1).
+
+After this lands, the `/toggle` UPDATE no longer needs its previous
+soft-fail catch: the column is guaranteed present, so any UPDATE failure
+is a real bug that should propagate.
+
 ## Shared DB factory (v0.7.1)
 
 `src/dbShared.ts` owns the process-wide SQLite handle. Both the plugin
@@ -105,14 +132,25 @@ re-introduces SQL injection — see audit C1.
 
 ### `settings` — POST
 **POST** `{ collection, enabled }` → Enable/disable builder for an entire collection.
+- Validates `collection` via `isValidCollection(...)` (regex-allowlisted
+  identifier — required because the auto-ALTER below interpolates the name
+  into a DDL statement).
+- On `enabled: true`, runs `ensureEmpixelBuilderColumn(db, collection, ctx)`
+  before flipping the KV flag. See **Auto-augment `empixel_builder` column**
+  below.
 - Stored in KV key `settings:enabledCollections`
 - Returns `{ success: true }`
 
 ### `toggle` — POST
 **POST** `{ entryId, collection, enabled }` → Enable/disable builder for a specific entry.
-- Resolves slug to ULID
-- Upserts `empixel_builder_layouts` row with `enabled` = 1/0
-- Also attempts `UPDATE ec_<collection> SET empixel_builder = ?` (ignored if column missing)
+- Resolves slug to ULID.
+- Upserts `empixel_builder_layouts` row with `enabled` = 1/0.
+- Also runs `ensureEmpixelBuilderColumn(...)` before
+  `UPDATE ec_<collection> SET empixel_builder = ?` so per-entry toggles
+  work even when the collection-level `/settings` enable was skipped.
+  Failures from the UPDATE itself now propagate (the previous soft-fail
+  catch is gone since the column is guaranteed present after the helper
+  runs).
 - Returns `{ success: true }`
 
 ### `breakpoints` — GET + POST

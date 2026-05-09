@@ -53,6 +53,43 @@ function badRequest(message: string): Response {
   );
 }
 
+/**
+ * Ensures the `empixel_builder INTEGER NOT NULL DEFAULT 0` column exists on
+ * `ec_<collection>`. Hosts no longer need to declare the column in
+ * `seed.json` — the plugin augments the schema itself the first time the
+ * builder is enabled (or first toggled) for a collection.
+ *
+ * Idempotent. SQLite raises a "duplicate column name" error when the column
+ * already exists; we swallow that specific case and continue. Any other
+ * failure (table missing, locked DB, corrupt schema) is logged via
+ * `logCaught` so the canonical state in `empixel_builder_layouts` still
+ * advances.
+ *
+ * Caller MUST validate `collection` via `isValidCollection(...)` before
+ * calling this — the name is interpolated into a DDL statement and bypasses
+ * prepared-statement parameterisation (SQLite doesn't accept identifiers as
+ * bound parameters).
+ */
+export function ensureEmpixelBuilderColumn(
+  db: SqliteDb,
+  collection: string,
+  ctx: { log: PluginContext["log"] } | null = null
+): void {
+  try {
+    db.exec(
+      `ALTER TABLE ec_${collection} ADD COLUMN empixel_builder INTEGER NOT NULL DEFAULT 0`
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/duplicate column/i.test(msg)) {
+      // Column already present — the host site declared it in seed.json or a
+      // previous enable already augmented the schema. Nothing to do.
+      return;
+    }
+    logCaught(ctx, `ensureEmpixelBuilderColumn: ALTER TABLE ec_${collection} failed`, err);
+  }
+}
+
 // Tracks which shared SQLite handles have already been initialised by the
 // plugin runtime. The shared singleton lives in `dbShared.ts` and is reused
 // by the frontend reader (`components/db.ts`); we only need to run schema
@@ -211,7 +248,7 @@ function runSpacerMigration(db: SqliteDb): void {
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
-    version: "0.7.1",
+    version: "0.8.0",
     capabilities: ["content:read"],
     routes: {
       // GET  ?pageId=&collection=  → load layout
@@ -328,6 +365,18 @@ export function createPlugin() {
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
+          if (!isValidCollection(body.collection)) {
+            return badRequest("Invalid collection name");
+          }
+
+          // Augment the schema on first enable so hosts don't need to declare
+          // the column in seed.json. Idempotent — re-enabling or disabling
+          // doesn't re-run the ALTER once the column exists. Always-on so a
+          // re-enable on a fresh DB picks the column up too.
+          if (body.enabled) {
+            ensureEmpixelBuilderColumn(getDb(), body.collection, ctx);
+          }
+
           const current = await ctx.kv.get<string[]>(KV_ENABLED) ?? [];
           const updated = body.enabled
             ? (current.includes(body.collection) ? current : [...current, body.collection])
@@ -436,14 +485,13 @@ export function createPlugin() {
             `)
             .run(collection, entryId, body?.enabled ? 1 : 0);
 
-          // Try to sync the value back to the document table if the column exists
-          try {
-            db.prepare(`UPDATE ec_${collection} SET empixel_builder = ? WHERE id = ?`).run(body?.enabled ? 1 : 0, entryId);
-          } catch (err) {
-            // Column may not exist or be named differently in this collection.
-            // Soft-fail: the canonical state is in empixel_builder_layouts.
-            logCaught(ctx, `toggle: sync ec_${collection}.empixel_builder failed`, err);
-          }
+          // Per-entry toggle can fire without /settings ever being called for
+          // this collection. Self-heal the schema here too — hosts no longer
+          // need to declare the column in seed.json. Once the column is
+          // guaranteed present, the UPDATE below can fail loudly; the previous
+          // soft-fail catch (column-missing) is no longer needed.
+          ensureEmpixelBuilderColumn(db, collection, ctx);
+          db.prepare(`UPDATE ec_${collection} SET empixel_builder = ? WHERE id = ?`).run(body?.enabled ? 1 : 0, entryId);
 
           return { success: true };
         },

@@ -19,7 +19,7 @@ export function empixelBuilder(options?: EmpixelBuilderOptions): PluginDescripto
 
   return {
     id: "empixel-builder",
-    version: "0.7.1",
+    version: "0.8.0",
     format: "native",
     entrypoint: "empixel-builder/plugin",
     adminEntry: "empixel-builder/admin",

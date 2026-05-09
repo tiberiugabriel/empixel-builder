@@ -21,6 +21,8 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 13:30 · F2.1 started
+
 ## 2026-05-09 13:21 · F1.5 started
 
 ## 2026-05-09 13:13 · F1.4 started
@@ -32,6 +34,17 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 *(empty)*
 
 ## Done
+
+## 2026-05-09 13:43 · F2.1 done
+- New `ensureEmpixelBuilderColumn(db, collection, ctx)` helper in `src/plugin.ts` runs the idempotent DDL `ALTER TABLE ec_<collection> ADD COLUMN empixel_builder INTEGER NOT NULL DEFAULT 0`. Wired into both write paths that depend on the column: `POST /settings` (collection-level enable) and `POST /toggle` (per-entry enable, since an entry toggle can fire without `/settings` ever being called for that collection).
+- `POST /settings` now also goes through `isValidCollection(body.collection)` — previously it skipped the validator since it didn't interpolate the name into SQL. The auto-ALTER changes that, so the validator is mandatory now (re-introducing SQL injection otherwise — see audit C1). Settings handler returns `400 "Invalid collection name"` on bad input.
+- Idempotent: SQLite's `"duplicate column"` error is matched via `/duplicate column/i` and swallowed silently. Any other error (table missing, locked DB, corrupt schema) routes through `logCaught(ctx, ...)` so the host's logger sees it without breaking the route. Hosts no longer need to declare `empixel_builder` in `seed.json` (issue: report C2/Q5).
+- Removed the previous soft-fail try/catch around the `/toggle` UPDATE since the column is now guaranteed present after the helper runs. Real UPDATE failures (corrupt DB, locked file, schema drift) now propagate as 500s instead of being papered over.
+- Bumped `version` 0.7.1 → 0.8.0 in `package.json`, `src/plugin.ts` (`definePlugin({ version })`), and `src/index.ts` (`PluginDescriptor.version`). Added `## 0.8.0 — 2026-05-09` section to `CHANGELOG.md` above the existing `## 0.7.1`.
+- PRD: `prd-backend.md` updated — new "Auto-augment `empixel_builder` column (v0.8.0)" section explains the helper, idempotency, and the security note (caller validates `collection` before DDL). Route docs for `/settings` + `/toggle` updated to mention the new behaviour.
+- Test: new `tests/ensureEmpixelBuilderColumn.test.ts`. Three cases against a real `better-sqlite3` handle in tmpdir: (1) column added when missing — verifies INTEGER + NOT NULL + DEFAULT 0 via PRAGMA; (2) idempotent — calling twice doesn't throw and doesn't log; (3) missing-table case — logs (warn) without throwing. The "calling enable handler twice doesn't error" acceptance is covered by case 2.
+- Files: `src/plugin.ts`, `src/index.ts`, `package.json`, `CHANGELOG.md`, `.claude/prd-backend.md`, `tests/ensureEmpixelBuilderColumn.test.ts` (new), `.claude/coordination/status/agent-a.md`.
+- Pipeline: green (lint + typecheck + 82 tests + build all pass — 3 new in `ensureEmpixelBuilderColumn.test.ts`, total 79 → 82).
 
 ## 2026-05-09 13:25 · F1.5 done
 - New `src/dbShared.ts` owns the process-wide writable SQLite handle. `getDb({ databasePath? })` returns the cached singleton for the resolved path; passing a different path closes + reopens against the new file. `resolveDatabasePath(opts?)` is the pure path-pick helper (explicit option → configured default → `<cwd>/data.db`). `setDefaultDatabasePath(databasePath)` is called from `empixelBuilder({ databasePath })` so subsequent `getDb()` calls don't need the option threaded through.

@@ -3,6 +3,17 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 0.8.0 — 2026-05-09
+
+- Plugin now auto-adds the `empixel_builder INTEGER NOT NULL DEFAULT 0`
+  column to `ec_<collection>` on the first `POST /settings` enable (and
+  the first `POST /toggle` for collections that skip the collection-level
+  enable). Hosts no longer need to declare the column in `seed.json`.
+  Idempotent — SQLite's "duplicate column" error is swallowed; any other
+  ALTER failure is logged via `logCaught`. The collection name still
+  passes through `isValidCollection(...)` before the DDL — never raw
+  user input into a SQL identifier (issue: report C2/Q5).
+
 ## 0.7.1 — 2026-05-09
 
 - Bump peer deps: `emdash >=0.9.0`, `better-sqlite3 >=12.0.0`. `better-sqlite3` 12
