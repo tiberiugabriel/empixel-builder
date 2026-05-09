@@ -66,6 +66,49 @@ interface BlockDef {
 }
 ```
 
+### `defaultConfig` structure (F3.6.1)
+
+Every `BlockDef.defaultConfig` carries the **full structural shape** of the
+block's config. Every key the panel + frontend will ever read is present on
+the freshly-added block — empty strings (`""`) for string-typed CSS keys,
+empty objects (`{}`) for nested map placeholders. F3.6.1 invents NO design
+values; the user populates aesthetics later.
+
+Why this matters:
+- **Canvas / RightPanel don't need defensive checks.** Every `block.config.style.fontSize` read returns either a real value or `""` — never `undefined`.
+- **F3.6.2 builds a load-time fill helper** (`getDefaultBlockConfig(type)`) on top of the same shape, applied to legacy layouts that pre-date F3.6.
+- **F3.6.3 unifies CSS generation** between Canvas (`epxStyleString`) and frontend (`buildBlockChromeCss`) by relying on the keys always being present.
+
+```ts
+// Canonical shape produced by every BlockDef.defaultConfig today.
+{
+  // block-specific fields (e.g. `content: ""`, `theme: "light"`,
+  // `aspectRatio: "16:9"`, `divider: { ... }`) keep their existing values.
+  ...blockSpecificFields,
+
+  // F3.6.1: full structural placeholders (always present).
+  style: { ...EMPTY_STYLE_DEFAULTS },        // every key in STYLE_PROPS, "" by default
+  styleHover: {},                            // populated when user toggles a hover state
+  styleDark: {},                             // ditto for dark variant
+  styleBreakpoints: {},                      // { [bpId]: { _px, ...keys } }
+  styleHoverBreakpoints: {},                 // { [bpId]: { _px, ...keys } }
+  advanced: { ...EMPTY_ADVANCED_DEFAULTS },  // cssId / cssClasses / customCss / position / top / right / bottom / left / zIndex, all ""
+}
+```
+
+`EMPTY_STYLE_DEFAULTS` and `EMPTY_ADVANCED_DEFAULTS` are exported from `src/admin/blockDefinitions.ts`. `EMPTY_STYLE_DEFAULTS` mirrors the canonical `STYLE_PROPS` array in `src/components/styleUtils.ts` (Agent B's column — local `const`, not exported, so we replicate the key set as a contract). The 36 keys cover padding/margin/sizing/border-radius/border-width/overflow/typography/blend-mode/aspect-ratio/filter — every CSS property the plugin's render pipeline knows about.
+
+Pre-existing design defaults still survive the F3.6.1 merge:
+- `container.style` retains `paddingTop/Right/Bottom/Left = "12px"` and `columnGap/rowGap = "6px"` (the merge spreads `EMPTY_STYLE_DEFAULTS` first, then design overrides win).
+- `text-editor.defaultConfig` retains `columns: "1"`, `columnsGap: "0px"`, `dropCap: false`.
+- `video.defaultConfig` retains `aspectRatio: "16:9"` and the `video.{src,autoplay,mute,...}` group.
+- `divider-spacer.defaultConfig` retains the full `divider: { style, width, length, color, colorAlpha, align }` group.
+
+If `STYLE_PROPS` in `styleUtils.ts` ever gains a new entry, mirror it
+in BOTH `EMPTY_STYLE_DEFAULTS` (in `blockDefinitions.ts`) and the
+`STYLE_PROPS_SNAPSHOT` array in `tests/blockDefinitions.test.ts`. The
+test asserts both lists agree and will fail loudly until they do.
+
 ### StyleSection (declarative Style tab — F3.5.1)
 
 Replaces the ~9 imperative `block.type === "..."` branches in `RightPanel.tsx`. Each entry maps to one section the panel knows how to render. F3.5.1 introduces the type only — F3.5.2 populates `styleTab` per block, F3.5.3 + F3.5.4 land the `SectionRenderer` / `TabRenderer`, F3.5.6 deletes the imperative branches.

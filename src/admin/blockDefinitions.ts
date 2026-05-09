@@ -229,6 +229,68 @@ export interface BlockDef {
 
 // ─── Block Definitions ────────────────────────────────────────────────────────
 
+/**
+ * F3.6.1 — full default `style` shape, mirroring the canonical
+ * `STYLE_PROPS` list in `src/components/styleUtils.ts` (Agent B's
+ * column — not exported, so we replicate the key set here as a
+ * read-only contract). Every key the plugin's CSS pipeline knows
+ * about is present with an empty string value, so `block.config.style`
+ * always has the same shape regardless of what the user has touched.
+ *
+ * Empty values are intentional: F3.6.1 introduces NO design defaults.
+ * F3.6.2 builds the load-time `getDefaultBlockConfig(type)` helper on
+ * top of this; F3.6.3 unifies Canvas / frontend CSS generation
+ * knowing the keys are always present (no defensive `cssStr(...)`
+ * misses).
+ *
+ * If `STYLE_PROPS` in `styleUtils.ts` ever gains a new entry, mirror
+ * it here AND in the matching test array. The `blockDefinitions.test.ts`
+ * shape assertion will fail until both lists agree.
+ */
+export const EMPTY_STYLE_DEFAULTS: Record<string, string> = {
+  // Padding
+  paddingTop: "",    paddingRight: "",  paddingBottom: "",  paddingLeft: "",
+  // Margin
+  marginTop: "",     marginRight: "",   marginBottom: "",   marginLeft: "",
+  // Sizing
+  width: "",         minWidth: "",      maxWidth: "",
+  height: "",        minHeight: "",     maxHeight: "",
+  // Border radius
+  borderTopLeftRadius: "",     borderTopRightRadius: "",
+  borderBottomRightRadius: "", borderBottomLeftRadius: "",
+  // Border width
+  borderTopWidth: "",    borderRightWidth: "",
+  borderBottomWidth: "", borderLeftWidth: "",
+  // Overflow
+  overflowX: "",     overflowY: "",
+  // Typography
+  textAlign: "",
+  fontFamily: "",    fontSize: "",      fontWeight: "",
+  textTransform: "", fontStyle: "",     textDecoration: "",
+  lineHeight: "",    letterSpacing: "", wordSpacing: "",
+  // Misc
+  mixBlendMode: "",  aspectRatio: "",   filter: "",
+};
+
+/**
+ * F3.6.1 — empty `advanced` defaults. Mirrors `AdvancedConfig` in
+ * `src/admin/right-panel/types.ts` (top / right / bottom / left typed
+ * as `string?` there — kept as `""` here so the key is always
+ * present). `zIndex` stays `""` for the same reason; the runtime CSS
+ * generator already short-circuits when the value is empty/undefined.
+ */
+export const EMPTY_ADVANCED_DEFAULTS: Record<string, string> = {
+  cssId: "",
+  cssClasses: "",
+  customCss: "",
+  position: "",
+  top: "",
+  right: "",
+  bottom: "",
+  left: "",
+  zIndex: "",
+};
+
 // ─── Field arrays (defined as locals so each BlockDef can point both
 // `fields` and `fieldsTab` at the same array — keeps the alias contract
 // honest and gives F3.5.6 a single line to delete per block when it
@@ -307,7 +369,16 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     icon: "📝",
     description: "A text block with custom CSS control",
     category: "general",
-    defaultConfig: { content: "", theme: "light" },
+    defaultConfig: {
+      content: "",
+      theme: "light",
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
+    },
     fields: TEXT_FIELDS,
     fieldsTab: TEXT_FIELDS,
     // Style tab — text block: align + typography stack only (no
@@ -327,7 +398,16 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     icon: "🖼️",
     description: "An image with optional caption and link",
     category: "general",
-    defaultConfig: { theme: "light", resolution: "full" },
+    defaultConfig: {
+      theme: "light",
+      resolution: "full",
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
+    },
     fields: IMAGE_FIELDS,
     fieldsTab: IMAGE_FIELDS,
     // Style tab — image block: imgVisual covers width/height/objectFit/
@@ -357,6 +437,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       columns: "1",
       columnsGap: "0px",
       dropCap: false,
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: TEXT_EDITOR_FIELDS,
     fieldsTab: TEXT_EDITOR_FIELDS,
@@ -383,6 +469,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       theme: "light",
       video: { src: "url", autoplay: false, mute: true, controls: true, lazyLoad: true },
       aspectRatio: "16:9",
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: VIDEO_FIELDS,
     fieldsTab: VIDEO_FIELDS,
@@ -405,6 +497,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       theme: "light",
       text: "Click me",
       icon: { iconPosition: "left", iconSize: "16px" },
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: BUTTON_FIELDS,
     fieldsTab: BUTTON_FIELDS,
@@ -436,6 +534,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     defaultConfig: {
       theme: "light",
       icon: { iconSize: "32px" },
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: ICON_FIELDS,
     fieldsTab: ICON_FIELDS,
@@ -457,6 +561,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     defaultConfig: {
       theme: "light",
       code: "",
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: HTML_FIELDS,
     fieldsTab: HTML_FIELDS,
@@ -483,6 +593,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
         colorAlpha: 0.12,
         align: "center",
       },
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: DIVIDER_SPACER_FIELDS,
     fieldsTab: DIVIDER_SPACER_FIELDS,
@@ -507,7 +623,13 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     defaultConfig: {
       theme: "light",
       layout: "flex",
+      // F3.6.1 — merge existing design defaults onto the empty STYLE_PROPS
+      // schema. Padding values are pre-existing design defaults (kept).
+      // `columnGap` / `rowGap` are layout-only keys not in STYLE_PROPS but
+      // consumed by `buildBreakpointCss`'s layoutParts pass — leave them
+      // alongside.
       style: {
+        ...EMPTY_STYLE_DEFAULTS,
         paddingTop: "12px",
         paddingRight: "12px",
         paddingBottom: "12px",
@@ -515,6 +637,11 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
         columnGap: "6px",
         rowGap: "6px",
       },
+      styleHover: {},
+      styleDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
     },
     fields: CONTAINER_FIELDS,
     fieldsTab: CONTAINER_FIELDS,

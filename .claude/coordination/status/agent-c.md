@@ -21,6 +21,42 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 23:30 · F3.6.1 (defaultConfig full style schema) started
+
+Branch: `feature/agentC-F3.6.1`. Worktree at latest `main` (`8885106`).
+Phase F3.6 entry. Schema-only foundation: every `BlockDef.defaultConfig`
+gains the full structural shape — `style` containing every key in
+`STYLE_PROPS`, plus empty `styleHover`, `styleDark`, `styleBreakpoints`,
+`styleHoverBreakpoints`, and a populated `advanced` placeholder. Values
+stay empty (`""` / `{}`) — F3.6.1 invents NO design values. Existing
+block-specific keys (e.g. `container.style.paddingTop = "12px"`) keep
+their current values; new empty keys merge in alongside.
+
+`STYLE_PROPS` lives in `src/components/styleUtils.ts` as a non-exported
+local `const` (Agent B's column). Verbatim 36 keys: padding{Top,Right,
+Bottom,Left}, margin{Top,Right,Bottom,Left}, width/minWidth/maxWidth/
+height/minHeight/maxHeight, borderTopLeftRadius / borderTopRightRadius /
+borderBottomRightRadius / borderBottomLeftRadius, borderTopWidth /
+borderRightWidth / borderBottomWidth / borderLeftWidth, overflowX /
+overflowY, textAlign, fontFamily / fontSize / fontWeight, textTransform /
+fontStyle / textDecoration, lineHeight / letterSpacing / wordSpacing,
+mixBlendMode, aspectRatio, filter. Test file replicates the array
+locally rather than touching B's file to add an export.
+
+Planned scope:
+- `src/admin/blockDefinitions.ts` — extend each of 9 `defaultConfig`
+  objects with the full structure.
+- `tests/blockDefinitions.test.ts` — assert every block's
+  `defaultConfig.style` has every `STYLE_PROPS` key.
+- `CHANGELOG.md` — open `## Unreleased — 0.9.6 prep` + F3.6.1 bullet.
+- `.claude/prd-blocks.md` — new "defaultConfig structure" subsection.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+No `src/types.ts` proposal — `BlockDef.defaultConfig` is typed
+`Record<string, any>` so adding empty-string keys is allowed without
+type changes. `BaseBlockConfig`'s open-index signature already covers
+this shape.
+
 ## 2026-05-09 22:30 · F3.5.8 (block-author guide) started
 
 Branch: `feature/agentC-F3.5.8`. Worktree at latest `main` (`f8fcab8`).
@@ -215,6 +251,109 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-09 23:55 · F3.6.1 (defaultConfig full style schema) done
+
+Branch: `feature/agentC-F3.6.1`. Single commit (about to land).
+
+**Files changed** (5):
+- `src/admin/blockDefinitions.ts` — two new exports
+  (`EMPTY_STYLE_DEFAULTS` with all 36 STYLE_PROPS keys, value `""`;
+  `EMPTY_ADVANCED_DEFAULTS` with all 9 AdvancedConfig keys, value
+  `""`). Each of the 9 BlockDef instances'  `defaultConfig` now
+  spreads them — every block carries the same top-level shape
+  (`style`, `styleHover`, `styleDark`, `styleBreakpoints`,
+  `styleHoverBreakpoints`, `advanced`). Pre-existing design values
+  on `container.style` (`paddingTop/Right/Bottom/Left = "12px"`,
+  `columnGap/rowGap = "6px"`) and on every other block-specific key
+  (`text-editor.columns`, `video.aspectRatio`, `divider-spacer.divider`,
+  etc.) are preserved verbatim.
+- `tests/blockDefinitions.test.ts` — new F3.6.1 describe block with
+  5 tests: STYLE_PROPS coverage on EMPTY_STYLE_DEFAULTS, full
+  STYLE_PROPS coverage on every block's defaultConfig.style, full
+  top-level shape coverage, every EMPTY_ADVANCED_DEFAULTS key on
+  every advanced default, and a "no design values invented"
+  assertion that whitelists the pre-existing `container` padding
+  overrides and asserts everything else is `""`. Test imports
+  `EMPTY_STYLE_DEFAULTS` and `EMPTY_ADVANCED_DEFAULTS` directly;
+  the STYLE_PROPS array is replicated locally as a snapshot
+  contract (the canonical list lives in `src/components/styleUtils.ts`
+  as a non-exported `const` — Agent B's column).
+- `CHANGELOG.md` — opened `## Unreleased — 0.9.6 prep` above
+  `## 0.9.5 — 2026-05-09`. F3.6.1 bullet documents the new shape, the
+  empty-value contract, the pre-existing container exception, the
+  test deltas, and confirms `package.json` stays at `0.9.5`.
+- `.claude/prd-blocks.md` — new "`defaultConfig` structure (F3.6.1)"
+  subsection inserted between BlockDef interface and StyleSection.
+  Documents the canonical shape, the rationale (Canvas / RightPanel /
+  F3.6.2 / F3.6.3), the 36-key STYLE_PROPS mirror in
+  `EMPTY_STYLE_DEFAULTS`, the per-block design defaults that survive
+  the merge, and the maintenance rule (mirror new STYLE_PROPS keys in
+  both `EMPTY_STYLE_DEFAULTS` and `STYLE_PROPS_SNAPSHOT` in the test).
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Per-block summary** (every block now declares the full structure):
+| Block | Block-specific defaults preserved | `style` keys | Top-level shape |
+|---|---|---|---|
+| `text` | `content: ""`, `theme: "light"` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `image` | `theme: "light"`, `resolution: "full"` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `text-editor` | `content: []`, `theme`, `columns: "1"`, `columnsGap: "0px"`, `dropCap: false` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `video` | `theme`, `video: {...}`, `aspectRatio: "16:9"` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `button` | `theme`, `text: "Click me"`, `icon: {...}` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `icon` | `theme`, `icon: { iconSize: "32px" }` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `html` | `theme`, `code: ""` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `divider-spacer` | `theme`, `space: "48px"`, `divider: {...}` | 36 STYLE_PROPS, all `""` | full ✓ |
+| `container` | `theme`, `layout: "flex"` | 36 STYLE_PROPS — 4 padding keys + `columnGap`/`rowGap` keep design values, others `""` | full ✓ |
+
+**STYLE_PROPS keys filled into each block's style default**: 36
+(padding{Top,Right,Bottom,Left}, margin{Top,Right,Bottom,Left},
+width/minWidth/maxWidth, height/minHeight/maxHeight,
+borderTopLeftRadius / borderTopRightRadius /
+borderBottomRightRadius / borderBottomLeftRadius,
+borderTopWidth / borderRightWidth / borderBottomWidth /
+borderLeftWidth, overflowX / overflowY, textAlign, fontFamily /
+fontSize / fontWeight, textTransform / fontStyle / textDecoration,
+lineHeight / letterSpacing / wordSpacing, mixBlendMode, aspectRatio,
+filter).
+
+**EMPTY_ADVANCED_DEFAULTS keys** (9): cssId, cssClasses, customCss,
+position, top, right, bottom, left, zIndex.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test &&
+npm run build` all green. **224 tests pass** (219 → 224, +5 new from
+the F3.6.1 describe block in `blockDefinitions.test.ts`).
+
+**Pipeline tail**:
+```
+> empixel-builder@0.9.5 test
+> vitest run
+ Test Files  14 passed (14)
+      Tests  224 passed (224)
+   Duration  676ms
+
+> empixel-builder@0.9.5 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+**No `src/types.ts` proposal**: `BlockDef.defaultConfig` is typed
+`Record<string, any>` so adding empty-string keys is allowed without
+type changes. `BaseBlockConfig`'s open-index signature already covers
+the shape that consumers will read. No proposal needed.
+
+**`STYLE_PROPS` import**: not done. `STYLE_PROPS` is a non-exported
+local `const` in `src/components/styleUtils.ts` (Agent B's column).
+Adding `export` would require touching B's file. Replicating the
+list as `EMPTY_STYLE_DEFAULTS` (in admin) + `STYLE_PROPS_SNAPSHOT`
+(in tests) is the KISS path; the F3.6.1 test asserts `EMPTY_STYLE_DEFAULTS`
+matches the snapshot, which catches drift if either side gains a
+key without the other.
+
+**Surprises / blockers**: none. All 9 BlockDef edits compose by simple
+spread over `EMPTY_STYLE_DEFAULTS` / `EMPTY_ADVANCED_DEFAULTS`, the
+container's pre-existing design defaults override cleanly via spread
+order, and no consumer (Canvas / RightPanel / reducer) reacted
+adversely to the additional empty keys (typecheck + test suite stayed
+green without code changes elsewhere).
 
 ## 2026-05-09 22:55 · F3.5.8 (block-author guide) done
 

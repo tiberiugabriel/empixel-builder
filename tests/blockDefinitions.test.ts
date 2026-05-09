@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   BLOCK_DEFINITIONS,
+  EMPTY_ADVANCED_DEFAULTS,
+  EMPTY_STYLE_DEFAULTS,
   getBlockDef,
   type BlockDef,
   type StyleSection,
@@ -192,6 +194,138 @@ describe("F3.5.2 + F3.5.6 — migrated BlockDef instances", () => {
     const def = getBlockDef("button")!;
     const themeCount = def.styleTab!.filter((s) => s.kind === "theme").length;
     expect(themeCount).toBe(0);
+  });
+});
+
+// ─── F3.6.1 — full defaultConfig structural shape ────────────────────────────
+
+describe("F3.6.1 — defaultConfig structural shape", () => {
+  // Source-of-truth replication. `STYLE_PROPS` lives in
+  // `src/components/styleUtils.ts` (Agent B's column) as a non-exported
+  // local `const`. Replicating the array verbatim here is the cheapest
+  // way to enforce the contract without forking the styleUtils file
+  // for an export. If `STYLE_PROPS` ever gains a new entry, mirror it
+  // BOTH here and in `EMPTY_STYLE_DEFAULTS` (in blockDefinitions.ts) —
+  // this test will fail loudly until they agree.
+  const STYLE_PROPS_SNAPSHOT = [
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
+    "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight",
+    "borderTopLeftRadius", "borderTopRightRadius",
+    "borderBottomRightRadius", "borderBottomLeftRadius",
+    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+    "overflowX", "overflowY",
+    "textAlign",
+    "fontFamily", "fontSize", "fontWeight",
+    "textTransform", "fontStyle", "textDecoration",
+    "lineHeight", "letterSpacing", "wordSpacing",
+    "mixBlendMode",
+    "aspectRatio",
+    "filter",
+  ] as const;
+
+  // Sanity — EMPTY_STYLE_DEFAULTS itself carries every STYLE_PROPS key.
+  // If this fails, blockDefinitions.ts has drifted from styleUtils.ts.
+  it("EMPTY_STYLE_DEFAULTS includes every STYLE_PROPS key", () => {
+    for (const key of STYLE_PROPS_SNAPSHOT) {
+      expect(EMPTY_STYLE_DEFAULTS).toHaveProperty(key);
+      // Empty string per the F3.6.1 contract — no design values invented.
+      expect(EMPTY_STYLE_DEFAULTS[key]).toBe("");
+    }
+  });
+
+  // Per-block: every BlockDef.defaultConfig.style must contain every
+  // STYLE_PROPS key. Block-specific overrides (e.g. container's
+  // paddingTop="12px") are allowed to differ from "" — only presence
+  // is asserted. Container also carries layout-only keys
+  // (columnGap, rowGap) that are NOT in STYLE_PROPS; those are
+  // intentionally extra and not asserted here.
+  it("every block's defaultConfig.style has every STYLE_PROPS key", () => {
+    for (const def of BLOCK_DEFINITIONS) {
+      const styleDefault = (def.defaultConfig.style ?? {}) as Record<string, unknown>;
+      for (const key of STYLE_PROPS_SNAPSHOT) {
+        expect(
+          styleDefault,
+          `block "${def.type}" defaultConfig.style is missing STYLE_PROPS key "${key}"`,
+        ).toHaveProperty(key);
+      }
+    }
+  });
+
+  // Every block's defaultConfig must declare the full shape:
+  // style / styleHover / styleDark / styleBreakpoints /
+  // styleHoverBreakpoints / advanced. Empty-object defaults are fine —
+  // F3.6.2 fills missing keys at load time. F3.6.1 only asserts the
+  // top-level shape is consistent across the 9 blocks.
+  it("every block's defaultConfig declares the full top-level shape", () => {
+    for (const def of BLOCK_DEFINITIONS) {
+      const cfg = def.defaultConfig;
+      expect(cfg, `block "${def.type}" missing style`).toHaveProperty("style");
+      expect(cfg, `block "${def.type}" missing styleHover`).toHaveProperty("styleHover");
+      expect(cfg, `block "${def.type}" missing styleDark`).toHaveProperty("styleDark");
+      expect(cfg, `block "${def.type}" missing styleBreakpoints`).toHaveProperty(
+        "styleBreakpoints",
+      );
+      expect(
+        cfg,
+        `block "${def.type}" missing styleHoverBreakpoints`,
+      ).toHaveProperty("styleHoverBreakpoints");
+      expect(cfg, `block "${def.type}" missing advanced`).toHaveProperty("advanced");
+
+      // Type checks — the empty placeholders are objects (not null/undefined)
+      // so consumers can spread them safely.
+      expect(typeof cfg.style).toBe("object");
+      expect(typeof cfg.styleHover).toBe("object");
+      expect(typeof cfg.styleDark).toBe("object");
+      expect(typeof cfg.styleBreakpoints).toBe("object");
+      expect(typeof cfg.styleHoverBreakpoints).toBe("object");
+      expect(typeof cfg.advanced).toBe("object");
+    }
+  });
+
+  // Every block's defaultConfig.advanced must include every key in
+  // `EMPTY_ADVANCED_DEFAULTS`. Mirrors the AdvancedConfig shape in
+  // src/admin/right-panel/types.ts plus position offset keys.
+  it("every block's defaultConfig.advanced has every EMPTY_ADVANCED_DEFAULTS key", () => {
+    const advancedKeys = Object.keys(EMPTY_ADVANCED_DEFAULTS);
+    for (const def of BLOCK_DEFINITIONS) {
+      const adv = (def.defaultConfig.advanced ?? {}) as Record<string, unknown>;
+      for (const key of advancedKeys) {
+        expect(
+          adv,
+          `block "${def.type}" defaultConfig.advanced is missing key "${key}"`,
+        ).toHaveProperty(key);
+      }
+    }
+  });
+
+  // No design values invented — every key in EMPTY_STYLE_DEFAULTS that
+  // wasn't pre-populated with a design value should still be "" on the
+  // BlockDef instance. The container block intentionally sets padding +
+  // gap design values; everything else uses the empty defaults.
+  // Whitelist captures the pre-existing design values that survive the
+  // F3.6.1 merge.
+  it("F3.6.1 invents no design values (only pre-existing defaults stay non-empty)", () => {
+    const PRE_EXISTING: Partial<Record<string, Record<string, string>>> = {
+      container: {
+        paddingTop: "12px",
+        paddingRight: "12px",
+        paddingBottom: "12px",
+        paddingLeft: "12px",
+      },
+    };
+
+    for (const def of BLOCK_DEFINITIONS) {
+      const styleDefault = (def.defaultConfig.style ?? {}) as Record<string, string>;
+      const allowed = PRE_EXISTING[def.type] ?? {};
+      for (const key of STYLE_PROPS_SNAPSHOT) {
+        const expected = allowed[key] ?? "";
+        expect(
+          styleDefault[key],
+          `block "${def.type}" style.${key} should be "${expected}" (F3.6.1 invents no values)`,
+        ).toBe(expected);
+      }
+    }
   });
 });
 

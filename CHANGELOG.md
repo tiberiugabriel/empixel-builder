@@ -3,6 +3,43 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## Unreleased — 0.9.6 prep
+
+- **F3.6.1 — every `BlockDef.defaultConfig` now declares the full
+  style/styleHover/styleDark/styleBreakpoints/styleHoverBreakpoints/advanced
+  structure (empty values).** No design values invented — user
+  populates aesthetic defaults later. Foundation for F3.6.2 (load-time
+  fill helper) and F3.6.3 (Canvas / frontend CSS unification). The new
+  shared shape:
+  - `style` carries every key in `STYLE_PROPS` (`styleUtils.ts`) — 36
+    entries spanning padding/margin/sizing/border-radius/border-width/
+    overflow/typography/blend-mode/aspect-ratio/filter, all defaulted
+    to `""`. Two new exports — `EMPTY_STYLE_DEFAULTS` and
+    `EMPTY_ADVANCED_DEFAULTS` — live in `src/admin/blockDefinitions.ts`
+    so each BlockDef spreads them rather than duplicating the key list.
+  - `styleHover`, `styleDark`, `styleBreakpoints`, `styleHoverBreakpoints`
+    default to empty `{}` placeholders (populated by user toggles).
+  - `advanced` defaults to `{ cssId, cssClasses, customCss, position,
+    top, right, bottom, left, zIndex }` all `""`. Mirrors
+    `AdvancedConfig` from `right-panel/types.ts`.
+  - Pre-existing design values survive: `container.style` still carries
+    its `paddingTop/Right/Bottom/Left = "12px"` and
+    `columnGap/rowGap = "6px"` baked-in defaults; the merge spreads
+    `EMPTY_STYLE_DEFAULTS` first and lets the design overrides win.
+    Block-specific keys (`text-editor.columns`, `video.aspectRatio`,
+    `divider-spacer.divider`, etc.) keep their existing values.
+  - Tests: `tests/blockDefinitions.test.ts` adds an F3.6.1 describe
+    block (5 new tests, 219 → 224) — STYLE_PROPS coverage on
+    `EMPTY_STYLE_DEFAULTS`, full STYLE_PROPS coverage on every block's
+    `defaultConfig.style`, full top-level shape coverage, every
+    `EMPTY_ADVANCED_DEFAULTS` key on every `defaultConfig.advanced`,
+    and a "no design values invented" assertion that whitelists the
+    pre-existing `container` padding overrides.
+  - Files: `src/admin/blockDefinitions.ts`,
+    `tests/blockDefinitions.test.ts`, `.claude/prd-blocks.md`.
+    `version` in `package.json` stays at `0.9.5` — F3.6 phase will bump
+    to 0.9.6 only at phase close.
+
 ## 0.9.5 — 2026-05-09
 
 - **F3.5.8 — block-author guide added to `.claude/prd-blocks.md`.** Phase
