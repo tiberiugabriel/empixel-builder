@@ -308,6 +308,7 @@ describe("AdvancedTab — universal across block types", () => {
     const types: BlockType[] = [
       "text", "image", "text-editor", "video", "button",
       "icon", "html", "divider-spacer", "container",
+      "field-binding",
     ];
     const labelSets = types.map((type) => {
       const tree = renderTree(makeBlock(type), () => {});
@@ -318,7 +319,7 @@ describe("AdvancedTab — universal across block types", () => {
         .map((el) => (el.props as { label: string }).label)
         .sort();
     });
-    // All labels must match across the 9 block types.
+    // All labels must match across the 10 block types.
     const first = JSON.stringify(labelSets[0]);
     for (const set of labelSets) {
       expect(JSON.stringify(set)).toBe(first);

@@ -18,8 +18,8 @@ function makeBlock(type: BlockType, extraConfig: Record<string, unknown> = {}): 
   };
 }
 
-// All 9 known block types — kept in the same order as
-// BLOCK_DEFINITIONS for sanity.
+// All 10 known block types — kept in the same order as
+// BLOCK_DEFINITIONS for sanity. F4.4 added `field-binding`.
 const ALL_BLOCK_TYPES: BlockType[] = [
   "text",
   "image",
@@ -30,6 +30,7 @@ const ALL_BLOCK_TYPES: BlockType[] = [
   "html",
   "divider-spacer",
   "container",
+  "field-binding",
 ];
 
 // ─── getVisibleTabs ───────────────────────────────────────────────────────────
@@ -47,9 +48,10 @@ describe("getVisibleTabs", () => {
     }
   });
 
-  it("matches the F3.5.2 styleTab declaration matrix for all 9 blocks", () => {
+  it("matches the F3.5.2 styleTab declaration matrix for all 10 blocks", () => {
     // Every block except `html` declares a non-empty styleTab → Style
-    // tab visible. `html` omits styleTab → Style hidden.
+    // tab visible. `html` omits styleTab → Style hidden. F4.4's
+    // `field-binding` mirrors the `text` block's surface.
     const expected: Record<BlockType, Tab[]> = {
       text:             ["fields", "style", "advanced"],
       image:            ["fields", "style", "advanced"],
@@ -60,6 +62,7 @@ describe("getVisibleTabs", () => {
       html:             ["fields", "advanced"],
       "divider-spacer": ["fields", "style", "advanced"],
       container:        ["fields", "style", "advanced"],
+      "field-binding":  ["fields", "style", "advanced"],
     };
     for (const type of ALL_BLOCK_TYPES) {
       const block = makeBlock(type);

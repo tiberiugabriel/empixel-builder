@@ -4,6 +4,18 @@ import { Builder } from "./builder/Builder.js";
 import { BuilderStyles } from "./builder/BuilderStyles.js";
 import { PageSelector } from "./PageSelector.js";
 
+// F4.4 — known entry-level field names exposed by the `/entries` route
+// today. The route returns `id, slug, title, builder_enabled,
+// created_at, updated_at` per row (`plugin.ts` ~line 344). We surface
+// the writable scalars (`title`, `slug`, `id`) as the default palette
+// for the LeftPanel "Bound to this entry" section. Authors can rebind
+// the resulting `field-binding` block to ANY entry key via the Fields
+// tab — the palette is just a one-click shortcut for the obvious
+// candidates. Expanding the palette to include `entry.data` keys
+// (excerpt, image, body, etc.) is a future PR that needs an
+// `/entries/:id` API on Agent A's side.
+const DEFAULT_ENTRY_FIELDS: string[] = ["title", "slug", "id"];
+
 export function BuilderPage() {
   const params = new URLSearchParams(window.location.search);
   const initialPageId = params.get("pageId");
@@ -52,6 +64,7 @@ export function BuilderPage() {
           pageId={selected.id}
           pageTitle={selected.title}
           collection={selected.collection}
+          entryFields={DEFAULT_ENTRY_FIELDS}
           onBack={() => setSelected(null)}
         />
       ) : (

@@ -64,14 +64,14 @@ Drag-and-drop page builder plugin for EmDash. Users visually compose pages using
 
 ## Block Inventory
 
-**Defined in types.ts + blockDefinitions.ts (9):**
-- container, text, image, text-editor, video, button, icon, html, divider-spacer
+**Defined in types.ts + blockDefinitions.ts (10):**
+- container, text, image, text-editor, video, button, icon, html, divider-spacer, field-binding
 
-**Preview components (9):**
-- ContainerPreview, TextPreview, ImagePreview, TextEditorPreview, VideoPreview, ButtonPreview, IconPreview, HtmlPreview, DividerSpacerPreview
+**Preview components (10):**
+- ContainerPreview, TextPreview, ImagePreview, TextEditorPreview, VideoPreview, ButtonPreview, IconPreview, HtmlPreview, DividerSpacerPreview, FieldBindingPreview
 
-**Frontend Astro components (9 + 3 infra):**
-- Text.astro, Image.astro, SectionContainer.astro, TextEditor.astro, Video.astro, Button.astro, Icon.astro, Html.astro, DividerSpacer.astro
+**Frontend Astro components (10 + 3 infra):**
+- Text.astro, Image.astro, SectionContainer.astro, TextEditor.astro, Video.astro, Button.astro, Icon.astro, Html.astro, DividerSpacer.astro, FieldBinding.astro
 - LayoutRenderer.astro (root renderer), BlockRenderer.astro (leaf dispatcher), BuilderWrapper.astro
 
 **Removed in v0.6:**

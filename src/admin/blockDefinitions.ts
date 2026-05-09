@@ -362,6 +362,33 @@ const CONTAINER_FIELDS: FieldDef[] = [
   { kind: "custom", key: "container-layout", render: ContainerLayoutPicker },
 ];
 
+// F4.4 — `field-binding` block tag set. Mirrors the `text` block's tag
+// whitelist so authors can pick from the same heading / paragraph / span /
+// div surface; the matching `FieldBinding.astro` clamps to this list at
+// runtime so a corrupted/legacy config can't render `<script>` etc.
+const FIELD_BINDING_TAG_OPTIONS = [
+  { value: "p",    label: "p"    },
+  { value: "h1",   label: "h1"   },
+  { value: "h2",   label: "h2"   },
+  { value: "h3",   label: "h3"   },
+  { value: "h4",   label: "h4"   },
+  { value: "h5",   label: "h5"   },
+  { value: "h6",   label: "h6"   },
+  { value: "span", label: "span" },
+  { value: "div",  label: "div"  },
+];
+
+const FIELD_BINDING_FIELDS: FieldDef[] = [
+  // Free-text for now — the LeftPanel "Bound to this entry" palette
+  // pre-fills `config.field` on drag, but authors can rebind to any
+  // entry key (including ones not in the palette) via this input. The
+  // standard label styling matches the rest of the panel.
+  { key: "field", label: "Field", type: "text", placeholder: "title", labelClassName: "epx-row-label--section" },
+  // Tag picker — same whitelist as the matching Astro component so the
+  // canvas preview and the frontend stay byte-aligned. Defaults to `p`.
+  { key: "as",    label: "Tag",   type: "select", options: FIELD_BINDING_TAG_OPTIONS, labelClassName: "epx-row-label--section" },
+];
+
 export const BLOCK_DEFINITIONS: BlockDef[] = [
   {
     type: "text",
@@ -680,6 +707,49 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       { kind: "borderRadius" },
       { kind: "border" },
       { kind: "boxShadow" },
+    ],
+  },
+
+  // F4.4 — `field-binding`: reads `entry.data[config.field]` instead of
+  // carrying its own `content`. The frontend Astro component spreads
+  // `entry.edit?.[config.field]` so the EmDash live-edit overlay
+  // reattaches on builder pages (parity with hand-rolled host
+  // templates). The LeftPanel exposes a "Bound to this entry" palette
+  // that pre-fills `config.field` on drag — see `LeftPanel.tsx` —
+  // but `config.field` stays a free-text input on the Fields tab so
+  // authors can rebind to any entry key, including ones not in the
+  // palette.
+  //
+  // Style tab mirrors the `text` block: alignment + typography stack
+  // + text shadow + blend mode. No background/border/shadow since
+  // the bound element is a plain inline-or-paragraph tag.
+  {
+    type: "field-binding",
+    label: "Bound field",
+    icon: "🔗",
+    description: "Render a field from this entry (title, excerpt, image, etc.)",
+    category: "core",
+    defaultConfig: {
+      field: "",
+      as: "p",
+      theme: "light",
+      style: { ...EMPTY_STYLE_DEFAULTS },
+      styleHover: {},
+      styleDark: {},
+      styleHoverDark: {},
+      styleBreakpoints: {},
+      styleHoverBreakpoints: {},
+      styleBreakpointsHoverDark: {},
+      advanced: { ...EMPTY_ADVANCED_DEFAULTS },
+    },
+    fields: FIELD_BINDING_FIELDS,
+    fieldsTab: FIELD_BINDING_FIELDS,
+    styleTab: [
+      { kind: "alignment" },
+      { kind: "typography" },
+      { kind: "textStroke" },
+      { kind: "textShadow" },
+      { kind: "blendMode" },
     ],
   },
 ];

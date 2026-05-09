@@ -5,6 +5,84 @@ SemVer.
 
 ## Unreleased — 1.0.0 prep
 
+- **F4.4 — new `field-binding` block type.** Reads
+  `entry.data[config.field]` instead of carrying its own content; on
+  the frontend, spreads `entry.edit?.[config.field]` so the EmDash
+  live-edit overlay reattaches on builder pages (parity with
+  hand-rolled host templates like `<h1 {...post.edit.title}>`). The
+  `BlockType` union + `BLOCK_TYPES` set were extended in the prereq
+  commit `07126c7` per the F4.4 types proposal — the block follows
+  the canonical `defaultConfig` shape (theme + style stack +
+  styleHover/Dark/HoverDark/Breakpoints + advanced) so reducer fill
+  helpers, RightPanel declarative pipeline, AdvancedTab universal
+  controls, F4.5 theme × state × breakpoint cascade, and F4.1 CSS
+  coalescing all keep working with no per-type branches. Fields tab
+  exposes a free-text `field` input + an `as` (HTML tag) select
+  whitelisted to `p / h1–h6 / span / div`. Style tab mirrors the
+  `text` block: alignment + typography + textStroke + textShadow +
+  blendMode (no background/border/shadow — bound element is plain
+  inline-or-paragraph). LeftPanel grows a "Bound to this entry"
+  palette section that lists each entry-level field as a
+  draggable card; drop pre-fills `config.field` and picks a sensible
+  default `as` (title→h1, excerpt→p, default→p) via
+  `defaultAsForField` (exported from `LeftPanel.tsx` so
+  `Builder.tsx` reuses the same mapping for the click path). Entry
+  field source: today the `/entries` route only exposes
+  `id, slug, title, builder_enabled, created_at, updated_at` per
+  row (no `entry.data` keys), so `BuilderPage.tsx` seeds the palette
+  with `["title", "slug", "id"]` — authors can always rebind via
+  the Fields tab to ANY entry key. Expanding the palette to include
+  `entry.data` keys (excerpt, image, body, etc.) is a future PR
+  that needs an `/entries/:id` API on Agent A's side. New
+  `FieldBinding.astro` (Agent B's column — documented F4.4
+  cross-domain exception per the report's task allocation table)
+  reads the bound value via `entry?.data?.[config.field]`, clamps
+  `config.as` against the same tag whitelist as the BlockDef so a
+  corrupted/legacy config can't render `<script>`, falls through
+  to `<p>` for object-shaped values (e.g. images — F4.4 follow-up
+  adds image-binding via `<Image image={...} />` from `emdash/ui`),
+  and pushes per-block CSS into `Astro.locals.empixelLayoutCss`
+  (the F4.1 coalescing buffer) instead of emitting an inline
+  `<style>` tag. Cross-domain dispatch in `BlockRenderer.astro` +
+  `components/index.ts` (the other two F4.4 exceptions) accepts an
+  optional `entry` prop and forwards it ONLY to the `field-binding`
+  branch — every other block ignores it. The `entry` plumb-through
+  from `BuilderWrapper.astro` → `LayoutRenderer.astro` →
+  `BlockRenderer.astro` is intentionally OUT of scope for this PR
+  (those files are Agent B's column and not in the documented
+  cross-domain exception list); a future Agent B PR threads the
+  prop through. Until that lands, hosts can still use the block —
+  it just renders an empty element (the `entry` arg defaults to
+  `null` at the leaf). New `FieldBindingPreview` (canvas badge:
+  `<bound: ${field}>` when set, `<unbound>` italic gray
+  otherwise — the canvas can't resolve the actual entry value at
+  preview time so the badge names the binding instead). Replaces
+  the temporary `() => null` stub in `src/admin/previews/index.ts`
+  introduced by the prereq types commit. Drag-handler in
+  `useDragHandlers.ts` extended to read an optional `field` slot
+  off the new-block drag-data — when present, pre-fills
+  `config.field` + `config.as` on the freshly-created block via
+  the same title→h1/excerpt→p/default→p mapping. `addBlock` in
+  `Builder.tsx` now accepts an optional `overrides`
+  `Record<string, unknown>` argument so `addFieldBindingBlock`
+  routes through the existing container-context resolution
+  (selected container → drop inside; selected leaf → drop in same
+  parent). Tests: 363 → 404 (+41 — `tests/fieldBinding.test.ts`
+  covers BlockDef shape, fields/style tab declarations, preview
+  bound/unbound badges, defaultAsForField mapping, LeftPanel
+  palette section visibility under various prop combinations,
+  generic field-binding card filtered out of Core, and file-content
+  parity probes for `BlockRenderer.astro` dispatch +
+  `components/index.ts` registration + `FieldBinding.astro`
+  contract). Existing 9-block sweeps (`tabRenderer.test.ts`,
+  `rightPanel.test.ts`, `builderReducer.test.ts`,
+  `advancedTab.test.ts`, `blockDefinitions.test.ts`) extended to
+  cover the 10th type. PRDs: `prd-blocks.md` (new block in the
+  inventory + spec), `prd-builder-ui.md` (LeftPanel palette
+  section + addFieldBindingBlock callback + drag-data field
+  slot), `prd-frontend.md` (FieldBinding.astro + entry plumb
+  through + tag whitelist + F4.1 push pattern).
+
 - **F4.5 — theme × state × breakpoint matrix complete.** New
   `styleHoverDark` (CSSProps) + `styleBreakpointsHoverDark`
   (`{ [bpId]: { _px, ...CSSProps } }`) keys on every `BlockDef`

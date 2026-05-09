@@ -82,9 +82,10 @@ describe("F3.6.2 — full-shape config fill", () => {
     "html",
     "divider-spacer",
     "container",
+    "field-binding",
   ] as const;
 
-  it("ADD_BLOCK fills STYLE_PROPS keys for each of the 9 block types", () => {
+  it("ADD_BLOCK fills STYLE_PROPS keys for each of the 10 block types", () => {
     for (const type of TYPES) {
       const block: SectionBlock = { id: `b-${type}`, type, config: {} };
       const next = reducer(withSections([]), { type: "ADD_BLOCK", block });

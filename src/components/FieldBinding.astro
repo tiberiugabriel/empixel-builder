@@ -1,0 +1,86 @@
+---
+import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
+
+// F4.4 — `field-binding` block frontend. Reads `entry.data[config.field]`
+// instead of carrying its own content; spreads `entry.edit?.[config.field]`
+// onto the rendered tag so the EmDash live-edit overlay reattaches on
+// builder pages (parity with hand-rolled host templates).
+//
+// `entry` is plumbed through `BuilderWrapper.astro` →
+// `LayoutRenderer.astro` → `BlockRenderer.astro` → here. Hosts that
+// render `<BuilderWrapper>` without an `entry` prop (e.g. legacy v0.7
+// scaffolds) get a graceful fallback: the block emits an empty
+// element so the layout doesn't crash.
+//
+// Object-shaped values (e.g. an image `{ src, alt }`) are not yet
+// supported — we render an empty string for those. F4.4 follow-up
+// can add image-binding via `<Image image={...} />` from `emdash/ui`.
+
+interface Props {
+  value: Record<string, unknown>;
+  blockId?: string;
+  // The host page's resolved entry. Optional so layouts without an
+  // entry context (legacy `BuilderWrapper(sections=...)` callsites)
+  // still render — they just get an unbound empty element.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  entry?: { data?: Record<string, any>; edit?: Record<string, any> } | null;
+}
+
+const { value, blockId, entry } = Astro.props;
+
+// Whitelist tags `FieldBinding` accepts. Mirrors the blockDef's
+// `FIELD_BINDING_TAG_OPTIONS` in `src/admin/blockDefinitions.ts`.
+// A corrupted/legacy config can't render a `<script>` etc.
+const ALLOWED_TAGS = new Set([
+  "p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "div",
+]);
+
+const fieldKey = ((value.field as string) || "").trim();
+const tagRaw = ((value.as as string) || "p").trim();
+const Tag = (ALLOWED_TAGS.has(tagRaw) ? tagRaw : "p") as astroHTML.JSX.HTMLTag;
+
+// Pull the bound field value off the entry. If the entry isn't
+// plumbed (no host context), or the field isn't set, render an
+// empty string. Object-shaped values flatten to "" rather than
+// `[object Object]` — F4.4 follow-up handles structured shapes.
+let renderedValue = "";
+if (fieldKey && entry?.data) {
+  const raw = entry.data[fieldKey];
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    renderedValue = String(raw);
+  }
+}
+
+// EmDash live-edit hook. The host's `entry.edit[fieldKey]` is a
+// pre-built attribute bag (e.g. `data-edit-id`, `contenteditable`,
+// etc.). Spreading those onto the rendered tag lets EmDash's
+// admin overlay reattach for in-place editing on builder pages —
+// same UX as hand-rolled `<h1 {...post.edit.title}>` templates.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const editProps: Record<string, any> = (fieldKey && entry?.edit && typeof entry.edit[fieldKey] === "object" && entry.edit[fieldKey] !== null)
+  ? entry.edit[fieldKey] as Record<string, unknown>
+  : {};
+
+const advanced = (value as Record<string, unknown>).advanced as Record<string, string> | undefined;
+const cssId = advanced?.cssId || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const config = value as Record<string, unknown>;
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const allCss = buildBlockChromeCss(config, blockId, { resolveMediaUrl: resolver });
+
+// F4.1 — push per-block CSS into the shared layout buffer; LayoutRenderer
+// drains + coalesces + emits exactly one <style> per page.
+const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
+if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
+  epxLocals.empixelLayoutCss.push(allCss);
+}
+---
+
+<Tag
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+  {...editProps}
+>{renderedValue}</Tag>

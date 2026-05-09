@@ -5,7 +5,7 @@ Define all block types, their configuration schemas, and metadata. Single source
 
 ## ⚠️ Status (v0.6) — manual QA pending
 
-All 9 blocks (container, text, image, text-editor, video, button, icon, html, divider-spacer) and their canvas previews + frontend Astro components require **manual testing and improvement**:
+All 10 blocks (container, text, image, text-editor, video, button, icon, html, divider-spacer, field-binding) and their canvas previews + frontend Astro components require **manual testing and improvement**:
 
 - Drag each block from the palette into a container; confirm it accepts drops only inside containers (except container itself).
 - Edit every Field-tab control; confirm canvas reflects in real-time.
@@ -365,7 +365,8 @@ export type BlockType =
   | "button"          // v0.6
   | "icon"            // v0.6
   | "html"            // v0.6
-  | "divider-spacer"; // v0.6 (replaces "spacer")
+  | "divider-spacer"  // v0.6 (replaces "spacer")
+  | "field-binding";  // F4.4 — reads entry.data[config.field]
 ```
 
 > Removed post-v0.6: `testimonials`, `faq`, `pricing`. Variant B — no DB
@@ -460,6 +461,16 @@ interface ImageElementStyle {
 - Default: `{ theme: "light", space: "48px", divider: { style: "none", width: "1px", length: "100%", color: "#000000", colorAlpha: 0.12, align: "center" } }`
 - **No Style tab** — all knobs in Fields.
 - Frontend: fixed-height block; if divider enabled, inline-flex with line(s) + optional centered icon. SVG mask drives `wavy`/`zigzag` styles. `gradient` style → `linear-gradient(transparent → color → transparent)`.
+
+### 10. field-binding (F4.4)
+- Category: core
+- Fields: `field` (free-text — pre-filled by the LeftPanel "Bound to this entry" palette on drag, but rebindable to any entry key), `as` (HTML tag select — whitelisted to `p`, `h1`–`h6`, `span`, `div`)
+- Default: `{ field: "", as: "p", theme: "light" }` (plus the canonical `style`/`styleHover`/`styleDark`/`styleHoverDark`/`styleBreakpoints`/`styleHoverBreakpoints`/`styleBreakpointsHoverDark`/`advanced` shape every block carries since F3.6.1)
+- **Not root-allowed** — must live inside a container (matches every leaf except `container` / `html` / `divider-spacer`).
+- **Style tab — same shape as `text`**: Alignment + Typography + TextStroke + TextShadow + BlendMode (no Background/Border/Shadow — bound element is plain inline-or-paragraph chrome).
+- Canvas preview ([FieldBindingPreview.tsx](../src/admin/previews/FieldBindingPreview.tsx)) renders a small badge naming the bound field — `<bound: title>` when `config.field` is set, italic `<unbound>` otherwise. Canvas can't resolve the actual entry value at preview time (no host `entry` in scope), so the badge is the documented preview surface.
+- Frontend ([FieldBinding.astro](../src/components/FieldBinding.astro)) reads `entry?.data?.[config.field]` (string/number/boolean only — object-shaped values fall through to `""` and a future PR adds image-binding via `<Image image={...} />`), spreads `entry.edit?.[config.field]` onto the rendered tag for EmDash live-edit reattach, clamps `config.as` against the same tag whitelist as the BlockDef (anti-XSS), pushes per-block CSS into `Astro.locals.empixelLayoutCss` (F4.1 coalescing). Plumbed through `BlockRenderer.astro` via an optional `entry` prop — F4.4-impl wires the dispatch + accepts the prop; the upstream plumb-through from `BuilderWrapper.astro` → `LayoutRenderer.astro` is a future Agent B PR (those files are not in F4.4's documented cross-domain exception list). Until that lands, hosts can use the block — it just renders an empty element.
+- LeftPanel "Bound to this entry" palette: `BuilderPage.tsx` seeds the field list with `["title", "slug", "id"]` (the writable scalars the `/entries` route exposes today). Each card is a draggable `useDraggable` with data `{ kind: "new-block", blockType: "field-binding", field }`. Drop / click pre-fills `config.field = field` + `config.as = defaultAsForField(field)` (title→h1, excerpt→p, default→p). Authors can rebind via the Fields tab.
 
 ### Migrated from v0.5
 - Old `spacer` blocks are rewritten to `divider-spacer` once on plugin init via `runSpacerMigration` in `plugin.ts`. Flag stored in `empixel_builder_meta` table (key `migration_spacer_v1`). Mapping: `height: sm/md/lg/xl → 32/64/96/128px`; `showDivider: true → divider.style = "solid"`.

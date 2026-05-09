@@ -6,6 +6,7 @@ import Button from "./Button.astro";
 import Icon from "./Icon.astro";
 import Html from "./Html.astro";
 import DividerSpacer from "./DividerSpacer.astro";
+import FieldBinding from "./FieldBinding.astro";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
 // Frontend reader for `(collection, entryId)` layouts. v0.9 (F3.4)
@@ -50,4 +51,8 @@ export const blockComponents: Record<string, unknown> = {
   icon: Icon,
   html: Html,
   "divider-spacer": DividerSpacer,
+  // F4.4 — `field-binding` reads `entry.data[config.field]` instead
+  // of carrying its own content. The matching `BlockRenderer.astro`
+  // dispatch passes the host's resolved `entry` through.
+  "field-binding": FieldBinding,
 };

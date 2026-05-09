@@ -146,6 +146,20 @@ Drop targets:
 
 On drop → dispatches ADD_BLOCK, ADD_TO_CONTAINER, INSERT_AFTER, MOVE_BLOCK, REORDER, or REORDER_IN_CONTAINER.
 
+**F4.4 — `field` drag-data slot.** When the dragged card came from
+the LeftPanel "Bound to this entry" section, the `kind: "new-block"`
+drag-data carries an extra `field: string` slot. `useDragHandlers.ts`
+reads the slot in the new-block branch and pre-fills
+`config.field = field` + `config.as = title?"h1":excerpt?"p":"p"` on
+the freshly-created block before dispatching. The click path
+(`onAddFieldBinding`) routes through Builder's
+`addFieldBindingBlock(field)`, which calls
+`addBlock("field-binding", { field, as: defaultAsForField(field) })`
+to reuse the same container-context resolution (selected container →
+drop inside; selected leaf → drop in same parent). `addBlock` in
+`Builder.tsx` accepts an optional `overrides:
+Record<string, unknown>` arg merged on top of `def.defaultConfig`.
+
 ### Canvas features
 - Resizable via drag handles on left + right edges (double-click to collapse)
 - Preview width constraint for non-desktop breakpoints (CSS max-width on inner wrapper)
@@ -157,6 +171,16 @@ On drop → dispatches ADD_BLOCK, ADD_TO_CONTAINER, INSERT_AFTER, MOVE_BLOCK, RE
 - Each block card is a `useDraggable` source
 - Click-to-add via `onAddBlock` callback (adds to selected container or root if container)
 - Bottom section: breakpoints configuration (toggle on/off, px override)
+
+### F4.4 — "Bound to this entry" palette section
+
+LeftPanel grows a third group below `Core` / `General`:
+
+- Source: `entryFields: string[]` prop, populated by `BuilderPage.tsx` (today seeded with `["title", "slug", "id"]` — the writable scalars the `/entries` route exposes per entry; future expansion when an `/entries/:id` API lands on Agent A's side).
+- Visibility: section is hidden when either `entryFields` is missing/empty or `onAddFieldBinding` is not provided. The default-hidden behavior keeps the panel byte-identical to pre-F4.4 for hosts that don't pipe entry fields through.
+- Each field renders a draggable card with the link icon `🔗` + the field name. The drag-data shape is `{ kind: "new-block", blockType: "field-binding", field }` — the extra `field` slot is consumed by `useDragHandlers.ts` to pre-fill `config.field` + `config.as` on the freshly-created block (drop path) and by `Builder.tsx`'s `addFieldBindingBlock` callback for the click path.
+- The generic "Bound field" `BlockDef` (registered as `category: "core"` in `blockDefinitions.ts`) is filtered out of the standard `Core` section so it doesn't double-render alongside the bound-fields cards.
+- Default `as` (HTML tag) mapping at create time: `title` → `h1`, `excerpt` → `p`, anything else → `p`. Exported as `defaultAsForField(field)` from `LeftPanel.tsx` so both drag and click paths reuse the same logic. Authors can rebind via the Tag select on the Fields tab.
 
 ## RightPanel
 

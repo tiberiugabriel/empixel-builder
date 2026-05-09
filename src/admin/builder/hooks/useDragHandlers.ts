@@ -68,7 +68,10 @@ export function useDragHandlers({
     const sections = sectionsRef.current;
     const activeData = active.data.current as
       | BlockDragData
-      | { kind: "new-block"; blockType: BlockType }
+      // F4.4 — `field` slot is set when the dragged card came from the
+      // "Bound to this entry" palette section. Pre-fills
+      // `config.field` + `config.as` on the freshly-created block.
+      | { kind: "new-block"; blockType: BlockType; field?: string }
       | { kind: "structure-block"; blockId: string }
       | undefined;
 
@@ -107,10 +110,21 @@ export function useDragHandlers({
 
     // ── New block dragged from palette ──
     if (activeData?.kind === "new-block") {
-      const { blockType } = activeData as { kind: "new-block"; blockType: BlockType };
+      const { blockType, field } = activeData as { kind: "new-block"; blockType: BlockType; field?: string };
       const def = getBlockDef(blockType);
       if (!def) return;
-      const newBlock: SectionBlock = { id: crypto.randomUUID(), type: blockType, config: { ...def.defaultConfig } };
+      // F4.4 — when the drag came from the LeftPanel "Bound to this
+      // entry" section, `field` carries the entry-key the user wants
+      // to bind. Pre-fill `config.field` and pick a sensible
+      // `config.as` (title→h1, excerpt→p, default→p) so the new
+      // block lands ready to render. Authors can rebind via the
+      // Fields tab afterward.
+      const config: Record<string, unknown> = { ...def.defaultConfig };
+      if (blockType === "field-binding" && typeof field === "string" && field.length > 0) {
+        config.field = field;
+        config.as = field === "title" ? "h1" : field === "excerpt" ? "p" : "p";
+      }
+      const newBlock: SectionBlock = { id: crypto.randomUUID(), type: blockType, config };
 
       if (!over) return;
       const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;

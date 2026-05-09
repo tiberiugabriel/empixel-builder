@@ -9,7 +9,7 @@ import {
 import type { SectionBlock, BlockType, BreakpointId } from "../../types.js";
 import { isContainerType, isRootAllowedType, BREAKPOINT_DEFS, DEFAULT_BREAKPOINTS_CONFIG } from "../../types.js";
 import { getBlockDef } from "../blockDefinitions.js";
-import { LeftPanel } from "../LeftPanel.js";
+import { LeftPanel, defaultAsForField } from "../LeftPanel.js";
 import { Canvas } from "../Canvas.js";
 import { StructurePanel, type StructureDropTarget } from "../StructurePanel.js";
 
@@ -43,7 +43,26 @@ import { useBlockClipboard } from "./hooks/useBlockClipboard.js";
 import { useBuilderPersistence } from "./hooks/useBuilderPersistence.js";
 import { useDragHandlers } from "./hooks/useDragHandlers.js";
 
-export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pageTitle: string; collection: string; onBack: () => void }) {
+export function Builder({
+  pageId,
+  pageTitle,
+  collection,
+  entryFields,
+  onBack,
+}: {
+  pageId: string;
+  pageTitle: string;
+  collection: string;
+  // F4.4 — list of field names on the active entry, populated by
+  // `BuilderPage.tsx` from the resolved `EntryListItem`. Drives the
+  // "Bound to this entry" palette section in `LeftPanel`. KISS: the
+  // backend `/entries` route exposes `id, slug, title, ...` on the
+  // entry list (no `entry.data` keys today; expanding it is Agent
+  // A's column). Until that lands, BuilderPage seeds the prop with
+  // those known scalars + any additional keys callers want exposed.
+  entryFields?: string[];
+  onBack: () => void;
+}) {
   const [historyState, dispatch] = useReducer(historyReducer, initialHistoryState);
   // `state` keeps the previous shape so existing reads stay unchanged. The
   // history wrapper lives one level up and feeds Undo / Redo.
@@ -108,10 +127,11 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
     setStructureDropTarget,
   });
 
-  const addBlock = useCallback((type: BlockType) => {
+  const addBlock = useCallback((type: BlockType, overrides?: Record<string, unknown>) => {
     const def = getBlockDef(type);
     if (!def) return;
-    const block: SectionBlock = { id: crypto.randomUUID(), type, config: { ...def.defaultConfig } };
+    const config = { ...def.defaultConfig, ...(overrides ?? {}) };
+    const block: SectionBlock = { id: crypto.randomUUID(), type, config };
 
     if (state.selectedId) {
       const selected = findBlockById(state.selectedId, state.sections);
@@ -136,6 +156,19 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
 
     dispatch({ type: "ADD_BLOCK", block });
   }, [state.selectedId, state.sections]);
+
+  // F4.4 — click handler for the LeftPanel "Bound to this entry"
+  // palette. Mirrors the drag-flow in `useDragHandlers.ts` but for
+  // the click path: pre-fills `config.field` + a sensible default
+  // `config.as` (title→h1, excerpt→p, default→p). Routing through
+  // `addBlock` reuses the container-context resolution (selected
+  // container → drop inside; selected leaf → drop in same parent).
+  const addFieldBindingBlock = useCallback((field: string) => {
+    addBlock("field-binding", {
+      field,
+      as: defaultAsForField(field),
+    });
+  }, [addBlock]);
 
   const addToContainerByType = useCallback((containerId: string, slotIndex: number | null, type: BlockType) => {
     const def = getBlockDef(type);
@@ -363,6 +396,8 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
             onAddBlock={addBlock}
             breakpointsConfig={breakpointsConfig}
             onBreakpointsChange={handleBreakpointsChange}
+            entryFields={entryFields}
+            onAddFieldBinding={addFieldBindingBlock}
           />
           <div
             className={`epx-resize-handle${left.collapsed ? " is-collapsed" : ""}`}

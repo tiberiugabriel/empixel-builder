@@ -9,6 +9,29 @@ interface Props {
   onAddBlock: (type: BlockType) => void;
   breakpointsConfig: BreakpointsConfig;
   onBreakpointsChange: (c: BreakpointsConfig) => void;
+  // F4.4 — list of field names on the active entry. When non-empty,
+  // a "Bound to this entry" palette section renders one draggable
+  // card per field; dropping a card onto canvas creates a
+  // `field-binding` block with `config.field` pre-filled.
+  // BuilderPage owns the resolution (today via `selected.title` + the
+  // EntryListItem shape; a future plugin.ts API addition can expose
+  // the full `entry.data` key set without changing this prop).
+  entryFields?: string[];
+  // F4.4 — drop a `field-binding` block bound to a specific field.
+  // Builder owns the `addBlock` flavor that pre-fills `config.field`
+  // + a sensible default `as` per field name.
+  onAddFieldBinding?: (field: string) => void;
+}
+
+// F4.4 — default `as` (HTML tag) mapping for the "Bound to this entry"
+// palette. Keep small and KISS: `title` reads as a heading, every
+// other field falls through to `<p>`. Authors can rebind via the
+// Tag select on the Fields tab. Exported so Builder can reuse the
+// same mapping when constructing the new block off a drop target.
+export function defaultAsForField(field: string): string {
+  if (field === "title") return "h1";
+  if (field === "excerpt") return "p";
+  return "p";
 }
 
 function IconBlocks() {
@@ -56,6 +79,41 @@ function DraggableBlockCard({
     >
       <span className="epx-block-card__icon">{def.icon}</span>
       <span className="epx-block-card__label">{def.label}</span>
+    </button>
+  );
+}
+
+// F4.4 — palette card for a bound entry field. Drag/drop creates a
+// `field-binding` block with `config.field = field`. The drag-data
+// `kind: "new-block"` matches the existing handler in
+// `useDragHandlers.ts`; the extra `field` slot is consumed by
+// `Builder.tsx`'s `addBlock(type, { field })` overload to pre-fill
+// the bound field on the freshly-created block.
+function DraggableFieldBindingCard({
+  field,
+  onAdd,
+}: {
+  field: string;
+  onAdd: (field: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `new-field-binding-${field}`,
+    data: { kind: "new-block", blockType: "field-binding", field },
+  });
+
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className="epx-block-card"
+      onClick={() => onAdd(field)}
+      title={`Bind to entry.data.${field}`}
+      style={{ opacity: isDragging ? 0.5 : 1, cursor: isDragging ? "grabbing" : "grab" }}
+      type="button"
+    >
+      <span className="epx-block-card__icon">🔗</span>
+      <span className="epx-block-card__label">{field}</span>
     </button>
   );
 }
@@ -119,7 +177,7 @@ function BpRow({ def, currentPx, isEnabled, onToggle, onChangePx }: {
 
 type Tab = "blocks" | "page";
 
-export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }: Props) {
+export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange, entryFields, onAddFieldBinding }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("blocks");
 
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
@@ -168,7 +226,15 @@ export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }
       {activeTab === "blocks" && (
         <div className="epx-left-panel__list">
           {(["core", "general"] as const).map((cat) => {
-            const defs = BLOCK_DEFINITIONS.filter((d) => d.category === cat);
+            // F4.4 — `field-binding` is `core` per the BlockDef but
+            // surfaces under its own "Bound to this entry" section
+            // below (one card per entry field instead of one
+            // generic "Bound field" card). Filter it out of the
+            // standard core list so it doesn't double-render.
+            const defs = BLOCK_DEFINITIONS.filter(
+              (d) => d.category === cat && d.type !== "field-binding",
+            );
+            if (defs.length === 0) return null;
             return (
               <div key={cat} className="epx-block-group">
                 <span className="epx-block-group__label">{cat === "core" ? "Core" : "General"}</span>
@@ -178,6 +244,19 @@ export function LeftPanel({ onAddBlock, breakpointsConfig, onBreakpointsChange }
               </div>
             );
           })}
+
+          {/* F4.4 — "Bound to this entry" section. Renders one
+              draggable card per known field on the active entry.
+              Hidden when no entry fields are available (e.g. legacy
+              page selectors that don't pre-populate the prop). */}
+          {entryFields && entryFields.length > 0 && onAddFieldBinding && (
+            <div className="epx-block-group">
+              <span className="epx-block-group__label">Bound to this entry</span>
+              {entryFields.map((field) => (
+                <DraggableFieldBindingCard key={field} field={field} onAdd={onAddFieldBinding} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 

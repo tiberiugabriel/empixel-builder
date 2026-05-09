@@ -15,13 +15,18 @@ import {
 } from "../src/admin/blockDefinitions.js";
 
 describe("BLOCK_DEFINITIONS", () => {
-  it("contains the 9 known block types", () => {
+  // F4.4 — `field-binding` joined the registry as the 10th block.
+  // Reads `entry.data[config.field]` instead of carrying its own
+  // content; LeftPanel exposes a "Bound to this entry" palette
+  // section that pre-fills `config.field` on drag.
+  it("contains the 10 known block types", () => {
     const types = BLOCK_DEFINITIONS.map((d) => d.type).sort();
     expect(types).toEqual(
       [
         "button",
         "container",
         "divider-spacer",
+        "field-binding",
         "html",
         "icon",
         "image",
@@ -59,9 +64,10 @@ describe("getBlockDef", () => {
   it("exposes fieldsTab on every block (F3.5.2 — every entry now declares it directly)", () => {
     // F3.5.1 set up an alias from `fields` when an entry didn't declare
     // `fieldsTab`. F3.5.2 makes the declaration explicit on each of the
-    // 9 entries — `def.fieldsTab` and `def.fields` MUST point at the
+    // entries — `def.fieldsTab` and `def.fields` MUST point at the
     // same array (alias contract preserved for `getBlockDef` / reducer
-    // / RightPanel callers reading either property).
+    // / RightPanel callers reading either property). F4.4 added
+    // `field-binding` to the registry.
     for (const type of [
       "container",
       "text",
@@ -72,6 +78,7 @@ describe("getBlockDef", () => {
       "icon",
       "html",
       "divider-spacer",
+      "field-binding",
     ] as const) {
       const def = getBlockDef(type);
       expect(def).toBeDefined();
@@ -123,6 +130,10 @@ describe("F3.5.2 + F3.5.6 — migrated BlockDef instances", () => {
     html:             { fieldsTab: 1, styleTab: "absent" },
     "divider-spacer": { fieldsTab: 1, styleTab: 1 }, // space (divider line moved to styleTab)
     container:        { fieldsTab: 1, styleTab: 4 }, // custom(layout); theme dropped
+    // F4.4 — `field-binding`: free-text `field` input + `as` tag select
+    // on Fields; alignment + typography + textStroke + textShadow +
+    // blendMode on Style (mirrors the `text` block's visual stack).
+    "field-binding":  { fieldsTab: 2, styleTab: 5 },
   };
 
   for (const [type, expected] of Object.entries(EXPECTED)) {
@@ -413,6 +424,7 @@ describe("F3.6.2 — getDefaultBlockConfig", () => {
       "html",
       "divider-spacer",
       "container",
+      "field-binding",
     ];
     for (const type of types) {
       const cfg = getDefaultBlockConfig(type);

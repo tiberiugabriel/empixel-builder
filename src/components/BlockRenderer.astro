@@ -8,12 +8,18 @@ import Button from "./Button.astro";
 import Icon from "./Icon.astro";
 import Html from "./Html.astro";
 import DividerSpacer from "./DividerSpacer.astro";
+import FieldBinding from "./FieldBinding.astro";
 
 interface Props {
   block: SectionBlock;
+  // F4.4 — host page's resolved entry, plumbed by `BuilderWrapper.astro`
+  // through `LayoutRenderer.astro`. Only `field-binding` reads from it
+  // today; every other leaf ignores the prop.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  entry?: { data?: Record<string, any>; edit?: Record<string, any> } | null;
 }
 
-const { block } = Astro.props;
+const { block, entry } = Astro.props;
 
 // Single dispatch — every leaf block component is self-contained: it owns
 // its own semantic root tag and emits data-epx-block + advanced.cssId +
@@ -26,6 +32,11 @@ const { block } = Astro.props;
 // Legacy `testimonials` / `faq` / `pricing` blocks (removed) are silently
 // ignored — no branch matches their type so nothing renders. Old layouts
 // will still load; the orphan entries persist in the JSON until next save.
+//
+// F4.4 — `field-binding` is the single block that reads from the host's
+// resolved entry (`entry.data[config.field]` + `entry.edit?.[config.field]`
+// for the EmDash live-edit overlay). The `entry` prop is plumbed through
+// only because of this dispatch; every other branch ignores it.
 ---
 
 {block.type === "text" && (
@@ -58,4 +69,8 @@ const { block } = Astro.props;
 
 {block.type === "divider-spacer" && (
   <DividerSpacer value={block.config} blockId={block.id} />
+)}
+
+{block.type === "field-binding" && (
+  <FieldBinding value={block.config} blockId={block.id} entry={entry} />
 )}

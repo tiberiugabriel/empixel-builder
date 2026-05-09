@@ -30,6 +30,11 @@ const ALL_BLOCK_TYPES: BlockType[] = [
   "html",
   "divider-spacer",
   "container",
+  // F4.4 — `field-binding` reads `entry.data[config.field]` instead
+  // of carrying its own content. Same panel surface as `text`
+  // (alignment + typography stack) — covered by the `ALL_BLOCK_TYPES`
+  // sweeps below.
+  "field-binding",
 ];
 
 function renderPanel(block: SectionBlock | null): string {

@@ -9,6 +9,7 @@ import { ButtonPreview } from "./ButtonPreview.js";
 import { IconPreview } from "./IconPreview.js";
 import { HtmlPreview } from "./HtmlPreview.js";
 import { DividerSpacerPreview } from "./DividerSpacerPreview.js";
+import { FieldBindingPreview } from "./FieldBindingPreview.js";
 
 export interface PreviewProps {
   config: Record<string, unknown>;
@@ -27,6 +28,10 @@ export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewPr
   icon: IconPreview as React.ComponentType<PreviewProps>,
   html: HtmlPreview as React.ComponentType<PreviewProps>,
   "divider-spacer": DividerSpacerPreview as React.ComponentType<PreviewProps>,
-  // F4.4 stub — real preview lands in the field-binding PR.
-  "field-binding": (() => null) as React.ComponentType<PreviewProps>,
+  // F4.4 — `field-binding` preview. Canvas can't resolve the actual
+  // `entry.data[config.field]` value at preview time (no host
+  // `entry` in scope), so the preview renders a small badge naming
+  // the bound field instead of the resolved value. The frontend
+  // `FieldBinding.astro` does the real lookup.
+  "field-binding": FieldBindingPreview as React.ComponentType<PreviewProps>,
 };

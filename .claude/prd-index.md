@@ -210,7 +210,7 @@ src/
 │  │  └─ RichTextField.tsx               # v0.6 — wraps @emdash-cms/admin PortableTextEditor (lazy)
 │  │
 │  └─ previews/                          # Live preview components
-│     ├─ index.ts                        # PREVIEW_COMPONENTS export (9 entries)
+│     ├─ index.ts                        # PREVIEW_COMPONENTS export (10 entries)
 │     ├─ ContainerPreview.tsx
 │     ├─ TextPreview.tsx
 │     ├─ ImagePreview.tsx
@@ -219,11 +219,12 @@ src/
 │     ├─ ButtonPreview.tsx               # v0.6
 │     ├─ IconPreview.tsx                 # v0.6
 │     ├─ HtmlPreview.tsx                 # v0.6
-│     └─ DividerSpacerPreview.tsx        # v0.6
+│     ├─ DividerSpacerPreview.tsx        # v0.6
+│     └─ FieldBindingPreview.tsx         # F4.4 — bound/unbound badge
 │
 └─ components/                           # Frontend (Astro)
-   ├─ index.ts                           # Exports + blockComponents map (9 entries)
-   ├─ BlockRenderer.astro                # Leaf block dispatcher (8 leaves; container goes to SectionContainer)
+   ├─ index.ts                           # Exports + blockComponents map (9 entries: every leaf, container goes through SectionContainer)
+   ├─ BlockRenderer.astro                # Leaf block dispatcher (9 leaves)
    ├─ LayoutRenderer.astro               # Root layout renderer
    ├─ SectionContainer.astro             # container block (recursive)
    ├─ BuilderWrapper.astro               # Builder-page wrapper
@@ -236,7 +237,8 @@ src/
    ├─ Button.astro                       # v0.6 — <a> | <button>
    ├─ Icon.astro                         # v0.6 — SVG mask color or <img> for PNG
    ├─ Html.astro                         # v0.6 — raw set:html (trusted input)
-   └─ DividerSpacer.astro                # v0.6 — space + optional divider line / icon
+   ├─ DividerSpacer.astro                # v0.6 — space + optional divider line / icon
+   └─ FieldBinding.astro                 # F4.4 — reads entry.data[config.field]
 ```
 
 ## Roadmap

@@ -7,8 +7,8 @@ Server-rendered Astro components that render blocks to HTML. Zero client-side Ja
 
 ```
 src/components/
-├─ index.ts              # Exports: blockComponents map (12 entries), getBuilderLayout, LayoutRenderer, BuilderWrapper
-├─ BlockRenderer.astro   # Leaf-block dispatcher (12 leaves)
+├─ index.ts              # Exports: blockComponents map, getBuilderLayout, LayoutRenderer, BuilderWrapper
+├─ BlockRenderer.astro   # Leaf-block dispatcher (9 leaves — every BlockType except container)
 ├─ LayoutRenderer.astro  # Iterates sections; routes containers to SectionContainer, leaves to BlockRenderer
 ├─ SectionContainer.astro # container block (renders children, handles layout/video/link)
 ├─ BuilderWrapper.astro  # Wrapper for builder-enabled pages
@@ -21,7 +21,8 @@ src/components/
 ├─ Button.astro          # v0.6 — <a> | <button>, icon flex order
 ├─ Icon.astro            # v0.6 — SVG mask color or <img> for PNG, optional rotate + drop-shadow filter
 ├─ Html.astro            # v0.6 — raw set:html (trusted input, not sanitized)
-└─ DividerSpacer.astro   # v0.6 — fixed-height block + optional decorative divider (solid/dashed/.../wavy/zigzag/gradient)
+├─ DividerSpacer.astro   # v0.6 — fixed-height block + optional decorative divider (solid/dashed/.../wavy/zigzag/gradient)
+└─ FieldBinding.astro    # F4.4 — reads entry.data[config.field] + spreads entry.edit?.[config.field]
 ```
 
 ## blockComponents map (index.ts)
@@ -36,6 +37,10 @@ export const blockComponents: Record<string, unknown> = {
   icon: Icon,
   html: Html,
   "divider-spacer": DividerSpacer,
+  // F4.4 — reads entry.data[config.field] instead of carrying its
+  // own content. The matching BlockRenderer.astro dispatch passes
+  // the host's resolved entry through.
+  "field-binding": FieldBinding,
 };
 ```
 
@@ -154,6 +159,55 @@ Routes to the correct Astro component by `block.type`. Builds CSS via `buildBloc
 
 - `text` → `<Text value={block.config} blockId={block.id} />`
 - `image` → `<ImageBlock value={block.config} blockId={block.id} />`
+- ... (every other leaf follows the same shape)
+- F4.4: `field-binding` → `<FieldBinding value={block.config} blockId={block.id} entry={entry} />`. The optional `entry` prop on `BlockRenderer.astro` is forwarded ONLY to the `field-binding` branch — every other leaf ignores it. Hosts that don't pipe `entry` through `BuilderWrapper.astro` → `LayoutRenderer.astro` → `BlockRenderer.astro` get a graceful fallback: the `field-binding` block renders an empty element instead of crashing. Plumbing the `entry` prop end-to-end is a follow-up Agent B PR (those parent files are not in F4.4's documented cross-domain exception list).
+
+### F4.4 — FieldBinding.astro
+
+```astro
+---
+import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
+
+const { value, blockId, entry } = Astro.props;
+
+const ALLOWED_TAGS = new Set([
+  "p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "div",
+]);
+const fieldKey = ((value.field as string) || "").trim();
+const tagRaw = ((value.as as string) || "p").trim();
+const Tag = (ALLOWED_TAGS.has(tagRaw) ? tagRaw : "p");
+
+let renderedValue = "";
+if (fieldKey && entry?.data) {
+  const raw = entry.data[fieldKey];
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    renderedValue = String(raw);
+  }
+}
+const editProps = (fieldKey && entry?.edit && typeof entry.edit[fieldKey] === "object")
+  ? entry.edit[fieldKey] : {};
+
+// F4.1 push pattern, same as every other leaf.
+const allCss = buildBlockChromeCss(value, blockId, {
+  resolveMediaUrl: (key) => resolveMediaUrl(key, { locals: Astro.locals }),
+});
+const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
+if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
+  epxLocals.empixelLayoutCss.push(allCss);
+}
+---
+
+<Tag data-epx-block={blockId} {...editProps}>{renderedValue}</Tag>
+```
+
+Behavior contract:
+
+- **Tag whitelist** mirrors the BlockDef's `FIELD_BINDING_TAG_OPTIONS` (`p / h1–h6 / span / div`). A corrupted/legacy `config.as` falls back to `<p>` — anti-XSS.
+- **Bound value resolution** keeps it KISS: only string / number / boolean values render. Object-shaped values (e.g. an image `{ src, alt }`) flatten to `""` rather than `[object Object]`. F4.4 follow-up adds image-binding via `<Image image={...} />` from `emdash/ui`.
+- **Live-edit reattach** — `entry.edit?.[fieldKey]` is a pre-built attribute bag from EmDash (`data-edit-id`, `contenteditable`, etc.). Spreading it onto the rendered tag matches the hand-rolled host template UX (`<h1 {...post.edit.title}>{post.data.title}</h1>`).
+- **CSS pipeline** — uses the F4.1 `Astro.locals.empixelLayoutCss` push pattern (same as every other leaf). Per-block CSS is coalesced into one `<style>` per page by `LayoutRenderer.astro`.
+- **`entry` undefined** — hosts that haven't piped the prop through (today: every host, until the Agent B follow-up lands) get an empty element. The block doesn't crash and the page still renders.
 
 ## SectionContainer.astro
 
