@@ -13,7 +13,7 @@ Contracts between domains. The owner exposes the symbol; consumers import it. Ad
 | Interface | Owner | Consumers | Defined in | Status |
 |-----------|-------|-----------|------------|--------|
 | `resolveMediaUrl(key: string \| null \| undefined, opts?: { locals?: { emdash?: { getPublicMediaUrl?: (k: string) => string \| undefined } } }) => string \| null` | B | A (admin route URL building), C (admin previews) | `src/components/media.ts` | ✅ stable — F2.2 shipped 2026-05-09 |
-| `getBuilderLayout(...)` | B | EmDash host site | `src/components/db.ts` | ✅ exists; F2.4 changes return shape to `{ sections, cacheHint }`; F3.4 changes signature to `(Astro, collection, entryId)` |
+| `getBuilderLayout(collection: string, entryId: string, enabled?: boolean): BuilderLayoutResult` where `BuilderLayoutResult = { sections: SectionBlock[] \| null; cacheHint: { tags?: string[]; lastModified?: Date } }` | A (until F3.4 → B) | EmDash host site, `BuilderWrapper.astro` | `src/components/db.ts` | ✅ stable — F2.4 shipped 2026-05-09. `cacheHint.tags = ["empixel:layout:<collection>:<entryId>"]` always; `lastModified` parsed from the row's `updated_at` when the row exists. `BuilderWrapper.astro` plumbs the hint into `Astro.cache.set` automatically; manual consumers destructure and call set themselves. Public API break vs. v0.7 — older hosts that imported `getBuilderLayout` directly need to migrate. F3.4 will additionally change the signature to `(Astro, collection, entryId)`. |
 | `getBuilderLayoutFromContext(Astro, collection, entryId)` | B | EmDash host site | `src/components/db.ts` | 🆕 F3.4 — replaces direct better-sqlite3 use |
 | `SectionBlock`, `BlockType`, `StyleSection`, `AdvancedConfig`, breakpoint types | 🔒 Orchestrator | A, B, C | `src/types.ts` | ✅ partially exists; `StyleSection` added in F3.5 via proposal |
 | `StorageLayoutsCollection` (ctx.storage shape) | A | B (frontend reader) | `src/storage-types.ts` | 🆕 F3.1 — not implemented yet |
@@ -36,3 +36,26 @@ Contracts between domains. The owner exposes the symbol; consumers import it. Ad
 ## Pending changes
 
 *(Append new proposals below. Format: heading with date + agent + title, then a body explaining what, why, who's affected. Mark resolved proposals as `[resolved]` and leave them in place for history.)*
+
+### 2026-05-09 — Agent A — re-export `BuilderLayoutResult` / `BuilderCacheHint` / `builderLayoutCacheTag` from `src/components/index.ts`
+
+F2.4 added the new types and `builderLayoutCacheTag(...)` helper to
+`src/components/db.ts` (Agent A's column). The public package surface
+is `empixel-builder/components` which goes through
+`src/components/index.ts` (Agent B's column). Today the file only
+re-exports `getBuilderLayout` itself — external consumers wanting the
+result type have to deep-import from `empixel-builder/components/db`,
+which is awkward and not how the rest of the public API is shaped.
+
+Proposed addition to `src/components/index.ts` (one diff hunk):
+
+```ts
+export { getBuilderLayout, builderLayoutCacheTag } from "./db.js";
+export type { BuilderCacheHint, BuilderLayoutResult } from "./db.js";
+```
+
+No runtime change. Agent B owns the file; Agent A would have made the
+change in F2.4 but the task scope locked the cross-domain edit to
+`BuilderWrapper.astro` only. Pickup target: Agent B in the next
+sweep or anytime before F3.4 (which folds into the wider B-owned
+rewrite of the reader).

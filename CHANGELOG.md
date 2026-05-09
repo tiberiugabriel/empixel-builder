@@ -5,6 +5,21 @@ SemVer.
 
 ## 0.8.0 — 2026-05-09
 
+- **Breaking — `getBuilderLayout` now returns `{ sections, cacheHint }`**
+  instead of `SectionBlock[] | null`. The `cacheHint` matches EmDash's
+  `CacheHint` shape (`{ tags?: string[]; lastModified?: Date }`) and
+  always carries the layout-scoped tag
+  `empixel:layout:<collection>:<entryId>` so admin saves can invalidate
+  the host page by tag. `lastModified` is parsed from the layout row's
+  `updated_at` (existing column — no schema change). `BuilderWrapper`
+  plumbs the hint into `Astro.cache.set(...)` automatically when the
+  host passes the `BuilderLayoutResult` straight through; the wrapper
+  also accepts the legacy `SectionBlock[] | null` shape so pages
+  scaffolded by an older `npx empixel-builder add` keep rendering until
+  they're updated. Manual consumers can destructure
+  `{ sections, cacheHint }` and call `Astro.cache.set` themselves —
+  documented in the README's "Caching builder layouts" section. Public
+  API break for any host that imports `getBuilderLayout` directly.
 - One-shot slug → ULID migration on cold start (KV flag
   `migration_slug_to_ulid_v1` in `empixel_builder_meta`). Pre-0.8 routes
   accepted both keys and the read paths walked a slug↔ULID fallback

@@ -60,8 +60,8 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 6. User saves → `POST /layout` + (if dirty) `POST /breakpoints`
 
 ### Rendering
-1. Astro page calls `getBuilderLayout(entryId, collection)` → queries SQLite
-2. Page renders `<LayoutRenderer sections={layout.sections} />`
+1. Astro page calls `getBuilderLayout(collection, entryId, enabled?)` → queries SQLite, returns `{ sections, cacheHint }` (v0.8 — F2.4)
+2. Page renders `<BuilderWrapper sections={builderLayout}>` (auto-plumbs `Astro.cache.set(cacheHint)`) or destructures + calls set manually then renders `<LayoutRenderer sections={sections} />`
 3. LayoutRenderer iterates sections — containers go to `SectionContainer.astro`, leaves to `BlockRenderer.astro`
 4. `BlockRenderer` dispatches leaves (text/image/text-editor/video/button/icon/html/divider-spacer) by `block.type`
 5. Each component builds CSS via `buildBlockCss` / `buildHoverCss` / `buildBreakpointCss` / `getCustomCss` and injects it as a global `<style>` tag, with `[data-epx-block="<id>"]` selectors

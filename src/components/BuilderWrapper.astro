@@ -1,12 +1,47 @@
 ---
 import type { SectionBlock } from "../types.js";
+import type { BuilderLayoutResult } from "./db.js";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
+// `sections` accepts either the new `BuilderLayoutResult` ({ sections, cacheHint }
+// from `getBuilderLayout` v0.8) or the legacy `SectionBlock[] | null` shape so
+// pages that haven't migrated their `add.js`-generated frontmatter still work.
+// New code should pass the full `BuilderLayoutResult` so the wrapper can plumb
+// `cacheHint` straight into `Astro.cache.set(...)` automatically.
 interface Props {
-  sections: SectionBlock[] | null;
+  sections: BuilderLayoutResult | SectionBlock[] | null | undefined;
 }
 
-const { sections } = Astro.props;
+const { sections: prop } = Astro.props;
+
+// Normalise to a `BuilderLayoutResult`-shaped object regardless of which
+// variant the host passed. The legacy array/null path leaves `cacheHint`
+// undefined — we skip the `Astro.cache.set` call in that case so callers
+// who never opted in to caching don't suddenly get a hint they didn't ask for.
+let resolvedSections: SectionBlock[] | null = null;
+let cacheHint: { tags?: string[]; lastModified?: Date } | undefined;
+
+if (Array.isArray(prop)) {
+  resolvedSections = prop;
+} else if (prop && typeof prop === "object" && "sections" in prop) {
+  resolvedSections = prop.sections ?? null;
+  cacheHint = prop.cacheHint;
+}
+
+// Plumb the cacheHint into Astro.cache.set so the host page invalidates
+// when the admin saves a new layout. The cacheHint always carries a
+// `empixel:layout:<collection>:<entryId>` tag (and `lastModified` when
+// the row exists) — set unconditionally so a fresh layout still busts
+// the cache once it's saved for the first time.
+//
+// Astro's `cache.set` is best-effort; some adapters omit it. Guard the
+// access so the wrapper still renders on adapters without caching.
+if (cacheHint) {
+  const cache = (Astro as unknown as { cache?: { set?: (hint: unknown) => void } }).cache;
+  if (typeof cache?.set === "function") {
+    cache.set(cacheHint);
+  }
+}
 ---
 
-{sections ? <LayoutRenderer sections={sections} /> : <slot />}
+{resolvedSections ? <LayoutRenderer sections={resolvedSections} /> : <slot />}

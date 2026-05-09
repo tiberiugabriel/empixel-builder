@@ -272,6 +272,44 @@ After this lands:
   the resolved ULID. Pre-0.8 this function ran up to three queries
   (direct lookup → slug→ULID → ULID→slug fallback chain).
 
+## `getBuilderLayout` cacheHint (v0.8.0 — F2.4)
+
+`getBuilderLayout(collection, entryId, enabled?)` returns
+`BuilderLayoutResult = { sections, cacheHint }` instead of the legacy
+`SectionBlock[] | null`. The `cacheHint` matches EmDash's `CacheHint`
+shape (`{ tags?: string[]; lastModified?: Date }` from
+`emdash/dist/index-DjPMOfO0.d.mts`) and is suitable to pass straight to
+`Astro.cache.set(...)` from a host page.
+
+**`tags`** — always carries one entry,
+`empixel:layout:<collection>:<entryId>`. Built from the `entryId`
+argument the host actually passed (not post-slug-resolution), so admin
+saves and host reads bind to the same identity. Future admin save
+hooks call `cache.purgeByTags([builderLayoutCacheTag(...)])` and the
+host page rerenders. The tag is exported as `builderLayoutCacheTag` so
+external consumers can derive it without reaching into the layout
+shape.
+
+**`lastModified`** — parsed from the layout row's `updated_at` column
+(SQLite `current_timestamp` ISO-8601 — already on the schema, no
+column added). Helper coerces the SQLite `YYYY-MM-DD HH:MM:SS` format
+into a UTC `Date`. Stamped even when the row exists but is disabled
+(future enable still has to bust the cache); skipped when no row
+exists or parsing fails (the tag alone is still enough to invalidate).
+
+**Always present** — even on the early-exit paths (`enabled=false`,
+invalid collection name, SQLite error) the function returns the
+`cacheHint` so host pages can call `Astro.cache.set(cacheHint)`
+unconditionally. A fresh save that lands later still emits the same
+tag, so a previously-empty page invalidates correctly the moment the
+admin creates a layout for it.
+
+`BuilderWrapper.astro` plumbs the hint automatically — pass the full
+`BuilderLayoutResult` and the wrapper calls `Astro.cache.set` for you
+(legacy `SectionBlock[] | null` shape still accepted for transitional
+hosts). Manual consumers destructure and call set themselves; pattern
+documented in the README's "Caching builder layouts" section.
+
 ## KV Storage
 
 | Key | Type | Purpose |
@@ -292,9 +330,10 @@ After this lands:
 2. User toggles → `POST /toggle { entryId, collection, enabled }`
 
 ### Rendering (frontend)
-1. Astro page calls `getBuilderLayout(pageId, collection)`
+1. Astro page calls `getBuilderLayout(collection, entryId, enabled?)`
 2. `db.ts` queries `empixel_builder_layouts`
-3. Returns deserialized `PageLayout | null`
+3. Returns `BuilderLayoutResult = { sections: SectionBlock[] | null; cacheHint: { tags?: string[]; lastModified?: Date } }` (v0.8 — F2.4)
+4. Host page passes the result through `<BuilderWrapper sections={…}>` (auto-plumbs `Astro.cache.set(cacheHint)`) or destructures + calls set manually
 
 ## Non-Removable Breakpoints
 

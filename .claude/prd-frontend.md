@@ -158,14 +158,49 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 
 ## Database Query (db.ts)
 
-### getBuilderLayout(pageId, collection)
+### getBuilderLayout(collection, entryId, enabled?)
 ```ts
-export async function getBuilderLayout(pageId: string, collection: string): Promise<PageLayout | null>
+export interface BuilderLayoutResult {
+  sections: SectionBlock[] | null;
+  cacheHint: { tags?: string[]; lastModified?: Date };
+}
+
+export function getBuilderLayout(
+  collection: string,
+  entryId: string,
+  enabled?: boolean,
+): BuilderLayoutResult;
 ```
 - Queries `empixel_builder_layouts` WHERE `collection = ? AND entry_id = ?`
-- Resolves slug ↔ ULID same as backend API
+- Resolves slug → ULID (single query — slug↔ULID fallback chain dropped in F2.3)
 - Deserializes `sections` JSON string → `SectionBlock[]`
-- Returns `{ sections, updatedAt }` or `null`
+- Returns `{ sections, cacheHint }` (v0.8 — F2.4); `sections` is `null` when no row, builder disabled, or input rejected
+- The `cacheHint.tags` always carries `empixel:layout:<collection>:<entryId>` so
+  admin saves can invalidate the host page by tag. `cacheHint.lastModified`
+  is parsed from `updated_at` when the row exists. The hint is returned on
+  every code path so host pages can call `Astro.cache.set(cacheHint)`
+  unconditionally.
+
+#### `BuilderWrapper.astro` — automatic cacheHint plumbing (F2.4)
+
+`BuilderWrapper` accepts the full `BuilderLayoutResult` (or the legacy
+`SectionBlock[] | null` shape for backwards compatibility) on its
+`sections` prop. When passed the result object it calls
+`Astro.cache.set(cacheHint)` itself, so the host page only writes:
+
+```astro
+---
+import { getBuilderLayout, BuilderWrapper } from "empixel-builder/astro";
+const builderLayout = getBuilderLayout("posts", post.data.id, post.data.empixel_builder);
+---
+
+<BuilderWrapper sections={builderLayout}>
+  <slot />
+</BuilderWrapper>
+```
+
+Manual (non-wrapper) consumers destructure and call set themselves —
+see README's "Caching builder layouts" section for both patterns.
 
 ## Image Fields
 
@@ -203,16 +238,33 @@ Never use raw hand-built `/_emdash/api/...` URLs. Never assume image is a string
 // In an Astro page:
 import { getBuilderLayout, LayoutRenderer } from "empixel-builder/components";
 
-const layout = await getBuilderLayout(entry.id, collection);
+const { sections, cacheHint } = getBuilderLayout(collection, entry.data.id, entry.data.empixel_builder);
 Astro.cache.set(cacheHint);
 ---
 
-{layout && <LayoutRenderer layout={layout} />}
+{sections && <LayoutRenderer sections={sections} />}
 ```
+
+(Or use `<BuilderWrapper sections={builderLayout}>` and skip the manual
+`Astro.cache.set` call — the wrapper plumbs the hint automatically.)
 
 ## BuilderWrapper
 
-Wraps pages with builder-related metadata/attributes. Usage TBD.
+Wraps a host page so the builder layout (when present) replaces the
+page's normal `<slot />` content. Pass the full `BuilderLayoutResult`
+returned by `getBuilderLayout` and the wrapper:
+
+1. Renders `<LayoutRenderer sections={…}>` when sections exist.
+2. Renders `<slot />` (the host page's normal content) when no layout
+   exists or the builder is disabled for the entry.
+3. Calls `Astro.cache.set(cacheHint)` itself so admin saves bust the
+   host page's cache by tag — no manual call needed.
+
+The legacy `SectionBlock[] | null` shape is still accepted on the
+`sections` prop for transitional hosts (older `npx empixel-builder add`
+output), but in that path no automatic `Astro.cache.set` happens — the
+wrapper has nothing to plumb. New scaffolds should use the result
+object so caching is wired correctly.
 
 ## Rules
 
