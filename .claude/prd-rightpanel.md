@@ -15,7 +15,7 @@ The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for th
 | F3.5.1 | ✅ shipped (0.9.5 prep) | Add `StyleSection` discriminated union + optional `fieldsTab` / `styleTab` on `BlockDef`. Existing `fields` / `styleFields` kept as deprecated aliases. No instances migrated; no panel rewrite. |
 | F3.5.2 | ✅ shipped (0.9.5 prep) | All 9 `BlockDef` entries populate `fieldsTab` + `styleTab`. Non-trivial Style logic extracted into `src/admin/right-panel/sections/`: `TextEditorDropCapSection.tsx` (paragraph spacing + drop cap), `VideoSourceSection.tsx` (aspect ratio + filter), `DividerLineSection.tsx` (full divider-line picker), `IconBlockStyleSection.tsx` (icon color/size/rotate). Imperative `block.type ===` branches in `RightPanel.tsx` stay in place — F3.5.6 deletes them. |
 | F3.5.3 | ✅ shipped (0.9.5 prep) | `right-panel/SectionRenderer.tsx` — pure switch on `StyleSection.kind`, renders the matching control. 109 LOC, exhaustive via `assertNever`. Dispatcher added in this PR; wired into `RightPanel.tsx` by F3.5.6. |
-| F3.5.4 | ⬜ planned | `right-panel/TabRenderer.tsx` — consumes `fieldsTab` + `styleTab`, replaces inline branching. |
+| F3.5.4 | ✅ shipped (0.9.5 prep) | `right-panel/TabRenderer.tsx` — owns the 3-tab shell. Exports `getVisibleTabs(block)` (drives Style auto-hide for `html` and any block missing `styleTab`), the `TabRenderer` JSX component, and the `useAutoSelectTab(block, activeTab, setActiveTab)` hook. Body dispatches Fields → `<FieldRenderer>`, Style → `<SectionRenderer>`, Advanced → placeholder until F3.5.5. `RightPanel.tsx` unchanged; F3.5.6 owns the swap. |
 | F3.5.5 | ⬜ planned | `right-panel/AdvancedTab.tsx` — extract Advanced tab. |
 | F3.5.6 | ⬜ planned | Drop imperative `block.type ===` branches in `RightPanel.tsx`; retire `fields` / `styleFields` aliases. |
 | F3.5.7 | ⬜ planned | Code-split per-block panels (lazy import). |
@@ -60,6 +60,33 @@ The 19 `StyleSection` variants and the `BackgroundMode` / `TypographyProp` alias
 | `iconGroup` | `IconGroup` reading `block.config.icon` | `controls/IconGroup.tsx` |
 | `dividerLine` | Full divider-line picker (style/width/length/color/gradient/align/IconGroup) | `right-panel/sections/DividerLineSection.tsx` |
 | `custom` | `section.render({ block, onChange, activeBreakpoint })` | declared per-block in `blockDefinitions.ts` |
+
+### F3.5.4 — `TabRenderer` + `getVisibleTabs(block)`
+
+`src/admin/right-panel/TabRenderer.tsx` owns the 3-tab shell (Fields / Style / Advanced) for the new declarative path. Replaces the hardcoded `hideStyleTab = block.type === "html"` branch in `RightPanel.tsx`. The visible tab set is computed by `getVisibleTabs(block)` from the matching `BlockDef`:
+
+| Tab | Visible when |
+|---|---|
+| Fields | `def.fieldsTab` (or back-compat `def.fields`) is declared. Empty arrays still render the tab — `container` and `video` keep their block-specific Fields content in legacy imperative branches until F3.5.6's Fields-tab `kind: "custom"` hook lands. |
+| Style | `def.styleTab` is declared and non-empty. Hidden for `html` (which legitimately omits `styleTab`) and for any block whose def is missing. |
+| Advanced | Always. Universal CSS ID / classes / custom CSS / position / z-index controls — F3.5.5 fills in the real `<AdvancedTab />`; F3.5.4 ships a placeholder body. |
+
+`getVisibleTabs` matrix for the 9 blocks:
+
+| Block | Visible tabs |
+|---|---|
+| `text` / `image` / `text-editor` / `video` / `button` / `icon` / `divider-spacer` / `container` | `["fields", "style", "advanced"]` |
+| `html` | `["fields", "advanced"]` |
+| unknown (no def) | `["fields", "advanced"]` |
+
+Body dispatch:
+- Fields tab — iterate `def.fieldsTab ?? def.fields`, filter by `field.showWhen`, render via `<FieldRenderer>`. The map anticipates a future `kind: "custom"` field type (mirrors the Style-tab equivalent) without committing to it today.
+- Style tab — iterate `def.styleTab` and render each entry via the F3.5.3 `<SectionRenderer>`.
+- Advanced tab — `<div data-testid="advanced-placeholder">Advanced tab — F3.5.5</div>`. F3.5.5 ships the real renderer.
+
+The module also exports `useAutoSelectTab(block, activeTab, setActiveTab)`. Effect: when `block.type` changes, if `activeTab` is no longer in `getVisibleTabs(block)`, snap to the first visible tab. Only depends on `block.type` so the hook does not fire on every config edit. F3.5.6 imports it from `RightPanel.tsx` as a one-line replacement for today's `if (hideStyleTab && activeTab === "style") setActiveTab("fields")` block.
+
+`RightPanel.tsx` is unchanged in F3.5.4 — the imperative `block.type ===` branches and the existing `activeTab` state both stay put. F3.5.6 swaps the panel onto `<TabRenderer />` (and `useAutoSelectTab`) in a single PR.
 
 ## Architecture
 

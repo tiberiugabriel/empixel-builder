@@ -5,6 +5,25 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **F3.5.4 — `TabRenderer` + `getVisibleTabs(block)`.** New
+  `src/admin/right-panel/TabRenderer.tsx` wires the 3-tab shell
+  (Fields / Style / Advanced) to the declarative `BlockDef` schema.
+  `getVisibleTabs(block)` computes the visible set per declaration:
+  Fields appears when `def.fieldsTab` (or back-compat `def.fields`) is
+  set, Style appears when `def.styleTab` is non-empty, Advanced is
+  always present. The Style tab hides automatically when `styleTab` is
+  absent — replaces the hardcoded `hideStyleTab = block.type === "html"`
+  branch in `RightPanel.tsx`. The Fields body iterates
+  `def.fieldsTab ?? def.fields` and dispatches to `<FieldRenderer>` (a
+  KISS `kind: "custom"` slot is anticipated for F3.5.6 without
+  committing to it today). The Style body iterates `def.styleTab` and
+  dispatches to F3.5.3's `<SectionRenderer>`. The Advanced body is a
+  placeholder until F3.5.5 ships the real `<AdvancedTab />`. Also
+  exports `useAutoSelectTab(block, activeTab, setActiveTab)`, a hook
+  that snaps `activeTab` back to the first visible tab when
+  `block.type` changes — F3.5.6 imports it as a one-line drop-in.
+  `RightPanel.tsx` is unchanged in this PR; F3.5.6 owns the swap.
+
 - **F3.5.3 — `SectionRenderer` dispatcher.** New
   `src/admin/right-panel/SectionRenderer.tsx` maps each
   `StyleSection.kind` to the matching control under

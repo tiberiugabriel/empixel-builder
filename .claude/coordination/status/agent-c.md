@@ -21,6 +21,20 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 19:10 · F3.5.4 started
+
+Branch: `feature/agentC-F3.5.4`. Worktree at latest `main` (`fde0ee9`).
+Building `src/admin/right-panel/TabRenderer.tsx` — owns the 3-tab
+shell (Fields / Style / Advanced) for the new declarative path.
+Exports `getVisibleTabs(block)` (drives auto-hide of Style for `html`
+and any block missing `styleTab`), the `TabRenderer` JSX component,
+and the `useAutoSelectTab(block, activeTab, setActiveTab)` hook for
+F3.5.6 to re-import. Body dispatches: Fields → iterate
+`def.fieldsTab ?? def.fields` via `<FieldRenderer>`; Style → iterate
+`def.styleTab` via the F3.5.3 `<SectionRenderer>`; Advanced → small
+placeholder until F3.5.5 ships the real tab. RightPanel.tsx is NOT
+modified — F3.5.6 owns the swap.
+
 ## 2026-05-09 18:30 · F3.5.3 started
 
 Branch: `feature/agentC-F3.5.3`. Worktree at latest `main` (`bf913df`).
@@ -58,6 +72,55 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-09 19:25 · F3.5.4 done
+
+Branch: `feature/agentC-F3.5.4`. Single commit (see git log).
+
+**Files changed**:
+- `src/admin/right-panel/TabRenderer.tsx` — new (174 LOC). Exports
+  `getVisibleTabs(block)`, `<TabRenderer />`, `useAutoSelectTab(...)`,
+  the local `Tab` / `TabDef` / `TabRendererProps` types, and the
+  `TAB_META` mapping for the tab header (icons + titles copied
+  verbatim from `RightPanel.tsx` so the F3.5.6 swap is visually
+  invisible). Body dispatches Fields → `<FieldRenderer>` (with a KISS
+  `kind: "custom"` slot anticipating the F3.5.6 future hook), Style →
+  F3.5.3's `<SectionRenderer>`, Advanced → placeholder until F3.5.5.
+- `tests/tabRenderer.test.ts` — 12 new tests covering: 9-block
+  visibility matrix, `html` Style-tab hidden, unknown-type fall-back,
+  Advanced-always-last, Fields-before-Style, smoke render of all 9
+  blocks × visible tabs, Advanced placeholder presence, html header
+  has 2 buttons, non-html header has 3 buttons, `is-active` class
+  plumbing, Style-body wrapper present.
+- `CHANGELOG.md` — new F3.5.4 entry above F3.5.3.
+- `.claude/prd-rightpanel.md` — F3.5.4 row flipped to `✅ shipped`,
+  new "F3.5.4 — `TabRenderer` + `getVisibleTabs(block)`" subsection
+  with the visible-tab rules + 9-block matrix + dispatch description.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test && npm run build` all green. 156 tests pass (144 → 156, +12 new in `tabRenderer.test.ts`).
+
+**`getVisibleTabs` matrix**:
+- `text`, `image`, `text-editor`, `video`, `button`, `icon`, `container`, `divider-spacer`: `["fields", "style", "advanced"]`
+- `html`: `["fields", "advanced"]`
+- unknown: `["fields", "advanced"]`
+
+**Auto-select hook**: shipped in `TabRenderer.tsx` itself as
+`useAutoSelectTab(block, activeTab, setActiveTab)` so F3.5.6 imports
+it directly rather than re-implementing the effect inline. The hook
+depends only on `block?.type` (not on every config edit) and falls
+through to a no-op when `block` is null.
+
+**`RightPanel.tsx` UNCHANGED**: F3.5.4 explicitly does not modify
+the panel. The dispatcher + visibility rules are wired into
+`RightPanel.tsx` by F3.5.6 in a single one-PR swap.
+
+**No `src/types.ts` proposal**: all new code is admin-UI-only and
+lives in `src/admin/right-panel/`. The local `Tab` /
+`TabRendererProps` types do not leak across the plugin/site/runtime
+boundary.
+
+**No blockers.**
 
 ## 2026-05-09 18:55 · F3.5.3 done
 
