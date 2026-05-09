@@ -3,7 +3,10 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
-## Unreleased — 1.0.0 prep
+## 1.0.0 — 2026-05-09
+
+**Phase F4 (Performance & Polish) shipped.** F4.9 (E2E Playwright) deferred to 1.0.x — needs host fixture infra design.
+
 
 - **F4.8 — HTML block iframe auto-resize via `postMessage` protocol.**
   Replaces the v0.6 DOM-polling watcher. The iframe runs a tiny inline
