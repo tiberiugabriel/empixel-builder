@@ -3,7 +3,7 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
-## Unreleased — 0.9.6 prep
+## 0.9.6 — 2026-05-09
 
 - **F3.6.7 — parity snapshot suite for the 9 block types.** New
   `tests/parity/all.test.ts` holds 9 fixtures (one per block type) +
