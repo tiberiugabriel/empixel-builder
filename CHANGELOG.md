@@ -10,6 +10,9 @@ SemVer.
   Node 20+ as well — noted in the README.
 - Rename capability `read:content` → `content:read`. Both names alias in
   EmDash today, but the marketplace publish pipeline requires the new form.
+- Stop swallowing exceptions silently in plugin routes; log via
+  `ctx.log.warn` (or `console.warn` at module load). Set `EMPIXEL_DEBUG=1` to
+  escalate to error level for local debugging.
 
 ## 0.7.0 — 2026-05-08
 

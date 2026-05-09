@@ -23,6 +23,20 @@ publish pipeline requires the colon-separated `<resource>:<verb>` shape; both
 names still alias inside EmDash core today, but downstream tooling rejects
 the old form.
 
+## Logging & soft-fail catches
+
+Every soft-fail path in `plugin.ts` (slug ↔ ULID lookups, `ALTER TABLE`
+column-already-exists noise, optional `empixel_builder` column sync,
+defensive `JSON.parse`, hook cleanup) routes through the local `logCaught`
+helper instead of swallowing the exception. Default level is `warn`
+(`ctx.log.warn` for routes / hooks; `console.warn` at module-load time).
+
+Set the env var `EMPIXEL_DEBUG=1` on the host site to escalate every caught
+soft-fail to `error` level — useful when investigating why a layout
+mysteriously falls back to the unresolved slug, or why an entry table read
+returned nothing. Control flow is unchanged either way; this is purely a
+visibility lever.
+
 ## API Routes
 
 All routes are under `/_emdash/api/plugins/empixel-builder/<route>`.

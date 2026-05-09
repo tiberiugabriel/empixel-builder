@@ -1,5 +1,5 @@
 import { definePlugin } from "emdash";
-import type { RouteContext } from "emdash";
+import type { RouteContext, PluginContext } from "emdash";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
@@ -10,6 +10,33 @@ const KV_BREAKPOINTS = "settings:breakpoints";
 
 const NON_REMOVABLE_BREAKPOINTS: BreakpointId[] = ["desktop", "tablet-portrait", "mobile-portrait"];
 const _require = createRequire(import.meta.url);
+
+// When set to "1", caught-but-soft-failed errors escalate from warn → error so
+// they're easier to spot during local debugging. The default (off) keeps the
+// log volume sane in production while still leaving a breadcrumb (warn).
+const EMPIXEL_DEBUG = process.env.EMPIXEL_DEBUG === "1";
+
+/**
+ * Log a caught exception without changing control flow. Soft-fail callers wrap
+ * a fallback path around the exception; this helper just makes sure the
+ * exception is *visible* (previously these were swallowed silently). Use
+ * `ctx` for plugin routes / hooks so it routes through EmDash's logger; pass
+ * `null` at module-load time and the helper falls back to `console`.
+ */
+function logCaught(
+  ctx: { log: PluginContext["log"] } | null,
+  message: string,
+  err: unknown
+): void {
+  const data = { err: err instanceof Error ? err.message : String(err) };
+  if (ctx) {
+    if (EMPIXEL_DEBUG) ctx.log.error(message, data);
+    else ctx.log.warn(message, data);
+  } else {
+    if (EMPIXEL_DEBUG) console.error(`[empixel-builder] ${message}:`, err);
+    else console.warn(`[empixel-builder] ${message}:`, err);
+  }
+}
 
 // Whitelist for SQL identifiers built from the `collection` user input. The
 // collection name is interpolated into table names like `ec_${collection}`,
@@ -64,8 +91,11 @@ function getDb(): SqliteDb {
   `);
   try {
     _db.exec("ALTER TABLE empixel_builder_layouts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
-  } catch {
-    // column already exists
+  } catch (err) {
+    // Most of the time this is the harmless "duplicate column" error from
+    // SQLite — the column already exists from a previous run. We still log it
+    // so genuine failures (corrupt schema, locked DB) aren't lost.
+    logCaught(null, "ALTER TABLE add column 'enabled' failed (likely already present)", err);
   }
 
   runSpacerMigration(_db);
@@ -216,12 +246,16 @@ export function createPlugin() {
               try {
                 const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(pageId) as { id: string } | undefined;
                 if (row && row.id) pageId = row.id;
-              } catch { /* ignore */ }
+              } catch (err) {
+                logCaught(ctx, `layout GET: slug→ULID lookup failed for ec_${collection}`, err);
+              }
             } else {
               try {
                 const slugRow = db.prepare(`SELECT slug FROM ec_${collection} WHERE id = ?`).get(pageId) as { slug: string } | undefined;
                 if (slugRow && slugRow.slug) originalSlug = slugRow.slug;
-              } catch { /* ignore */ }
+              } catch (err) {
+                logCaught(ctx, `layout GET: ULID→slug lookup failed for ec_${collection}`, err);
+              }
             }
 
             const row = db
@@ -260,7 +294,9 @@ export function createPlugin() {
               try {
                 const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(pageId) as { id: string } | undefined;
                 if (row && row.id) pageId = row.id;
-              } catch { /* ignore */ }
+              } catch (err) {
+                logCaught(ctx, `layout POST: slug→ULID lookup failed for ec_${collection}`, err);
+              }
             }
 
             db
@@ -348,8 +384,8 @@ export function createPlugin() {
                   if (dataObj && dataObj.title) {
                     title = dataObj.title;
                   }
-                } catch {
-                  // ignore
+                } catch (err) {
+                  logCaught(ctx, `entries: failed to parse data JSON for entry ${entry.id}`, err);
                 }
               }
 
@@ -393,7 +429,9 @@ export function createPlugin() {
             try {
               const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(entryId) as { id: string } | undefined;
               if (row && row.id) entryId = row.id;
-            } catch { /* ignore */ }
+            } catch (err) {
+              logCaught(ctx, `toggle: slug→ULID lookup failed for ec_${collection}`, err);
+            }
           }
 
           db
@@ -409,8 +447,10 @@ export function createPlugin() {
           // Try to sync the value back to the document table if the column exists
           try {
             db.prepare(`UPDATE ec_${collection} SET empixel_builder = ? WHERE id = ?`).run(body?.enabled ? 1 : 0, entryId);
-          } catch {
-            // column might not exist or be named differently, ignore
+          } catch (err) {
+            // Column may not exist or be named differently in this collection.
+            // Soft-fail: the canonical state is in empixel_builder_layouts.
+            logCaught(ctx, `toggle: sync ec_${collection}.empixel_builder failed`, err);
           }
 
           return { success: true };
@@ -451,7 +491,10 @@ export function createPlugin() {
     },
     hooks: {
       "content:afterDelete": {
-        handler: async (event: { id?: string; entry?: { id: string }; collection?: string }) => {
+        handler: async (
+          event: { id?: string; entry?: { id: string }; collection?: string },
+          ctx: PluginContext
+        ) => {
           try {
             const entryId = event.id ?? event.entry?.id;
             if (event.collection && entryId) {
@@ -459,8 +502,10 @@ export function createPlugin() {
                 .prepare("DELETE FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
                 .run(event.collection, entryId);
             }
-          } catch {
-            // ignore cleanup errors
+          } catch (err) {
+            // Cleanup is best-effort; orphaned layout rows are harmless until
+            // the same entry id is re-created in the same collection.
+            logCaught(ctx, `content:afterDelete: cleanup of empixel_builder_layouts failed for ${event.collection}/${event.id ?? event.entry?.id ?? "?"}`, err);
           }
         },
       },
