@@ -10,13 +10,23 @@ import Html from "./Html.astro";
 import DividerSpacer from "./DividerSpacer.astro";
 import FieldBinding from "./FieldBinding.astro";
 
+// F4.4 follow-up — host page's resolved entry, plumbed by
+// `BuilderWrapper.astro` → `LayoutRenderer.astro` → here. Only the
+// `field-binding` dispatch reads from it; every other branch ignores
+// the prop. Optional everywhere — layouts rendered without an entry
+// context still work (the leaf falls through to an empty element).
+//
+// Shape mirrors the same `BuilderEntryRef` interface defined inline in
+// `BuilderWrapper.astro` and `LayoutRenderer.astro` (KISS — three files,
+// no shared module).
+interface BuilderEntryRef {
+  data?: Record<string, unknown>;
+  edit?: Record<string, unknown>;
+}
+
 interface Props {
   block: SectionBlock;
-  // F4.4 — host page's resolved entry, plumbed by `BuilderWrapper.astro`
-  // through `LayoutRenderer.astro`. Only `field-binding` reads from it
-  // today; every other leaf ignores the prop.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  entry?: { data?: Record<string, any>; edit?: Record<string, any> } | null;
+  entry?: BuilderEntryRef | null;
 }
 
 const { block, entry } = Astro.props;

@@ -3,6 +3,20 @@ import type { SectionBlock } from "../types.js";
 import type { BuilderLayoutResult } from "./db.js";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
+// F4.4 follow-up — the host page's resolved entry, plumbed down through
+// `LayoutRenderer.astro` → `BlockRenderer.astro` → `FieldBinding.astro`
+// so the `field-binding` block can read `entry.data[config.field]` and
+// spread `entry.edit?.[config.field]` onto its rendered tag (live-edit
+// reattach). Optional everywhere — hosts that don't bind any
+// `field-binding` block can omit it; the prop falls through unused.
+//
+// Defined inline (KISS — only three files reference it; no shared
+// module needed).
+interface BuilderEntryRef {
+  data?: Record<string, unknown>;
+  edit?: Record<string, unknown>;
+}
+
 // `sections` accepts three shapes for transitional compatibility:
 //
 //   1. `BuilderLayoutResult` ({ sections, cacheHint }) — the value
@@ -24,9 +38,11 @@ interface Props {
     | SectionBlock[]
     | null
     | undefined;
+  // F4.4 follow-up — optional. See `BuilderEntryRef` above.
+  entry?: BuilderEntryRef | null;
 }
 
-const { sections: rawProp } = Astro.props;
+const { sections: rawProp, entry } = Astro.props;
 
 // Resolve the promise-shape up front so the rest of the file sees a
 // concrete `BuilderLayoutResult | SectionBlock[] | null`. Astro
@@ -66,4 +82,4 @@ if (cacheHint) {
 }
 ---
 
-{resolvedSections ? <LayoutRenderer sections={resolvedSections} /> : <slot />}
+{resolvedSections ? <LayoutRenderer sections={resolvedSections} entry={entry} /> : <slot />}

@@ -5,6 +5,40 @@ SemVer.
 
 ## Unreleased — 1.0.0 prep
 
+- **F4.4 follow-up — entry plumb-through to `FieldBinding`.**
+  `BuilderWrapper.astro`, `LayoutRenderer.astro`, and
+  `BlockRenderer.astro` now accept an optional `entry` prop and thread
+  it down so the new `field-binding` block can read
+  `entry.data[config.field]` and spread `entry.edit?.[config.field]`
+  onto its rendered tag (live-edit reattach). The original F4.4 PR
+  documented this plumb-through as out-of-scope (those parent files
+  weren't in the cross-domain exception list); this PR closes the gap.
+  Backwards compatible — existing host pages that don't pass `entry`
+  still render identically; `field-binding` blocks just resolve to
+  empty strings (the leaf-level fallback was already in place from the
+  F4.4-impl commit). Hosts that want to use `field-binding` now write
+  `<BuilderWrapper sections={getBuilderLayout(...)} entry={post}>` —
+  the polymorphic `getBuilderLayout` doesn't know about the entry
+  itself, so passing it through the wrapper is the host's
+  responsibility. The shared `BuilderEntryRef` shape (`{ data?:
+  Record<string, unknown>; edit?: Record<string, unknown> }`) is
+  declared inline in each of the four `.astro` files (KISS — no shared
+  module while only four files reference it). New tests in
+  `tests/fieldBinding.test.ts` (file-content probes — Astro components
+  don't run under vitest natively, same approach as the existing
+  F4.4-impl dispatch probes): `BuilderWrapper.astro` accepts +
+  forwards entry, `LayoutRenderer.astro` accepts + forwards entry,
+  `BlockRenderer.astro` types entry via `BuilderEntryRef`, plus a
+  cross-file consistency probe asserting the shape stays uniform
+  across all four sites. Tests: 404 → 408 (+4). Files:
+  `src/components/BuilderWrapper.astro`,
+  `src/components/LayoutRenderer.astro`,
+  `src/components/BlockRenderer.astro`,
+  `src/components/FieldBinding.astro` (prop type tightened to use the
+  same `BuilderEntryRef` interface), `tests/fieldBinding.test.ts`,
+  `CHANGELOG.md`, `.claude/prd-frontend.md`,
+  `.claude/coordination/status/agent-b.md`.
+
 - **F4.4 — new `field-binding` block type.** Reads
   `entry.data[config.field]` instead of carrying its own content; on
   the frontend, spreads `entry.edit?.[config.field]` so the EmDash

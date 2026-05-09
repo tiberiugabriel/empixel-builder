@@ -17,14 +17,21 @@ import { resolveMediaUrl } from "./media.js";
 // supported — we render an empty string for those. F4.4 follow-up
 // can add image-binding via `<Image image={...} />` from `emdash/ui`.
 
+// F4.4 follow-up — see `BuilderWrapper.astro` for the shared
+// `BuilderEntryRef` shape. Mirrored inline here (KISS — same shape, four
+// files now reference it; if a 5th adds itself we extract).
+interface BuilderEntryRef {
+  data?: Record<string, unknown>;
+  edit?: Record<string, unknown>;
+}
+
 interface Props {
   value: Record<string, unknown>;
   blockId?: string;
   // The host page's resolved entry. Optional so layouts without an
   // entry context (legacy `BuilderWrapper(sections=...)` callsites)
   // still render — they just get an unbound empty element.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  entry?: { data?: Record<string, any>; edit?: Record<string, any> } | null;
+  entry?: BuilderEntryRef | null;
 }
 
 const { value, blockId, entry } = Astro.props;

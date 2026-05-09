@@ -270,3 +270,74 @@ describe("F4.4 — BlockRenderer.astro dispatches `field-binding`", () => {
     expect(src).toContain("buildBlockChromeCss");
   });
 });
+
+// ─── F4.4 follow-up: entry plumb-through (B → BuilderWrapper → LayoutRenderer → BlockRenderer) ──
+
+describe("F4.4 follow-up — entry plumb-through", () => {
+  // Astro components don't run under vitest natively, so we probe the
+  // source files directly. Same approach as the F4.4 dispatch probes
+  // above (which assert the BlockRenderer side); these probes lock the
+  // upstream plumbing so a regression on any of the three components
+  // breaks loudly.
+
+  it("`BuilderWrapper.astro` accepts an optional `entry` prop and forwards it to LayoutRenderer", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(
+      resolve(here, "../src/components/BuilderWrapper.astro"),
+      "utf8",
+    );
+    // Prop declared on the wrapper.
+    expect(src).toContain("entry?: BuilderEntryRef");
+    // Destructured from Astro.props.
+    expect(src).toMatch(/const\s*{[^}]*entry[^}]*}\s*=\s*Astro\.props/);
+    // Forwarded to the LayoutRenderer.
+    expect(src).toContain("<LayoutRenderer");
+    expect(src).toContain("entry={entry}");
+  });
+
+  it("`LayoutRenderer.astro` accepts an optional `entry` prop and forwards it to BlockRenderer", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(
+      resolve(here, "../src/components/LayoutRenderer.astro"),
+      "utf8",
+    );
+    expect(src).toContain("entry?: BuilderEntryRef");
+    expect(src).toMatch(/const\s*{[^}]*entry[^}]*}\s*=\s*Astro\.props/);
+    // Forwarded to BlockRenderer for every leaf — the dispatch on the
+    // BlockRenderer side picks which branch (today: `field-binding`
+    // only) actually consumes it.
+    expect(src).toContain("<BlockRenderer block={block} entry={entry}");
+  });
+
+  it("`BlockRenderer.astro` types `entry` via the shared `BuilderEntryRef` shape", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(
+      resolve(here, "../src/components/BlockRenderer.astro"),
+      "utf8",
+    );
+    expect(src).toContain("interface BuilderEntryRef");
+    expect(src).toContain("entry?: BuilderEntryRef");
+    // The `field-binding` dispatch is still the sole consumer.
+    expect(src).toContain('block.type === "field-binding"');
+    expect(src).toContain("entry={entry}");
+  });
+
+  it("`BuilderEntryRef` shape is consistent across all four files (KISS — inline duplication, four sites)", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const files = [
+      "../src/components/BuilderWrapper.astro",
+      "../src/components/LayoutRenderer.astro",
+      "../src/components/BlockRenderer.astro",
+      "../src/components/FieldBinding.astro",
+    ];
+    for (const rel of files) {
+      const src = readFileSync(resolve(here, rel), "utf8");
+      // Each file declares the same inline interface. If we add a 5th
+      // consumer, lift to a shared module — until then, four
+      // inline copies is cheaper than the import overhead.
+      expect(src).toContain("interface BuilderEntryRef");
+      expect(src).toContain("data?: Record<string, unknown>");
+      expect(src).toContain("edit?: Record<string, unknown>");
+    }
+  });
+});

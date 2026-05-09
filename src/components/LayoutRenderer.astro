@@ -4,11 +4,26 @@ import BlockRenderer from "./BlockRenderer.astro";
 import SectionContainer from "./SectionContainer.astro";
 import { coalesceLayoutCss } from "./styleUtils.js";
 
-interface Props {
-  sections: SectionBlock[];
+// F4.4 follow-up — host page's resolved entry, threaded down from
+// `BuilderWrapper.astro` and forwarded to every leaf via
+// `BlockRenderer.astro`. Only the `field-binding` dispatch in
+// `BlockRenderer.astro` actually reads it; every other branch ignores
+// the prop. Optional — layouts rendered without an entry context still
+// work (the leaf falls through to an unbound empty element).
+//
+// Defined inline (KISS — see `BuilderWrapper.astro` for the same
+// shape; if a 4th file ever references it we extract to a shared module).
+interface BuilderEntryRef {
+  data?: Record<string, unknown>;
+  edit?: Record<string, unknown>;
 }
 
-const { sections } = Astro.props;
+interface Props {
+  sections: SectionBlock[];
+  entry?: BuilderEntryRef | null;
+}
+
+const { sections, entry } = Astro.props;
 const hasBlocks = sections.length > 0;
 
 // F1.3 — Plugin-scoped reset emitted once per layout.
@@ -61,7 +76,7 @@ if (hasBlocks) {
   if (block.type === "container") {
     return <SectionContainer value={block.config} children={block.children ?? []} blockId={block.id} />;
   }
-  return <BlockRenderer block={block} />;
+  return <BlockRenderer block={block} entry={entry} />;
 })}
 
 {hasBlocks && (() => {

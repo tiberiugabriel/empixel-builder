@@ -160,7 +160,7 @@ Routes to the correct Astro component by `block.type`. Builds CSS via `buildBloc
 - `text` → `<Text value={block.config} blockId={block.id} />`
 - `image` → `<ImageBlock value={block.config} blockId={block.id} />`
 - ... (every other leaf follows the same shape)
-- F4.4: `field-binding` → `<FieldBinding value={block.config} blockId={block.id} entry={entry} />`. The optional `entry` prop on `BlockRenderer.astro` is forwarded ONLY to the `field-binding` branch — every other leaf ignores it. Hosts that don't pipe `entry` through `BuilderWrapper.astro` → `LayoutRenderer.astro` → `BlockRenderer.astro` get a graceful fallback: the `field-binding` block renders an empty element instead of crashing. Plumbing the `entry` prop end-to-end is a follow-up Agent B PR (those parent files are not in F4.4's documented cross-domain exception list).
+- F4.4: `field-binding` → `<FieldBinding value={block.config} blockId={block.id} entry={entry} />`. The optional `entry` prop on `BlockRenderer.astro` is forwarded ONLY to the `field-binding` branch — every other leaf ignores it. Hosts that don't pipe `entry` through `BuilderWrapper.astro` → `LayoutRenderer.astro` → `BlockRenderer.astro` get a graceful fallback: the `field-binding` block renders an empty element instead of crashing. The full plumb-through landed in the F4.4 follow-up — see "Entry plumb-through (F4.4 follow-up)" under the BuilderWrapper section below for the call-site pattern.
 
 ### F4.4 — FieldBinding.astro
 
@@ -207,7 +207,7 @@ Behavior contract:
 - **Bound value resolution** keeps it KISS: only string / number / boolean values render. Object-shaped values (e.g. an image `{ src, alt }`) flatten to `""` rather than `[object Object]`. F4.4 follow-up adds image-binding via `<Image image={...} />` from `emdash/ui`.
 - **Live-edit reattach** — `entry.edit?.[fieldKey]` is a pre-built attribute bag from EmDash (`data-edit-id`, `contenteditable`, etc.). Spreading it onto the rendered tag matches the hand-rolled host template UX (`<h1 {...post.edit.title}>{post.data.title}</h1>`).
 - **CSS pipeline** — uses the F4.1 `Astro.locals.empixelLayoutCss` push pattern (same as every other leaf). Per-block CSS is coalesced into one `<style>` per page by `LayoutRenderer.astro`.
-- **`entry` undefined** — hosts that haven't piped the prop through (today: every host, until the Agent B follow-up lands) get an empty element. The block doesn't crash and the page still renders.
+- **`entry` undefined** — hosts that don't pass `entry` through `<BuilderWrapper entry={...}>` get an empty element. The block doesn't crash and the page still renders. The plumb-through landed in the F4.4 follow-up — see "Entry plumb-through (F4.4 follow-up)" under the BuilderWrapper section below.
 
 ## SectionContainer.astro
 
@@ -650,6 +650,54 @@ Three accepted shapes for the `sections` prop:
   `npx empixel-builder add` scaffolds. No `cacheHint` is plumbed because
   the legacy shape never carried one. Update to the new shape to wire
   caching correctly.
+
+### Entry plumb-through (F4.4 follow-up)
+
+`BuilderWrapper`, `LayoutRenderer`, and `BlockRenderer` accept an
+optional `entry` prop that's forwarded down the render tree. Only the
+`field-binding` block dispatch in `BlockRenderer.astro` actually
+consumes the prop; every other branch ignores it. `FieldBinding.astro`
+reads `entry.data[config.field]` for the bound value and spreads
+`entry.edit?.[config.field]` onto the rendered tag for the EmDash
+live-edit overlay (parity with hand-rolled host templates like
+`<h1 {...post.edit.title}>{post.data.title}</h1>`).
+
+Shape (`BuilderEntryRef`):
+
+```ts
+interface BuilderEntryRef {
+  data?: Record<string, unknown>;
+  edit?: Record<string, unknown>;
+}
+```
+
+The interface is declared **inline** in each of the four `.astro` files
+that touch it (`BuilderWrapper`, `LayoutRenderer`, `BlockRenderer`,
+`FieldBinding`) — KISS, no shared module while only four files
+reference it. If a fifth consumer ever appears, lift to
+`src/components/entry-types.ts` or similar.
+
+**Host-page integration.** The polymorphic `getBuilderLayout` doesn't
+know about the entry — that's the host's responsibility. Hosts using
+`field-binding` blocks pass the entry through:
+
+```astro
+---
+import { getBuilderLayout, BuilderWrapper } from "empixel-builder/components";
+const post = await Astro.locals.emdash.getEntry("posts", Astro.params.slug);
+const builderLayout = getBuilderLayout(Astro, "posts", post.data.id, post.data.empixel_builder);
+---
+<BuilderWrapper sections={builderLayout} entry={post}>
+  <slot />
+</BuilderWrapper>
+```
+
+Hosts that don't use `field-binding` simply omit the prop — every other
+block ignores it, so call-site shapes that predate this PR keep
+rendering identically. When `entry` is missing/null and a layout
+contains a `field-binding` block, the leaf renders an empty element
+(no crash, no `[object Object]`, no broken page) — same fallback
+behavior the F4.4-impl PR shipped.
 
 ## Rules
 

@@ -21,6 +21,25 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-10 00:25 · F4.4 follow-up (entry plumb-through) started
+
+- Branch: `feature/agentB-F4.4-entryplumb` off worktree at latest main (9742f85 — F4.4 field-binding block).
+- Goal: thread an optional `entry` prop through `BuilderWrapper.astro` → `LayoutRenderer.astro` → `BlockRenderer.astro` so the just-landed `FieldBinding.astro` (F4.4-impl) can read `entry.data[config.field]` and spread `entry.edit?.[config.field]` onto its rendered tag. Backwards compatible — existing call sites that don't pass `entry` keep rendering identically; the leaf renders an empty element when entry is absent.
+- Plan / mechanism:
+  1. Define a small `BuilderEntryRef` interface in each `.astro` frontmatter (inline, KISS — no shared module — three files reference it; if a 4th wants it later we extract). Shape: `{ data?: Record<string, unknown>; edit?: Record<string, unknown> }`.
+  2. `BuilderWrapper.astro` accepts `entry?: BuilderEntryRef` and forwards it into `<LayoutRenderer entry={entry} sections={...} />`.
+  3. `LayoutRenderer.astro` accepts `entry?: BuilderEntryRef` and forwards it into `<BlockRenderer entry={entry} block={block} />` for every leaf (the dispatch on the BlockRenderer side picks which branch — if any — actually consumes it).
+  4. `BlockRenderer.astro` already accepts `entry?: ...` and passes it into the `case "field-binding"` branch only — F4.4 wired the dispatch end. No change to the dispatch logic itself; just confirm the prop type matches the new `BuilderEntryRef` shape (today it's `{ data?: Record<string, any>; edit?: Record<string, any> } | null` — tightened to `unknown` value-types but functionally equivalent).
+- Files in scope (all Agent B):
+  - `src/components/BuilderWrapper.astro` — accept + forward entry.
+  - `src/components/LayoutRenderer.astro` — accept + forward entry.
+  - `src/components/BlockRenderer.astro` — type-tightening of the existing entry prop.
+  - `tests/fieldBinding.test.ts` — extend with file-content probes asserting all three components mention `entry`.
+  - `CHANGELOG.md` — append F4.4 follow-up bullet under `## Unreleased — 1.0.0 prep`.
+  - `.claude/prd-frontend.md` — document the entry-plumb call-site pattern + the `BuilderEntryRef` shape.
+- Tests strategy: same approach as F4.4-impl's existing `BlockRenderer.astro` dispatch probe (Astro components don't run under vitest natively, so we grep file content for the new prop wiring). Three new assertions in `tests/fieldBinding.test.ts`: BuilderWrapper accepts/forwards entry, LayoutRenderer accepts/forwards entry, BlockRenderer's entry prop typed via `BuilderEntryRef`-shaped interface. Total tests: 404 → 407 (+3).
+- Coordination: no `interfaces.md` change. The new `entry` prop on BuilderWrapper is a public API extension; it's fully backwards compatible (optional everywhere) so existing consumers don't have to migrate. Will update PRDs in same PR per CLAUDE.md.
+
 ## 2026-05-09 23:55 · F4.10 started
 
 - Branch: `feature/agentB-F4.10` off worktree at latest main (76e0495 — F4.1 + F4.2 + F4.3 in).
@@ -111,6 +130,27 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 - Coordination: Agent A is fixing the related backend bug on a parallel branch (`/entries`). Doc-id format `<collection>::<entryId>` is canonical (per `src/plugin.ts:80` `layoutDocId`); A and B's fixes converge on this key. No `interfaces.md` change needed.
 
 ## Done
+
+## 2026-05-10 00:35 · F4.4 follow-up (entry plumb-through) done
+
+- Three-line plumb shipped. `BuilderWrapper.astro`, `LayoutRenderer.astro`, and `BlockRenderer.astro` accept an optional `entry?: BuilderEntryRef | null` prop and thread it down to the `field-binding` dispatch in `BlockRenderer.astro`. Existing F4.4-impl already wired the leaf-side dispatch, so this PR closes only the upstream gap.
+- `BuilderEntryRef` shape (`{ data?: Record<string, unknown>; edit?: Record<string, unknown> }`) is declared **inline** in each of the four `.astro` files that touch it. KISS — no shared module while only four files reference it. If a 5th consumer ever lands, lift to `src/components/entry-types.ts` (or similar). The decision is documented in `prd-frontend.md` § "Entry plumb-through (F4.4 follow-up)".
+- `FieldBinding.astro`'s prop type tightened to use the same `BuilderEntryRef` interface (was `{ data?: Record<string, any>; edit?: Record<string, any> } | null` with an `eslint-disable-next-line @typescript-eslint/no-explicit-any` annotation). Functionally equivalent — the existing typeof-narrowing inside the frontmatter still works on `unknown` values, and the `entry.edit[fieldKey]` cast to `Record<string, unknown>` is preserved.
+- Backwards compat: the `entry` prop is optional on every site. Existing host pages that don't pass it (today: every host, since the F4.4-impl PR documented this as out-of-scope) compile + render identically. `field-binding` blocks resolve to empty elements when `entry` is absent — same behavior as F4.4-impl shipped.
+- Files changed:
+  - `src/components/BuilderWrapper.astro` — accept + forward entry; inline `BuilderEntryRef`.
+  - `src/components/LayoutRenderer.astro` — accept + forward entry to `<BlockRenderer entry={entry} block={block} />`; inline `BuilderEntryRef`.
+  - `src/components/BlockRenderer.astro` — type-tighten the existing entry prop via inline `BuilderEntryRef`; dispatch logic unchanged.
+  - `src/components/FieldBinding.astro` — prop type tightened to `BuilderEntryRef` (no behavioral change).
+  - `tests/fieldBinding.test.ts` — extended with a new `describe("F4.4 follow-up — entry plumb-through")` block, 4 cases: BuilderWrapper accepts/forwards, LayoutRenderer accepts/forwards, BlockRenderer types via BuilderEntryRef, cross-file consistency probe asserting all four files declare the same shape.
+  - `CHANGELOG.md` — appended F4.4 follow-up bullet at the top of `## Unreleased — 1.0.0 prep`.
+  - `.claude/prd-frontend.md` — new "Entry plumb-through (F4.4 follow-up)" subsection under BuilderWrapper documenting the shape, the inline-vs-shared-module decision, and the host-page integration pattern. Touched the F4.4 "BlockRenderer dispatch" + FieldBinding bullets to point at the new subsection (was "follow-up Agent B PR" → now resolved).
+  - `.claude/coordination/status/agent-b.md` — start + done entries.
+- Tests added: 4 new file-content probes in `tests/fieldBinding.test.ts`. Astro components don't run under vitest natively, so we grep file content for the new prop wiring — same approach the F4.4-impl PR used for its BlockRenderer dispatch probe. The cross-file consistency test prevents drift if someone touches one file's `BuilderEntryRef` declaration without updating the others.
+- Coordination: no `interfaces.md` change. The new `entry` prop on `BuilderWrapper` is a public API extension; fully backwards compatible (optional everywhere) so existing consumers don't have to migrate. Agent C's F4.4-impl already documented `BlockRenderer.astro` as a cross-domain exception in its column; this PR doesn't expand the exception — it just closes the documented "follow-up" called out in F4.4-impl's CHANGELOG bullet.
+- Pipeline: lint + typecheck + 408/408 tests + build all green on first try.
+- Tests: 404 → 408 (+4 net).
+- Anything surprising: nothing. The Astro frontmatter prop-forwarding pattern is straightforward — each file just adds the prop to its `Props` interface, destructures from `Astro.props`, and passes it through to the next component. The only nuance was deciding inline `interface` vs. shared module — chose inline because (a) only four files reference it, (b) the shape is tiny (two optional record fields), and (c) the cross-file consistency test catches drift cheaply. If a 5th consumer ever appears, the lift to a shared module is a 4-line change.
 
 ## 2026-05-10 00:05 · F4.10 done
 
