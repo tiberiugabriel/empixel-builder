@@ -110,14 +110,6 @@ const allCss = [chromeCss, frameCss].filter(Boolean).join("");
 
 const RootTag = ((caption ? "figure" : (linkHref ? "a" : "div")) as astroHTML.JSX.HTMLTag);
 const rootIsLink = RootTag === "a";
-
-// F4.1 — push per-block CSS into the shared layout buffer (LayoutRenderer
-// emits one coalesced <style> per page). Only push when the block actually
-// renders (img source resolved + non-empty CSS).
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (imgSrc && allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
 ---
 
 {imgSrc ? (
@@ -158,3 +150,5 @@ if (imgSrc && allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
     {caption && <figcaption>{caption}</figcaption>}
   </RootTag>
 ) : null}
+
+{imgSrc && allCss && <style set:html={allCss} is:global />}

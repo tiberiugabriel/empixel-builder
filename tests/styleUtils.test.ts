@@ -288,15 +288,29 @@ describe("buildBreakpointCss — F3.6.4 legacy spacing inline-resolve", () => {
   });
 });
 
-// ─── F4.1: CSS coalescing ───────────────────────────────────────────────────
+// ─── F4.1: CSS coalescing helper (currently unused by LayoutRenderer) ──────
 //
-// Pre-F4.1 every block component emitted its own `<style is:global>` at
-// template position; a 30-block page shipped 30+ inline `<style>` tags with
-// each repeating its own `@media` block. `coalesceLayoutCss(strings)` is the
-// merge step LayoutRenderer.astro runs after collecting per-block CSS — it
-// groups identical `@media` queries so each breakpoint opens exactly one
-// `@media` block instead of one per block × per bp.
-describe("coalesceLayoutCss (F4.1)", () => {
+// `coalesceLayoutCss(strings)` was introduced for F4.1 to merge per-block
+// CSS into a single `<style>` per page (groups identical `@media` queries
+// so each breakpoint opens exactly one `@media` block instead of one per
+// block × per bp). The wiring it relied on — collect CSS into
+// `Astro.locals.empixelLayoutCss` from each block frontmatter, drain via a
+// post-iteration IIFE in `LayoutRenderer.astro`'s template — was reverted
+// in 1.0.0's P0 fix because the parent's IIFE evaluated before child
+// frontmatters had pushed their CSS, so the bundled `<style>` came out
+// empty and frontend pages rendered with zero plugin styling. Each block
+// component now emits its own inline `<style is:global>` again (pre-F4.1
+// behavior).
+//
+// `coalesceLayoutCss` stays exported here (and unit-tested below) for a
+// future redo with a reliable mechanism — likely a server-pre-pass walk in
+// `LayoutRenderer.astro`'s own frontmatter that builds CSS for every block
+// before any child renders, OR an upgrade once Astro's component-tree
+// render order is documented. Tests below validate the helper in
+// isolation; the integration test (`end-to-end — a 5-block page emits CSS
+// that produces exactly 1 <style> tag`) describes the *future* shape, not
+// the current LayoutRenderer behavior.
+describe("coalesceLayoutCss (F4.1 helper — currently unused)", () => {
   it("returns empty string for empty input", () => {
     expect(coalesceLayoutCss([])).toBe("");
     expect(coalesceLayoutCss([""])).toBe("");
@@ -401,11 +415,14 @@ describe("coalesceLayoutCss (F4.1)", () => {
     expect(out).not.toContain("@media");
   });
 
-  it("end-to-end — a 5-block page emits CSS that produces exactly 1 <style> tag", () => {
-    // Synthetic mirror of what LayoutRenderer.astro does: collect each
-    // block's CSS string into an array, coalesce, emit ONE <style> wrapper.
-    // Pre-F4.1 each block emitted its own <style is:global>; a 5-block
-    // page shipped 5 tags. Post-F4.1 it ships 1.
+  it("end-to-end — coalesceLayoutCss collapses 5 blocks worth of CSS into a single bundle (helper-level)", () => {
+    // Synthetic exercise of the helper. NOT what `LayoutRenderer.astro`
+    // currently does: 1.0.0 P0 reverted F4.1's collect-then-IIFE-drain
+    // wiring (see the describe block's comment above). Each block component
+    // emits its own inline `<style is:global>` today, so a 5-block page
+    // ships 5 tags. The helper still works as designed, and the test
+    // documents the shape a future redo with a reliable collection
+    // mechanism would converge on.
     const perBlockCss = [
       buildBlockChromeCss({ style: { paddingTop: "8px" }, styleBreakpoints: { "tablet-portrait": { _px: 992, fontSize: "16px" } } }, "B1"),
       buildBlockChromeCss({ style: { color: "red" }, styleBreakpoints: { "tablet-portrait": { _px: 992, fontSize: "14px" } } }, "B2"),

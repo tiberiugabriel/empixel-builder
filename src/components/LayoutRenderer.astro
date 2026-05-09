@@ -2,7 +2,6 @@
 import type { SectionBlock } from "../types.js";
 import BlockRenderer from "./BlockRenderer.astro";
 import SectionContainer from "./SectionContainer.astro";
-import { coalesceLayoutCss } from "./styleUtils.js";
 
 // F4.4 follow-up — host page's resolved entry, threaded down from
 // `BuilderWrapper.astro` and forwarded to every leaf via
@@ -35,42 +34,26 @@ const hasBlocks = sections.length > 0;
 // the plugin's CSS pipeline always has a predictable starting point —
 // regardless of what the host's global styles do.
 //
+// Lives in the LayoutRenderer (the single render-path entry), NOT inside
+// each block component, so we ship one rule per page rather than N copies.
 // Skipped when `sections.length === 0` so empty layouts stay zero-emit.
+//
+// 1.0.0 P0 fix — F4.1 reverted. Pre-F4.1 (v0.7.x – v0.9.x) and post-revert
+// (v1.0.0 P0 fix) behavior: each leaf block component emits its own inline
+// `<style is:global>` again. `coalesceLayoutCss` in `styleUtils.ts` stays
+// exported for a future redo with a reliable mechanism (likely a
+// server-pre-pass walk in this file's own frontmatter that builds CSS for
+// every block before any child renders, OR upgrade once Astro's
+// component-tree-render order is documented). The previous F4.1 mechanism
+// (collect into `Astro.locals.empixelLayoutCss` then drain in a post-
+// iteration IIFE) didn't reliably see child-side pushes because the
+// parent's IIFE evaluated before child frontmatters had pushed their CSS.
 const resetCss =
   "[data-epx-block]{box-sizing:border-box;margin:0;}" +
   "[data-epx-block] *,[data-epx-block] *::before,[data-epx-block] *::after{box-sizing:border-box;}";
-
-// F4.1 — Per-block CSS collection.
-//
-// Pre-F4.1 every leaf block component emitted its own `<style is:global>`
-// at template position; a 30-block page shipped 30+ inline `<style>` tags,
-// each repeating its own `@media (max-width: ...)` block. F4.1 collapses
-// the lot into a single `<style>` per page with grouped `@media` queries.
-//
-// Mechanism: `Astro.locals.empixelLayoutCss` is a shared string array. The
-// LayoutRenderer (this file) initializes it BEFORE rendering any children;
-// each block component pushes its CSS string into the array in its own
-// frontmatter (instead of emitting a `<style>` tag at template position);
-// the LayoutRenderer drains the array AFTER the iteration and emits one
-// coalesced `<style is:global>`.
-//
-// Astro semantics: child component frontmatter executes synchronously when
-// the parent's template encounters the component (via `{sections.map(...)}`).
-// JSX expressions in the parent template are evaluated top-to-bottom, so
-// the `<style>` tag below — placed AFTER the iteration — sees a fully
-// populated array. SSR streaming preserves this ordering.
-//
-// We DON'T `delete Astro.locals.empixelLayoutCss` after — Astro creates a
-// fresh `locals` per request, so the array is naturally request-scoped. The
-// reset CSS (F1.3) is folded into the same coalesced bundle so the page
-// emits exactly one `<style>` rather than reset + bundle.
-type EpxLocals = { empixelLayoutCss?: string[] };
-const epxLocals = Astro.locals as unknown as EpxLocals;
-epxLocals.empixelLayoutCss = [];
-if (hasBlocks) {
-  epxLocals.empixelLayoutCss.push(resetCss);
-}
 ---
+
+{hasBlocks && <style set:html={resetCss} is:global />}
 
 {sections.map((block) => {
   if (block.type === "container") {
@@ -78,9 +61,3 @@ if (hasBlocks) {
   }
   return <BlockRenderer block={block} entry={entry} />;
 })}
-
-{hasBlocks && (() => {
-  const collected = epxLocals.empixelLayoutCss ?? [];
-  const bundle = coalesceLayoutCss(collected);
-  return bundle ? <style set:html={bundle} is:global /> : null;
-})()}

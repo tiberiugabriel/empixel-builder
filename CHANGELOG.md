@@ -8,6 +8,42 @@ SemVer.
 **Phase F4 (Performance & Polish) shipped.** F4.9 (E2E Playwright) deferred to 1.0.x — needs host fixture infra design.
 
 
+- **P0 fix — F4.1 reverted to per-block `<style is:global>` emit.**
+  F4.1's `Astro.locals.empixelLayoutCss` collect-then-IIFE-drain pattern
+  in `LayoutRenderer.astro` didn't reliably see child-side pushes —
+  Astro's JSX evaluation order evaluates the parent's IIFE before child
+  component frontmatters push their CSS, so the bundled `<style>` came
+  out empty and frontend pages rendered builder blocks with zero
+  styling (Novapera retest confirmed). Reverted to the pre-F4.1
+  pattern: each block component (`Text` / `Image` / `Button` / `Icon`
+  / `Video` / `Html` / `DividerSpacer` / `TextEditor` /
+  `SectionContainer` / `FieldBinding`) emits its own inline
+  `<style is:global>` after its JSX root, and `LayoutRenderer.astro`
+  emits the F1.3 reset CSS as its own inline `<style is:global>` (its
+  pre-F4.1 location). `coalesceLayoutCss` helper stays exported in
+  `styleUtils.ts` for future use; F4.1's perf win (1 style tag per
+  page instead of N) is deferred to a redo with a reliable mechanism
+  — likely a server-pre-pass walk in `LayoutRenderer.astro`'s own
+  frontmatter that builds CSS for every block before any child renders,
+  OR an upgrade once Astro's component-tree-render order is documented.
+  Files: `src/components/LayoutRenderer.astro`, `src/components/Text.astro`,
+  `src/components/Image.astro`, `src/components/Button.astro`,
+  `src/components/Icon.astro`, `src/components/Video.astro`,
+  `src/components/Html.astro`, `src/components/DividerSpacer.astro`,
+  `src/components/TextEditor.astro`,
+  `src/components/SectionContainer.astro`,
+  `src/components/FieldBinding.astro`, `tests/fieldBinding.test.ts`
+  (one assertion flipped from `empixelLayoutCss` push to inline
+  `<style set:html={allCss} is:global />` + a negative-guard against
+  re-introducing the buggy pattern), `tests/styleUtils.test.ts`
+  (describe-block comment reframed — the helper stays unit-tested; the
+  `end-to-end` case documents the future shape, not current LayoutRenderer
+  behavior), `CHANGELOG.md`, `.claude/prd-frontend.md`,
+  `.claude/prd-breakpoints.md`,
+  `.claude/coordination/status/agent-b.md`. Tests: 413 → 413
+  (count unchanged; 1 assertion adapted in `fieldBinding.test.ts`).
+  Pipeline: lint + typecheck + 413/413 + build all green.
+
 - **F4.8 — HTML block iframe auto-resize via `postMessage` protocol.**
   Replaces the v0.6 DOM-polling watcher. The iframe runs a tiny inline
   measure script that posts `document.documentElement.scrollHeight` to

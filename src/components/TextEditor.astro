@@ -100,12 +100,6 @@ if (blockId) {
 
 const allCss = [chromeCss, columnsCss, paraCss, dropCapCss, linkColorCss, textEditorBpCss].filter(Boolean).join("");
 
-// F4.1 — push per-block CSS into the shared layout buffer.
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
-
 interface PortableBlock {
   _type?: string;
   style?: string;
@@ -151,4 +145,6 @@ const ptComponents = {
     ? <Renderer value={content} components={ptComponents} />
     : <div style="white-space:pre-wrap;" set:html={fallbackText(content)} />}
 </div>
+
+{allCss && <style set:html={allCss} is:global />}
 

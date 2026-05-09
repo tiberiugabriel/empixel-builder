@@ -77,12 +77,6 @@ const svgWrapperCss = blockId && isSvg && iconColor
 const allCss = [wrapperCss, svgWrapperCss, chromeCss].filter(Boolean).join("");
 
 const Tag = (linkHref ? "a" : "span") as astroHTML.JSX.HTMLTag;
-
-// F4.1 — push per-block CSS into the shared layout buffer.
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
 ---
 
 <div
@@ -111,3 +105,5 @@ if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
     </Tag>
   )}
 </div>
+
+{allCss && <style set:html={allCss} is:global />}

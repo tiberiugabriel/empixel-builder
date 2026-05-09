@@ -154,12 +154,6 @@ const iconImgCss = blockId && iconUrl && isSvgIcon && iconColor
 const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 const allCss = [noDividerWrapperCss, wrapperCss, lineCss, iconImgCss, chromeCss].filter(Boolean).join("");
 
-// F4.1 — push per-block CSS into the shared layout buffer.
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
-
 // Layout matrix (children order):
 //   above  → icon, line                 (vertical wrapper)
 //   below  → line, icon                 (vertical wrapper)
@@ -201,4 +195,6 @@ const iconCenter = renderIcon && iconPos === "center";
     </>
   )}
 </div>
+
+{allCss && <style set:html={allCss} is:global />}
 

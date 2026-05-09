@@ -76,13 +76,6 @@ const cssClasses = advanced?.cssClasses || undefined;
 const config = value as Record<string, unknown>;
 const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
 const allCss = buildBlockChromeCss(config, blockId, { resolveMediaUrl: resolver });
-
-// F4.1 — push per-block CSS into the shared layout buffer; LayoutRenderer
-// drains + coalesces + emits exactly one <style> per page.
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
 ---
 
 <Tag
@@ -91,3 +84,5 @@ if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
   class={cssClasses || undefined}
   {...editProps}
 >{renderedValue}</Tag>
+
+{allCss && <style set:html={allCss} is:global />}

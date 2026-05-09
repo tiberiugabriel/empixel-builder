@@ -76,22 +76,6 @@ const videoChildCss = videoInfo && blockId && layoutStyle
   : "";
 const allCss        = [blockCss, videoChildCss, hoverCss, customCss, breakpointCss, breakpointHoverCss].filter(Boolean).join("");
 
-// F4.1 — push per-block CSS into the shared layout buffer (LayoutRenderer
-// drains + coalesces + emits one <style> per page). HTML5-video controls
-// override (`videoControlsCss` below) is appended to the same payload so
-// every container's CSS contribution is a single bundle.
-const videoControlsCss = videoInfo?.type === "html5" && blockId
-  ? `[data-epx-block="${blockId}"] video::-webkit-media-controls,` +
-    `[data-epx-block="${blockId}"] video::-webkit-media-controls-panel,` +
-    `[data-epx-block="${blockId}"] video::-webkit-media-controls-overlay-play-button,` +
-    `[data-epx-block="${blockId}"] video::-webkit-media-controls-start-playback-button{display:none !important;}`
-  : "";
-const containerCss = [allCss, videoControlsCss].filter(Boolean).join("");
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (containerCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(containerCss);
-}
-
 // Video options — read from style (where serializeBackground stores them)
 const videoPlayOnce    = (style.backgroundVideoPlayOnce    as boolean) ?? false;
 const videoSize        = (style.backgroundVideoSize        as string)  || "cover";
@@ -226,4 +210,16 @@ if (linkCustomAttr) {
       : <BlockRenderer block={child} />
   )}
 </Tag>
+
+{allCss && <style set:html={allCss} is:global />}
+{videoInfo?.type === "html5" && blockId && (
+  <style is:global>{`
+    [data-epx-block="${blockId}"] video::-webkit-media-controls,
+    [data-epx-block="${blockId}"] video::-webkit-media-controls-panel,
+    [data-epx-block="${blockId}"] video::-webkit-media-controls-overlay-play-button,
+    [data-epx-block="${blockId}"] video::-webkit-media-controls-start-playback-button {
+      display: none !important;
+    }
+  `}</style>
+)}
 

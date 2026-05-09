@@ -50,45 +50,71 @@ Every leaf `BlockType` must have an entry here. `container` is rendered by `Sect
 
 Iterates `layout.sections`. Containers go through `SectionContainer.astro` (which handles its own children recursively); leaves go to `BlockRenderer`.
 
-### CSS coalescing — single `<style>` per page (F4.1)
+### CSS emission — per-block inline `<style is:global>` (1.0.0 P0 fix; F4.1 reverted)
 
-Pre-F4.1 every leaf block component emitted its own
-`<style is:global>` at template position; a 30-block page shipped
-30+ inline `<style>` tags, each repeating its own `@media` block.
-F4.1 collapses the lot into **one** coalesced `<style>` per page.
+Each leaf block component (`Text.astro` / `Image.astro` /
+`Button.astro` / `Icon.astro` / `Video.astro` / `Html.astro` /
+`DividerSpacer.astro` / `TextEditor.astro` /
+`SectionContainer.astro` / `FieldBinding.astro`) computes its CSS
+string via `buildBlockChromeCss(config, blockId, opts?)` (and any
+component-specific scoped rules — flex layout, SVG icon mask, video
+controls override, etc.) then emits it inline as
+`{allCss && <style set:html={allCss} is:global />}` after its JSX
+root. A 30-block page ships 30+ inline `<style>` tags. The F1.3
+plugin-scoped reset is emitted by `LayoutRenderer.astro` as its
+own inline `<style is:global>` at the top of the rendered output
+(when `sections.length > 0`).
 
-Mechanism:
-1. `LayoutRenderer.astro` initialises `Astro.locals.empixelLayoutCss = []`
-   in its frontmatter, BEFORE any children render. The plugin-scoped
-   reset (the rule that used to be emitted as its own `<style>` —
-   see "Plugin-scoped reset (F1.3)" below) is the first entry pushed
-   into the array, so it ends up at the very top of the coalesced
-   bundle.
-2. Each block component (`Text.astro` / `Image.astro` /
-   `Button.astro` / `Icon.astro` / `Video.astro` / `Html.astro` /
-   `DividerSpacer.astro` / `TextEditor.astro` /
-   `SectionContainer.astro`) computes its CSS string the same way it
-   used to, but **pushes** the string into
-   `Astro.locals.empixelLayoutCss` in its frontmatter instead of
-   emitting a `<style is:global>` JSX expression at template
-   position. The push is gated on the array being initialised
-   (`Array.isArray(epxLocals.empixelLayoutCss)`) so a block rendered
-   outside a `LayoutRenderer` (test fixture, manual usage) silently
-   degrades — no crash, no duplicate `<style>`, just the missing
-   rule. (This shouldn't happen in practice — the public surface
-   only renders blocks via `LayoutRenderer`.)
-3. After the `{sections.map(...)}` expression returns,
-   `LayoutRenderer` reads `Astro.locals.empixelLayoutCss`, runs it
-   through `coalesceLayoutCss(strings)` (see `styleUtils.ts`), and
-   emits a single `<style is:global>` whose body is the coalesced
-   bundle. Astro semantics: child component frontmatter executes
-   synchronously when the parent template encounters the component,
-   so by the time the parent's later JSX expressions evaluate the
-   array is fully populated. Astro creates a fresh `Astro.locals`
-   per request, so the array is naturally request-scoped — no
-   cleanup needed.
+#### Why not F4.1 (single `<style>` per page) right now
 
-`coalesceLayoutCss(strings)` (in `styleUtils.ts`) is the merge step:
+F4.1 (v1.0.0 first ship) tried to coalesce every block's CSS into
+one `<style>` per page using `Astro.locals.empixelLayoutCss` as a
+shared buffer:
+
+1. `LayoutRenderer.astro` initialised `Astro.locals.empixelLayoutCss = []`
+   in its frontmatter BEFORE rendering any children.
+2. Each block component pushed its CSS string into the array in its
+   own frontmatter instead of emitting a `<style>` tag at template
+   position.
+3. After `{sections.map(...)}`, `LayoutRenderer` drained the array
+   via a post-iteration IIFE, ran `coalesceLayoutCss(strings)`, and
+   emitted a single `<style is:global>`.
+
+The bug: Astro's JSX evaluation order in the parent template
+evaluated the post-iteration IIFE BEFORE child component
+frontmatters had pushed their CSS, so `epxLocals.empixelLayoutCss`
+was empty at drain time and the coalesced `<style>` came out
+empty. Frontend pages rendered builder blocks with zero plugin
+styling. (Novapera retest confirmed.) Reverted in 1.0.0's P0 fix.
+
+#### `coalesceLayoutCss` stays exported for a future redo
+
+The helper itself is correct — its unit tests in
+`tests/styleUtils.test.ts § coalesceLayoutCss` are still green and
+demonstrate the merge semantics. Only the *wiring* (collect-via-locals,
+drain-in-parent-IIFE) was wrong. The helper stays exported in
+`styleUtils.ts` so a future redo can reuse it once a reliable
+collection mechanism exists. Likely candidates:
+- A server-pre-pass walk in `LayoutRenderer.astro`'s own frontmatter
+  that builds CSS for every block in the layout tree before any
+  child renders — moves collection into the parent's frontmatter
+  (which always runs first) instead of the parent's template
+  evaluation. Would require a tree-walking helper that mirrors the
+  type-dispatch in `BlockRenderer.astro`.
+- Or: an upgrade once Astro documents (and freezes) component-tree
+  render order — at that point the locals-buffer pattern can be
+  written deterministically.
+
+**TODO (1.0.x).** F4.1 reverted in 1.0.0 P0 fix because
+`Astro.locals` collect-then-IIFE-drain doesn't see child-side
+pushes reliably (parent JSX evaluation order vs. child frontmatter
+execution). Revisit with a server-pre-pass walk that builds CSS
+for every block in `LayoutRenderer.astro`'s own frontmatter, OR
+upgrade to a stable mechanism when Astro's component-tree-render
+order is documented.
+
+#### `coalesceLayoutCss(strings)` semantics (preserved)
+
 - Concatenates all input strings.
 - Walks the buffer at top-level brace depth — each chunk is either a
   bare rule (`<selector> { … }`) or an `@media (...) { … }` block.
@@ -113,11 +139,6 @@ rules and at most one level of `@media` nesting. Nested at-rules
 regex-driven scan with brace-depth tracking is sufficient — no full
 CSS parser needed (KISS).
 
-**Result.** A 5-block page emits exactly 1 `<style>` tag (was 5+).
-A 30-block page emits exactly 1 `<style>` tag (was 30+). Each
-unique breakpoint opens exactly one `@media` block instead of one
-per block × per bp.
-
 ### Plugin-scoped reset (F1.3)
 
 Before any block-specific CSS, the coalesced bundle starts with a
@@ -134,9 +155,11 @@ margin/padding resets that bleed into plugin blocks (`<figure>`, `<button>`,
 plugin defends itself with its own predictable starting point. The reset
 lives in the layout root — not in each block component — so it ships once
 per rendered page rather than N copies for N blocks. It is **skipped when
-`sections.length === 0`** so empty layouts stay zero-emit. F4.1 folded
-it into the F4.1 coalesced bundle so the reset + every block's CSS ship
-under one `<style>` tag instead of two.
+`sections.length === 0`** so empty layouts stay zero-emit. (F4.1 briefly
+folded it into a coalesced bundle in v1.0.0; the 1.0.0 P0 fix reverted
+F4.1 and the reset is once again emitted as its own inline
+`<style is:global>` at the top of the rendered output — the pre-F4.1
+location.)
 
 ```astro
 ---
@@ -188,17 +211,15 @@ if (fieldKey && entry?.data) {
 const editProps = (fieldKey && entry?.edit && typeof entry.edit[fieldKey] === "object")
   ? entry.edit[fieldKey] : {};
 
-// F4.1 push pattern, same as every other leaf.
+// 1.0.0 P0 fix — inline `<style is:global>` per block (F4.1 reverted).
 const allCss = buildBlockChromeCss(value, blockId, {
   resolveMediaUrl: (key) => resolveMediaUrl(key, { locals: Astro.locals }),
 });
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
 ---
 
 <Tag data-epx-block={blockId} {...editProps}>{renderedValue}</Tag>
+
+{allCss && <style set:html={allCss} is:global />}
 ```
 
 Behavior contract:
@@ -206,7 +227,7 @@ Behavior contract:
 - **Tag whitelist** mirrors the BlockDef's `FIELD_BINDING_TAG_OPTIONS` (`p / h1–h6 / span / div`). A corrupted/legacy `config.as` falls back to `<p>` — anti-XSS.
 - **Bound value resolution** keeps it KISS: only string / number / boolean values render. Object-shaped values (e.g. an image `{ src, alt }`) flatten to `""` rather than `[object Object]`. F4.4 follow-up adds image-binding via `<Image image={...} />` from `emdash/ui`.
 - **Live-edit reattach** — `entry.edit?.[fieldKey]` is a pre-built attribute bag from EmDash (`data-edit-id`, `contenteditable`, etc.). Spreading it onto the rendered tag matches the hand-rolled host template UX (`<h1 {...post.edit.title}>{post.data.title}</h1>`).
-- **CSS pipeline** — uses the F4.1 `Astro.locals.empixelLayoutCss` push pattern (same as every other leaf). Per-block CSS is coalesced into one `<style>` per page by `LayoutRenderer.astro`.
+- **CSS pipeline** — emits its own inline `<style is:global>` after the JSX root (1.0.0 P0 fix; F4.1 reverted). Same shape as every other leaf.
 - **`entry` undefined** — hosts that don't pass `entry` through `<BuilderWrapper entry={...}>` get an empty element. The block doesn't crash and the page still renders. The plumb-through landed in the F4.4 follow-up — see "Entry plumb-through (F4.4 follow-up)" under the BuilderWrapper section below.
 
 ## SectionContainer.astro
@@ -220,7 +241,7 @@ Owns the full container rendering pipeline:
   `spacingMap` / `resolveSpacing` helpers were retired in F3.6.4.
 - Renders flex or grid layout (mode from `value.layout`)
 - Composes block CSS via `wrapBlockCss(buildBlockStyle + layoutStyle, blockId)`
-- Renders hover, breakpoint, breakpoint-hover, and custom CSS in a single `<style is:global>`
+- Emits hover, breakpoint, breakpoint-hover, and custom CSS as one inline `<style is:global>` after the rendered tag (and a second `<style is:global>` for the HTML5-video controls override when applicable). 1.0.0 P0 fix; F4.1 reverted.
 - Renders video backgrounds: HTML5 `<video>`, YouTube iframe, Vimeo iframe (with start/end time, loop, fallback poster)
 - HTML tag from `value.htmlTag` (default `section`); when tag = `a`, applies `linkHref`/`linkTarget`/`linkRel` and parses `linkCustomAttr`
 - Recursively renders children — nested containers re-enter via `<Astro.self>`
@@ -240,26 +261,24 @@ const Tag = ((value.htmlTag || "p") as astroHTML.JSX.HTMLTag);
 const config = value as Record<string, unknown>;
 const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
 const allCss = buildBlockChromeCss(config, blockId, { resolveMediaUrl: resolver });
-
-// F4.1 — push per-block CSS into the shared layout buffer; LayoutRenderer
-// drains, coalesces, and emits exactly one <style> per page.
-const epxLocals = Astro.locals as unknown as { empixelLayoutCss?: string[] };
-if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
-  epxLocals.empixelLayoutCss.push(allCss);
-}
 ---
 
 <Tag data-epx-block={blockId}>{value.content}</Tag>
+
+{allCss && <style set:html={allCss} is:global />}
 ```
 
 ### Props Pattern Rules
 - Leaves take `{ value: ConfigType, blockId?: string }` (not the full `SectionBlock`)
 - Container takes `{ value, children, blockId }`
 - `data-epx-block="<id>"` is the canonical CSS hook on the root element
-- All CSS is **selector-based**, pushed into
-  `Astro.locals.empixelLayoutCss` (F4.1) — `LayoutRenderer.astro` emits one
-  coalesced `<style is:global>` per page. Block components never emit
-  their own `<style>` element. (Pre-F4.1 they did.)
+- All CSS is **selector-based** and emitted as an inline
+  `<style is:global set:html={allCss} />` after the JSX root. 1.0.0 P0
+  fix; F4.1's coalesce-into-one-`<style>` mechanism via
+  `Astro.locals.empixelLayoutCss` was reverted because the parent's
+  drain IIFE evaluated before child frontmatters had pushed their CSS.
+  `coalesceLayoutCss` stays exported in `styleUtils.ts` for a future
+  redo.
 
 ## Nested Rendering
 
@@ -292,7 +311,7 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 | `buildYouTubeEmbedUrl(id, opts)` / `buildVimeoEmbedUrl(id, opts)` | Embed URL construction with autoplay/mute/loop/start/end |
 | `getBlockId(config)` / `getBlockClass(config)` | Reads `advanced.cssId` / `advanced.cssClasses` |
 | `getCustomCss(config, blockId)` | Wraps `advanced.customCss` in `[data-epx-block="<id>"]{…}` |
-| `coalesceLayoutCss(strings)` (F4.1) | Merges per-block CSS strings into one bundle. Groups identical `@media` queries (each breakpoint opens exactly one `@media` block instead of one per block × per bp). Base rules emit first in input order; `@media` blocks emit in first-seen-query order. Whitespace-tolerant on query strings. Powers `LayoutRenderer.astro`'s single-`<style>` emission. |
+| `coalesceLayoutCss(strings)` (F4.1 — currently unused) | Merges per-block CSS strings into one bundle. Groups identical `@media` queries (each breakpoint opens exactly one `@media` block instead of one per block × per bp). Base rules emit first in input order; `@media` blocks emit in first-seen-query order. Whitespace-tolerant on query strings. **Not currently called by `LayoutRenderer.astro`** — the F4.1 wiring was reverted in 1.0.0's P0 fix because the parent's drain IIFE evaluated before child frontmatters had pushed their CSS. The helper stays exported (and unit-tested in `tests/styleUtils.test.ts`) for a future redo with a reliable collection mechanism (likely a server-pre-pass walk in `LayoutRenderer.astro`'s own frontmatter). |
 | `buildBlockChromeCss(config, blockId, opts?)` — memoized (F4.2) | Wraps the underlying chrome builder in an in-process LRU (capacity 500). Cache key fingerprint is `JSON.stringify(config) + "\|" + blockId + "\|" + (opts.imgScoped ? "1" : "0")`. On hit, the cached string is returned and the entry is reinserted at the tail (LRU). The wrap **falls through to the direct call when `opts.resolveMediaUrl` is set** because the resolver is a closure built per-request from `Astro.locals` — structurally-identical configs would still need different resolved URLs, and `JSON.stringify` cannot fingerprint a function. Test-only `_resetBuildBlockChromeCssCache()` / `_buildBlockChromeCssCacheSize()` are exported for unit coverage. |
 
 ### `buildBlockChromeCss` memoization (v0.9.7 — F4.2)
@@ -703,7 +722,7 @@ behavior the F4.4-impl PR shipped.
 
 - All components are **server-rendered** (no client JS, no `client:*` directives) — except a tiny inline `<script>` in `SectionContainer.astro` for HTML5 video start/end time control
 - **Image fields** for the image block are `ImageMediaRef` objects with `storageKey`. URLs are produced by `resolveMediaUrl(key, { locals: Astro.locals })` from [`src/components/media.ts`](../src/components/media.ts) — never hand-built (see "Storage-agnostic media URL resolution (F2.2)" below).
-- **Use `buildBlockChromeCss(config, blockId, opts)`** to compute the per-block CSS string, then **push it into `Astro.locals.empixelLayoutCss`** (F4.1). `LayoutRenderer.astro` emits exactly one `<style is:global>` per page. Block components never emit their own `<style>` element. Inline `style=""` is only for runtime overrides like image `imgStyle`.
+- **Use `buildBlockChromeCss(config, blockId, opts)`** to compute the per-block CSS string, then emit `{allCss && <style set:html={allCss} is:global />}` after the JSX root. 1.0.0 P0 fix; F4.1's coalesce-into-one-`<style>` mechanism was reverted because the parent's drain IIFE evaluated before child frontmatters had pushed their CSS — see "CSS emission — per-block inline `<style is:global>`" above. Inline `style=""` is only for runtime overrides like image `imgStyle`.
 - **Use `data-epx-block` attribute** on root element of each block
 - **No duplicate logic** between admin previews and frontend components
 - **Cache pages** that query layouts (`Astro.cache.set(cacheHint)`)

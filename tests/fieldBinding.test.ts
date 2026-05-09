@@ -264,10 +264,17 @@ describe("F4.4 — BlockRenderer.astro dispatches `field-binding`", () => {
     expect(src).toContain("entry.edit");
     // Tag whitelist guards against `<script>` etc.
     expect(src).toContain("ALLOWED_TAGS");
-    // F4.1 CSS coalescing — pushes per-block CSS into the shared
-    // layout buffer instead of emitting an inline `<style>`.
-    expect(src).toContain("empixelLayoutCss");
+    // 1.0.0 P0 fix — F4.1 was reverted: each block component emits
+    // its own inline `<style is:global>` again. The previous F4.1
+    // collect-then-IIFE-drain pattern via `Astro.locals.empixelLayoutCss`
+    // didn't reliably see child-side pushes, so the bundled style came
+    // out empty and frontend pages rendered with zero plugin CSS.
     expect(src).toContain("buildBlockChromeCss");
+    expect(src).toContain("<style set:html={allCss} is:global />");
+    // The reverted-from F4.1 push pattern must NOT come back without a
+    // redo with a reliable mechanism — guard against accidental
+    // re-adoption.
+    expect(src).not.toContain("empixelLayoutCss");
   });
 });
 
