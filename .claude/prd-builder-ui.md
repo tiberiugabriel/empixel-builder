@@ -61,20 +61,46 @@ Note: **no undo/redo history stack** yet — that is a planned feature.
 | Action | Effect |
 |--------|--------|
 | `LOAD_START` | isLoading = true |
-| `LOAD_SUCCESS` | sections loaded, isDirty = false |
+| `LOAD_SUCCESS` | sections loaded (each node's config backfilled via `getDefaultBlockConfig` — F3.6.2), isDirty = false |
 | `LOAD_ERROR` | error set |
-| `ADD_BLOCK` | append to sections root |
+| `ADD_BLOCK` | append to sections root (config filled via `getDefaultBlockConfig` — F3.6.2) |
 | `UPDATE_BLOCK` | merge config patch into block |
 | `REMOVE_BLOCK` | remove from tree (deselects if selected) |
 | `REORDER` | replace root sections array |
 | `SELECT` | set selectedId |
 | `SAVE_START` / `SAVE_SUCCESS` / `SAVE_ERROR` | isSaving/saveError |
-| `ADD_TO_CONTAINER` | add block into container's children/slot |
+| `ADD_TO_CONTAINER` | add block into container's children/slot (config filled — F3.6.2) |
 | `MOVE_BLOCK` | remove from source, insertAtPath to target |
 | `REORDER_IN_CONTAINER` | reorder within a container/slot |
-| `INSERT_AFTER` | insert block after a given block id |
+| `INSERT_AFTER` | insert block after a given block id (config filled — F3.6.2) |
 | `DUPLICATE_BLOCK` | deep-clone block, insert after original |
 | `PASTE_SETTINGS` | merge clipboard config into target block |
+
+### F3.6.2 — load-time + add-time config fill
+
+Three reducer paths now route every freshly-instantiated block through
+`getDefaultBlockConfig(type)` (exported from `blockDefinitions.ts`):
+
+- **`ADD_BLOCK`** — `action.block.config` is deep-merged over the helper's
+  return value. Action wins on overlap; missing keys (every `STYLE_PROPS`
+  entry, every `EMPTY_ADVANCED_DEFAULTS` key, every top-level placeholder
+  like `styleHover` / `styleBreakpoints`) are backfilled. Builder.tsx
+  and `useDragHandlers.ts` shallow-spread `def.defaultConfig` when
+  building the action — the reducer's fill catches anything that the
+  callers' shallow spread missed (nested `style.*` keys especially).
+- **`ADD_TO_CONTAINER`** + **`INSERT_AFTER`** — same fill semantics so
+  every path that lands a fresh block in state ends up with a full-shape
+  config. Keeps the contract uniform; future code reading
+  `block.config.style.fontSize` never has to handle `undefined`.
+- **`LOAD_SUCCESS`** — recursively walks `action.sections` (descending
+  into `children` and `slots`) and backfills missing keys per node.
+  Existing values are never overwritten. Legacy layouts saved before
+  F3.6.1 / F3.6.2 upgrade transparently the first time the panel reads
+  them — no migration job, just a load-time merge.
+
+The fill is the foundation F3.6.3 builds on: with every key guaranteed
+present, Canvas (`epxStyleString`) and frontend (`buildBlockChromeCss`)
+can drop their defensive `?? ""` checks for style keys.
 
 ## State Lifecycle
 

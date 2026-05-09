@@ -1,4 +1,4 @@
-import type { SectionBlock } from "../../types.js";
+import type { BlockType, SectionBlock } from "../../types.js";
 import {
   updateBlockInTree,
   removeFromTree,
@@ -9,6 +9,54 @@ import {
   reorderInContainer,
   deepCloneBlock,
 } from "../treeUtils.js";
+import { getDefaultBlockConfig } from "../blockDefinitions.js";
+
+// ─── F3.6.2 — full-shape config helpers ──────────────────────────────────────
+//
+// `withDefaults(block)` ensures `block.config` carries every key from
+// `getDefaultBlockConfig(block.type)`, with the existing config winning on
+// every overlap (action wins, defaults backfill missing keys). Used by
+// `ADD_BLOCK` so freshly-instantiated blocks are always full-shape, and
+// recursively by `LOAD_SUCCESS` so legacy layouts that pre-date F3.6.1
+// upgrade transparently the first time the panel reads them.
+//
+// Deep-merge depth: two levels. `style` / `styleHover` / `styleDark` /
+// `advanced` are flat string-valued maps; `styleBreakpoints` /
+// `styleHoverBreakpoints` are `{ [bpId]: { _px, ...keys } }` — when the
+// loaded block already has a populated bp entry we keep it verbatim
+// rather than zero-filling each STYLE_PROPS key per breakpoint (the bp
+// entries are sparse on purpose). Defaults set the floor only.
+function fillBlockDefaults(block: SectionBlock): SectionBlock {
+  const defaults = getDefaultBlockConfig(block.type as BlockType);
+  const existing = block.config ?? {};
+  const merged: Record<string, unknown> = { ...defaults };
+  for (const [key, value] of Object.entries(existing)) {
+    const defVal = (defaults as Record<string, unknown>)[key];
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      defVal !== null &&
+      typeof defVal === "object" &&
+      !Array.isArray(defVal)
+    ) {
+      merged[key] = {
+        ...(defVal as Record<string, unknown>),
+        ...(value as Record<string, unknown>),
+      };
+    } else {
+      merged[key] = value;
+    }
+  }
+  let next: SectionBlock = { ...block, config: merged };
+  if (block.children) {
+    next = { ...next, children: block.children.map(fillBlockDefaults) };
+  }
+  if (block.slots) {
+    next = { ...next, slots: block.slots.map((slot) => slot.map(fillBlockDefaults)) };
+  }
+  return next;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,12 +103,25 @@ export function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "LOAD_START":
       return { ...state, isLoading: true, error: null };
-    case "LOAD_SUCCESS":
-      return { ...state, isLoading: false, sections: action.sections, isDirty: false };
+    case "LOAD_SUCCESS": {
+      // F3.6.2 — backfill missing config keys per node so legacy layouts
+      // that pre-date F3.6.1 upgrade transparently. Existing values are
+      // preserved (defaults win only on missing keys).
+      const filled = action.sections.map(fillBlockDefaults);
+      return { ...state, isLoading: false, sections: filled, isDirty: false };
+    }
     case "LOAD_ERROR":
       return { ...state, isLoading: false, error: action.error };
-    case "ADD_BLOCK":
-      return { ...state, sections: [...state.sections, action.block], selectedId: action.block.id, isDirty: true };
+    case "ADD_BLOCK": {
+      // F3.6.2 — guarantee freshly-added blocks always have full-shape
+      // config. Callers (Builder.tsx, useDragHandlers) shallow-spread
+      // `def.defaultConfig`, which loses nested defaults on legacy
+      // BlockDef updates; centralising the fill here means the reducer
+      // is the single source of truth for "what does a block look like
+      // when it lands in state".
+      const block = fillBlockDefaults(action.block);
+      return { ...state, sections: [...state.sections, block], selectedId: block.id, isDirty: true };
+    }
     case "UPDATE_BLOCK":
       return { ...state, sections: updateBlockInTree(action.id, action.config, state.sections), isDirty: true };
     case "REMOVE_BLOCK":
@@ -81,8 +142,11 @@ export function reducer(state: State, action: Action): State {
     case "SAVE_ERROR":
       return { ...state, isSaving: false, saveError: action.error };
     case "ADD_TO_CONTAINER": {
-      const next = addToContainer(action.containerId, action.slotIndex ?? null, action.block, state.sections);
-      return { ...state, sections: next, selectedId: action.block.id, isDirty: true };
+      // F3.6.2 — same fill semantics as ADD_BLOCK so blocks dropped
+      // into a container land with a full-shape config.
+      const block = fillBlockDefaults(action.block);
+      const next = addToContainer(action.containerId, action.slotIndex ?? null, block, state.sections);
+      return { ...state, sections: next, selectedId: block.id, isDirty: true };
     }
     case "MOVE_BLOCK": {
       const block = findBlockById(action.sourceId, state.sections);
@@ -98,22 +162,26 @@ export function reducer(state: State, action: Action): State {
     case "REORDER_IN_CONTAINER":
       return { ...state, sections: reorderInContainer(action.containerId, action.slotIndex, action.newOrder, state.sections), isDirty: true };
     case "INSERT_AFTER": {
+      // F3.6.2 — fill defaults so blocks inserted via the
+      // INSERT_AFTER path (e.g. context menu duplicate-with-new-id) match
+      // ADD_BLOCK / ADD_TO_CONTAINER semantics.
+      const block = fillBlockDefaults(action.block);
       const path = findPath(action.afterId, state.sections);
       let next: SectionBlock[];
       if (!path) {
-        next = [...state.sections, action.block];
+        next = [...state.sections, block];
       } else if (path.level === "top") {
         next = [...state.sections];
-        next.splice(path.index + 1, 0, action.block);
+        next.splice(path.index + 1, 0, block);
       } else {
-        next = insertAtPath(action.block, {
+        next = insertAtPath(block, {
           level: "container",
           containerId: path.containerId,
           slotIndex: path.slotIndex,
           index: path.index + 1,
         }, state.sections);
       }
-      return { ...state, sections: next, selectedId: action.block.id, isDirty: true };
+      return { ...state, sections: next, selectedId: block.id, isDirty: true };
     }
     case "DUPLICATE_BLOCK": {
       const orig = findBlockById(action.id, state.sections);

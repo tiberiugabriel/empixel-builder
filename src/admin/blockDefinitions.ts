@@ -688,3 +688,86 @@ export function getBlockDef(type: BlockType): BlockDef | undefined {
   if (def.fieldsTab !== undefined) return def;
   return { ...def, fieldsTab: def.fields };
 }
+
+// ─── F3.6.2 — full-shape default config helper ───────────────────────────────
+
+/**
+ * F3.6.2 — base defaults shared by every block. Every BlockDef inherits
+ * these via `getDefaultBlockConfig` / the reducer fill helpers below.
+ * Currently every of the 9 BlockDef instances declares `theme: "light"`
+ * + the empty structural placeholders (`style` / `styleHover` /
+ * `styleDark` / `styleBreakpoints` / `styleHoverBreakpoints` /
+ * `advanced`). Centralising the shape here lets the helper backfill
+ * missing keys on legacy layouts that pre-date F3.6.1 even when the
+ * registered BlockDef has been edited later.
+ *
+ * Two calls to `getDefaultBlockConfig(type)` are guaranteed to return
+ * independent object references — the helper deep-clones via
+ * `structuredClone` (Node 18+ and every supported browser ship it
+ * natively; same gating pattern as `treeUtils.deepCloneBlock`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const BASE_DEFAULTS: Record<string, any> = {
+  theme: "light",
+  style: { ...EMPTY_STYLE_DEFAULTS },
+  styleHover: {},
+  styleDark: {},
+  styleBreakpoints: {},
+  styleHoverBreakpoints: {},
+  advanced: { ...EMPTY_ADVANCED_DEFAULTS },
+};
+
+function deepClone<T>(value: T): T {
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * F3.6.2 — return the canonical default `config` for a block type.
+ *
+ * Returns `{ ...BASE_DEFAULTS, ...def.defaultConfig }` deep-cloned so
+ * the caller can mutate freely. Two calls return independent objects.
+ *
+ * - `BASE_DEFAULTS.style` (every STYLE_PROPS key, `""`) sets the floor
+ *   for `config.style`; the BlockDef's own `defaultConfig.style` is
+ *   then deep-merged on top so design defaults like
+ *   `container.style.paddingTop = "12px"` survive.
+ * - `BASE_DEFAULTS.advanced` (every AdvancedConfig key, `""`) sets the
+ *   floor for `config.advanced`; merged the same way.
+ * - `theme: "light"` is on every block — keeps a single source of
+ *   truth here.
+ *
+ * Unknown block types return a deep-cloned `BASE_DEFAULTS` so callers
+ * never get `undefined`. The reducer's `ADD_BLOCK` and the load-time
+ * fill helper both use the helper, so any block whose `type` doesn't
+ * match a registered BlockDef still ends up with a full-shape config.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getDefaultBlockConfig(type: BlockType): Record<string, any> {
+  const def = BLOCK_DEFINITIONS.find((d) => d.type === type);
+  if (!def) return deepClone(BASE_DEFAULTS);
+  // Deep-merge so nested objects (`style`, `advanced`) get the BASE keys
+  // first, then the BlockDef's own defaults on top — instead of the
+  // BlockDef's nested object replacing BASE_DEFAULTS' nested object.
+  const merged = deepClone(BASE_DEFAULTS);
+  const cloned = deepClone(def.defaultConfig);
+  for (const [key, value] of Object.entries(cloned)) {
+    const baseValue = (merged as Record<string, unknown>)[key];
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      baseValue !== null &&
+      typeof baseValue === "object" &&
+      !Array.isArray(baseValue)
+    ) {
+      (merged as Record<string, unknown>)[key] = {
+        ...(baseValue as Record<string, unknown>),
+        ...(value as Record<string, unknown>),
+      };
+    } else {
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
+}

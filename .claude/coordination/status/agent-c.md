@@ -21,7 +21,53 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
-## 2026-05-09 23:30 · F3.6.1 (defaultConfig full style schema) started
+## 2026-05-10 00:10 · F3.6.2 (getDefaultBlockConfig + load-time fill) started
+
+Branch: `feature/agentC-F3.6.2`. Worktree at latest `main` (`0d9040e`).
+Phase F3.6 round 2. Builds the load-time fill helper on top of F3.6.1.
+
+Planned scope:
+- `src/admin/blockDefinitions.ts` — export `BASE_DEFAULTS`
+  (`{ theme: "light", style: { ...EMPTY_STYLE_DEFAULTS },
+  styleHover: {}, styleDark: {}, styleBreakpoints: {},
+  styleHoverBreakpoints: {}, advanced: { ...EMPTY_ADVANCED_DEFAULTS } }`)
+  + `getDefaultBlockConfig(type)`. Returns
+  `structuredClone({ ...BASE_DEFAULTS, ...def.defaultConfig })` so two
+  calls return independent objects (mutating one doesn't affect the
+  other). Unknown types fall back to `structuredClone(BASE_DEFAULTS)`.
+- `src/admin/builder/builderReducer.ts` — `ADD_BLOCK` deep-merges
+  block.config over `getDefaultBlockConfig(type)` so any partial config
+  the action carries wins, missing keys are backfilled. `LOAD_SUCCESS`
+  walks the section tree (via a local recursive `fillBlockDefaults`
+  helper because `treeUtils.ts` doesn't ship a generic transform pass)
+  and backfills missing keys per node, recursing into `children` and
+  `slots`. Existing values never overwritten.
+- `tests/blockDefinitions.test.ts` — F3.6.2 describe block:
+  `getDefaultBlockConfig("text")` has every STYLE_PROPS key in
+  `style`; deep-clone independence (mutating one return doesn't
+  affect a second call); unknown type returns a sensible empty
+  shape; every block's getDefaultBlockConfig has full top-level
+  shape.
+- `tests/builderReducer.test.ts` — F3.6.2 describe block:
+  ADD_BLOCK fills defaults for each of 9 block types; sparse
+  config wins over defaults (`content: "x"` preserved on
+  `text`); LOAD_SUCCESS sparse-tree backfill (recursive into
+  children + slots); pre-existing design defaults
+  (`container.style.paddingTop = "12px"`) preserved.
+- `CHANGELOG.md` — append F3.6.2 bullet under
+  `## Unreleased — 0.9.6 prep`.
+- `.claude/prd-blocks.md` — paragraph documenting
+  `getDefaultBlockConfig(type)` + `BASE_DEFAULTS` next to F3.6.1.
+- `.claude/prd-builder-ui.md` — paragraph documenting the load-time
+  fill behavior in `ADD_BLOCK` and `LOAD_SUCCESS`.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+No `src/types.ts` proposal — `BlockDef.defaultConfig` is typed
+`Record<string, any>`, the new helper returns the same shape.
+`BaseBlockConfig`'s open-index signature already covers the
+backfilled keys.
+
+
 
 Branch: `feature/agentC-F3.6.1`. Worktree at latest `main` (`8885106`).
 Phase F3.6 entry. Schema-only foundation: every `BlockDef.defaultConfig`
@@ -251,6 +297,108 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-10 00:35 · F3.6.2 (getDefaultBlockConfig + load-time fill) done
+
+Branch: `feature/agentC-F3.6.2`. Single commit (about to land).
+
+**Files changed** (7):
+- `src/admin/blockDefinitions.ts` — two new exports: `BASE_DEFAULTS`
+  (shared shape: `theme: "light"` + the F3.6.1 empty placeholders for
+  `style` / `styleHover` / `styleDark` / `styleBreakpoints` /
+  `styleHoverBreakpoints` / `advanced`) and
+  `getDefaultBlockConfig(type)`. Helper deep-clones via
+  `structuredClone` (with JSON round-trip fallback), then deep-merges
+  the BlockDef's own `defaultConfig` on top of `BASE_DEFAULTS` so
+  nested objects (`style`, `advanced`) keep BASE_DEFAULTS' floor with
+  the BlockDef's design defaults winning per-key (preserves
+  `container.style.paddingTop = "12px"`). Unknown block types receive
+  `structuredClone(BASE_DEFAULTS)` — the helper never returns
+  `undefined`. Two calls return independent object references.
+- `src/admin/builder/builderReducer.ts` — new local
+  `fillBlockDefaults(block)` recursive helper (deep-merges
+  `block.config` over `getDefaultBlockConfig(block.type)`, recurses
+  into `children` + `slots`). Wired into `LOAD_SUCCESS` (walks the
+  loaded tree, backfills missing keys per node), `ADD_BLOCK`,
+  `ADD_TO_CONTAINER`, `INSERT_AFTER` (every path that lands a fresh
+  block in state goes through the fill). Existing values always win;
+  defaults backfill missing keys only.
+- `tests/blockDefinitions.test.ts` — new F3.6.2 describe block (9
+  tests): `BASE_DEFAULTS` shape, full STYLE_PROPS coverage on
+  `getDefaultBlockConfig("text")`, deep-clone independence (mutating
+  one return doesn't affect a second call), full top-level shape on
+  every block, container's design defaults preserved
+  (`paddingTop="12px"`), unknown-type fallback, text-editor scalar
+  defaults preserved, video nested object defaults preserved,
+  divider-spacer divider sub-object preserved, advanced default
+  carries every `EMPTY_ADVANCED_DEFAULTS` key as `""`.
+- `tests/builderReducer.test.ts` — new F3.6.2 describe block (9
+  tests): `ADD_BLOCK` fills STYLE_PROPS keys for each of 9 block
+  types, action wins on overlap (sparse `style.fontSize` preserved),
+  container's design defaults preserved, `LOAD_SUCCESS` backfills at
+  root, recurses into `children` + `slots`, preserves nested values,
+  preserves container's design defaults on legacy layouts,
+  `ADD_TO_CONTAINER` + `INSERT_AFTER` consistency.
+- `CHANGELOG.md` — F3.6.2 bullet appended above F3.6.1 under
+  `## Unreleased — 0.9.6 prep`. Documents new exports, reducer wiring,
+  test deltas (224 → 242, +18 new). `package.json` stays at `0.9.5`.
+- `.claude/prd-blocks.md` — new "`getDefaultBlockConfig(type)` +
+  `BASE_DEFAULTS` (F3.6.2)" subsection inserted between F3.6.1 and
+  StyleSection. Documents the helper signature, the deep-clone
+  contract, the deep-merge approach, the unknown-type fallback, and
+  the reducer wiring.
+- `.claude/prd-builder-ui.md` — Action-types table entries for
+  `LOAD_SUCCESS` / `ADD_BLOCK` / `ADD_TO_CONTAINER` / `INSERT_AFTER`
+  flagged "(config filled — F3.6.2)". New "F3.6.2 — load-time +
+  add-time config fill" subsection beneath the table documents the
+  three paths + the foundation-for-F3.6.3 rationale.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Helper signature** (for the orchestrator's reference):
+```ts
+function getDefaultBlockConfig(type: BlockType): Record<string, any>;
+```
+Returns a deep-cloned object built from
+`structuredClone(BASE_DEFAULTS)` with the BlockDef's nested defaults
+deep-merged on top. `structuredClone` is gated by a runtime check;
+JSON round-trip is the fallback for older runtimes (matches the
+`treeUtils.deepCloneBlock` pattern from F3.5).
+
+**Reducer wiring** (file:line):
+- `LOAD_SUCCESS` fill at `src/admin/builder/builderReducer.ts:110`
+  (`action.sections.map(fillBlockDefaults)`).
+- `ADD_BLOCK` fill at `src/admin/builder/builderReducer.ts:122`.
+- `ADD_TO_CONTAINER` fill at `src/admin/builder/builderReducer.ts:147`.
+- `INSERT_AFTER` fill at `src/admin/builder/builderReducer.ts:168`.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test &&
+npm run build` all green. **242 tests pass** (224 → 242, +18 new
+across `blockDefinitions.test.ts` and `builderReducer.test.ts`).
+
+Pipeline tail:
+```
+> empixel-builder@0.9.5 test
+> vitest run
+ Test Files  14 passed (14)
+      Tests  242 passed (242)
+   Duration  758ms
+
+> empixel-builder@0.9.5 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+**No `src/types.ts` proposal**: `BlockDef.defaultConfig` is typed
+`Record<string, any>` and the new helper returns the same shape.
+`BaseBlockConfig`'s open-index signature already covers the
+backfilled keys.
+
+**Surprises / blockers**: none. `Builder.tsx` and `useDragHandlers.ts`
+both still shallow-spread `def.defaultConfig` when crafting the
+action; centralising the fill in the reducer means F3.6.3 / .4 / .5
+don't have to touch every caller. The test suite stays green without
+adjustments to existing tests because the fill contract is
+"defaults backfill missing keys; existing values always win"
+(idempotent re-fill).
 
 ## 2026-05-09 23:55 · F3.6.1 (defaultConfig full style schema) done
 

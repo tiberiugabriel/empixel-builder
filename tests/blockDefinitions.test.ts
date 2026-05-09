@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
+import type { BlockType } from "../src/types.js";
 import {
+  BASE_DEFAULTS,
   BLOCK_DEFINITIONS,
   EMPTY_ADVANCED_DEFAULTS,
   EMPTY_STYLE_DEFAULTS,
   getBlockDef,
+  getDefaultBlockConfig,
   type BlockDef,
   type StyleSection,
   type SectionRenderProps,
@@ -325,6 +328,166 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
           `block "${def.type}" style.${key} should be "${expected}" (F3.6.1 invents no values)`,
         ).toBe(expected);
       }
+    }
+  });
+});
+
+// ─── F3.6.2 — getDefaultBlockConfig + BASE_DEFAULTS ─────────────────────────
+
+describe("F3.6.2 — getDefaultBlockConfig", () => {
+  // STYLE_PROPS keys mirror the F3.6.1 contract — replicated here as a
+  // separate snapshot so this test doesn't reach into the F3.6.1 block
+  // for its own variable.
+  const STYLE_PROPS_SNAPSHOT = [
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
+    "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight",
+    "borderTopLeftRadius", "borderTopRightRadius",
+    "borderBottomRightRadius", "borderBottomLeftRadius",
+    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+    "overflowX", "overflowY",
+    "textAlign",
+    "fontFamily", "fontSize", "fontWeight",
+    "textTransform", "fontStyle", "textDecoration",
+    "lineHeight", "letterSpacing", "wordSpacing",
+    "mixBlendMode",
+    "aspectRatio",
+    "filter",
+  ] as const;
+
+  it("BASE_DEFAULTS carries the shared shape — theme + style + advanced + bp maps", () => {
+    expect(BASE_DEFAULTS).toHaveProperty("theme", "light");
+    expect(BASE_DEFAULTS).toHaveProperty("style");
+    expect(BASE_DEFAULTS).toHaveProperty("styleHover");
+    expect(BASE_DEFAULTS).toHaveProperty("styleDark");
+    expect(BASE_DEFAULTS).toHaveProperty("styleBreakpoints");
+    expect(BASE_DEFAULTS).toHaveProperty("styleHoverBreakpoints");
+    expect(BASE_DEFAULTS).toHaveProperty("advanced");
+  });
+
+  it("getDefaultBlockConfig(\"text\") has every STYLE_PROPS key in style + content default", () => {
+    const cfg = getDefaultBlockConfig("text");
+    const style = cfg.style as Record<string, unknown>;
+    for (const key of STYLE_PROPS_SNAPSHOT) {
+      expect(style, `text default style is missing key "${key}"`).toHaveProperty(key);
+    }
+    // Block-specific default survives
+    expect(cfg).toHaveProperty("content", "");
+    expect(cfg).toHaveProperty("theme", "light");
+  });
+
+  it("returns a deep-cloned object on every call (no shared references)", () => {
+    const a = getDefaultBlockConfig("text");
+    const b = getDefaultBlockConfig("text");
+    expect(a).not.toBe(b);
+    expect(a.style).not.toBe(b.style);
+    expect(a.advanced).not.toBe(b.advanced);
+    // Mutating one MUST NOT affect the other — proves deep clone.
+    (a.style as Record<string, string>).fontSize = "20px";
+    expect((b.style as Record<string, string>).fontSize).toBe("");
+  });
+
+  it("every block's getDefaultBlockConfig has the full top-level shape", () => {
+    const types: BlockType[] = [
+      "text",
+      "image",
+      "text-editor",
+      "video",
+      "button",
+      "icon",
+      "html",
+      "divider-spacer",
+      "container",
+    ];
+    for (const type of types) {
+      const cfg = getDefaultBlockConfig(type);
+      expect(cfg, `${type} missing style`).toHaveProperty("style");
+      expect(cfg, `${type} missing styleHover`).toHaveProperty("styleHover");
+      expect(cfg, `${type} missing styleDark`).toHaveProperty("styleDark");
+      expect(cfg, `${type} missing styleBreakpoints`).toHaveProperty("styleBreakpoints");
+      expect(cfg, `${type} missing styleHoverBreakpoints`).toHaveProperty(
+        "styleHoverBreakpoints",
+      );
+      expect(cfg, `${type} missing advanced`).toHaveProperty("advanced");
+      expect(cfg, `${type} missing theme`).toHaveProperty("theme");
+      // Every STYLE_PROPS key present on every block's style default.
+      const style = cfg.style as Record<string, unknown>;
+      for (const key of STYLE_PROPS_SNAPSHOT) {
+        expect(
+          style,
+          `${type} default style is missing STYLE_PROPS key "${key}"`,
+        ).toHaveProperty(key);
+      }
+    }
+  });
+
+  it("preserves pre-existing design defaults (container.style.paddingTop = \"12px\")", () => {
+    const cfg = getDefaultBlockConfig("container");
+    const style = cfg.style as Record<string, string>;
+    expect(style.paddingTop).toBe("12px");
+    expect(style.paddingRight).toBe("12px");
+    expect(style.paddingBottom).toBe("12px");
+    expect(style.paddingLeft).toBe("12px");
+    // F3.6.1 also keeps `columnGap` / `rowGap` — those aren't in
+    // STYLE_PROPS but live alongside.
+    expect(style.columnGap).toBe("6px");
+    expect(style.rowGap).toBe("6px");
+    // STYLE_PROPS keys without design defaults stay "".
+    expect(style.fontSize).toBe("");
+    expect(style.borderTopWidth).toBe("");
+  });
+
+  it("returns a sensible empty default for unknown block types", () => {
+    // Cast to bypass the union — runtime callers (e.g. a layout loaded
+    // from disk with a deprecated block.type) DO hit this branch.
+    const cfg = getDefaultBlockConfig("not-a-real-block" as BlockType);
+    expect(cfg).toHaveProperty("theme", "light");
+    expect(cfg).toHaveProperty("style");
+    expect(cfg).toHaveProperty("advanced");
+    const style = cfg.style as Record<string, unknown>;
+    for (const key of STYLE_PROPS_SNAPSHOT) {
+      expect(style, `unknown-type style missing "${key}"`).toHaveProperty(key);
+    }
+  });
+
+  it("text-editor preserves block-specific scalar defaults (columns / dropCap)", () => {
+    const cfg = getDefaultBlockConfig("text-editor");
+    expect(cfg).toHaveProperty("columns", "1");
+    expect(cfg).toHaveProperty("columnsGap", "0px");
+    expect(cfg).toHaveProperty("dropCap", false);
+  });
+
+  it("video preserves nested object defaults (video.{src,autoplay,...} + aspectRatio)", () => {
+    const cfg = getDefaultBlockConfig("video");
+    expect(cfg).toHaveProperty("aspectRatio", "16:9");
+    expect(cfg.video).toBeDefined();
+    expect(cfg.video).toMatchObject({
+      src: "url",
+      autoplay: false,
+      mute: true,
+      controls: true,
+      lazyLoad: true,
+    });
+  });
+
+  it("divider-spacer preserves the divider sub-object", () => {
+    const cfg = getDefaultBlockConfig("divider-spacer");
+    expect(cfg).toHaveProperty("space", "48px");
+    expect(cfg.divider).toBeDefined();
+    expect(cfg.divider).toMatchObject({
+      style: "none",
+      width: "1px",
+      length: "100%",
+      align: "center",
+    });
+  });
+
+  it("advanced default carries every EMPTY_ADVANCED_DEFAULTS key as \"\"", () => {
+    const cfg = getDefaultBlockConfig("text");
+    const adv = cfg.advanced as Record<string, string>;
+    for (const key of Object.keys(EMPTY_ADVANCED_DEFAULTS)) {
+      expect(adv, `advanced default missing "${key}"`).toHaveProperty(key);
+      expect(adv[key]).toBe("");
     }
   });
 });

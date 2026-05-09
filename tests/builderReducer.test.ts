@@ -50,6 +50,201 @@ describe("ADD_BLOCK", () => {
   });
 });
 
+// ─── F3.6.2 — ADD_BLOCK fills defaults; LOAD_SUCCESS backfills ──────────────
+
+describe("F3.6.2 — full-shape config fill", () => {
+  // STYLE_PROPS keys mirror the F3.6.1 contract — replicated locally so
+  // this test file doesn't reach into blockDefinitions for the array.
+  const STYLE_PROPS_SNAPSHOT = [
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
+    "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight",
+    "borderTopLeftRadius", "borderTopRightRadius",
+    "borderBottomRightRadius", "borderBottomLeftRadius",
+    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+    "overflowX", "overflowY",
+    "textAlign",
+    "fontFamily", "fontSize", "fontWeight",
+    "textTransform", "fontStyle", "textDecoration",
+    "lineHeight", "letterSpacing", "wordSpacing",
+    "mixBlendMode",
+    "aspectRatio",
+    "filter",
+  ] as const;
+
+  const TYPES = [
+    "text",
+    "image",
+    "text-editor",
+    "video",
+    "button",
+    "icon",
+    "html",
+    "divider-spacer",
+    "container",
+  ] as const;
+
+  it("ADD_BLOCK fills STYLE_PROPS keys for each of the 9 block types", () => {
+    for (const type of TYPES) {
+      const block: SectionBlock = { id: `b-${type}`, type, config: {} };
+      const next = reducer(withSections([]), { type: "ADD_BLOCK", block });
+      expect(next.sections).toHaveLength(1);
+      const placed = next.sections[0];
+      const style = (placed.config.style ?? {}) as Record<string, unknown>;
+      for (const key of STYLE_PROPS_SNAPSHOT) {
+        expect(
+          style,
+          `block "${type}" placed via ADD_BLOCK missing STYLE_PROPS key "${key}"`,
+        ).toHaveProperty(key);
+      }
+      // Top-level shape — every block now carries the full structure.
+      expect(placed.config).toHaveProperty("styleHover");
+      expect(placed.config).toHaveProperty("styleDark");
+      expect(placed.config).toHaveProperty("styleBreakpoints");
+      expect(placed.config).toHaveProperty("styleHoverBreakpoints");
+      expect(placed.config).toHaveProperty("advanced");
+      expect(placed.config).toHaveProperty("theme", "light");
+    }
+  });
+
+  it("ADD_BLOCK preserves caller-supplied config values (action wins on overlap)", () => {
+    const block: SectionBlock = {
+      id: "t1",
+      type: "text",
+      config: { content: "hello", style: { fontSize: "20px" } },
+    };
+    const next = reducer(withSections([]), { type: "ADD_BLOCK", block });
+    const placed = next.sections[0];
+    // Action's explicit values survive
+    expect(placed.config.content).toBe("hello");
+    expect((placed.config.style as Record<string, string>).fontSize).toBe("20px");
+    // Defaults backfill the unset STYLE_PROPS keys
+    expect((placed.config.style as Record<string, string>).paddingTop).toBe("");
+    // Top-level keys backfilled from defaults
+    expect(placed.config).toHaveProperty("styleHover");
+    expect(placed.config).toHaveProperty("advanced");
+  });
+
+  it("ADD_BLOCK preserves pre-existing design defaults (container padding)", () => {
+    const block: SectionBlock = { id: "c1", type: "container", config: {} };
+    const next = reducer(withSections([]), { type: "ADD_BLOCK", block });
+    const placed = next.sections[0];
+    const style = placed.config.style as Record<string, string>;
+    expect(style.paddingTop).toBe("12px");
+    expect(style.paddingRight).toBe("12px");
+    expect(style.paddingBottom).toBe("12px");
+    expect(style.paddingLeft).toBe("12px");
+    expect(style.fontSize).toBe(""); // backfilled empty
+  });
+
+  it("LOAD_SUCCESS backfills missing keys on a sparse layout (root level)", () => {
+    const sparse: SectionBlock = {
+      id: "t1",
+      type: "text",
+      config: { content: "x" },
+    };
+    const next = reducer(initialState, { type: "LOAD_SUCCESS", sections: [sparse] });
+    const filled = next.sections[0];
+    // Sparse value preserved
+    expect(filled.config.content).toBe("x");
+    // Backfilled top-level shape
+    expect(filled.config).toHaveProperty("style");
+    expect(filled.config).toHaveProperty("advanced");
+    // Backfilled STYLE_PROPS
+    const style = filled.config.style as Record<string, unknown>;
+    for (const key of STYLE_PROPS_SNAPSHOT) {
+      expect(style).toHaveProperty(key);
+    }
+  });
+
+  it("LOAD_SUCCESS recurses into children + slots", () => {
+    const sparseLeaf: SectionBlock = {
+      id: "leaf",
+      type: "text",
+      config: { content: "child" },
+    };
+    const sparseSlotLeaf: SectionBlock = {
+      id: "slot-leaf",
+      type: "image",
+      config: {},
+    };
+    const sparseContainer: SectionBlock = {
+      id: "c1",
+      type: "container",
+      config: {},
+      children: [sparseLeaf],
+      slots: [[sparseSlotLeaf]],
+    };
+    const next = reducer(initialState, {
+      type: "LOAD_SUCCESS",
+      sections: [sparseContainer],
+    });
+    const c = next.sections[0];
+    expect(c.config).toHaveProperty("style");
+    // Child filled
+    const child = c.children![0];
+    expect(child.config).toHaveProperty("style");
+    expect(child.config).toHaveProperty("advanced");
+    expect(child.config.content).toBe("child"); // preserved
+    // Slot leaf filled
+    const slotLeaf = c.slots![0][0];
+    expect(slotLeaf.config).toHaveProperty("style");
+    expect(slotLeaf.config).toHaveProperty("advanced");
+  });
+
+  it("LOAD_SUCCESS preserves existing nested values (sparse style.fontSize survives)", () => {
+    const sparse: SectionBlock = {
+      id: "t1",
+      type: "text",
+      config: { style: { fontSize: "18px" } },
+    };
+    const next = reducer(initialState, { type: "LOAD_SUCCESS", sections: [sparse] });
+    const filled = next.sections[0];
+    const style = filled.config.style as Record<string, string>;
+    expect(style.fontSize).toBe("18px"); // preserved
+    expect(style.paddingTop).toBe(""); // backfilled
+    expect(style.borderTopWidth).toBe(""); // backfilled
+  });
+
+  it("LOAD_SUCCESS preserves container's pre-existing design defaults when sparse", () => {
+    // A legacy container saved with no `style` at all should still
+    // carry the design defaults (paddingTop="12px") after backfill.
+    const legacyContainer: SectionBlock = {
+      id: "c1",
+      type: "container",
+      config: {},
+    };
+    const next = reducer(initialState, {
+      type: "LOAD_SUCCESS",
+      sections: [legacyContainer],
+    });
+    const filled = next.sections[0];
+    const style = filled.config.style as Record<string, string>;
+    expect(style.paddingTop).toBe("12px");
+    expect(style.fontSize).toBe(""); // STYLE_PROPS empty key
+  });
+
+  it("ADD_TO_CONTAINER + INSERT_AFTER also fill defaults (consistent with ADD_BLOCK)", () => {
+    // Pre-fill state with a container so ADD_TO_CONTAINER has somewhere
+    // to land. The container's existing config also needs to be a
+    // BlockDef shape; we use plain `container("c1")` because the test
+    // uses unmodified `state.sections` (no state.sections fill).
+    const start = withSections([container("c1")]);
+    const sparse: SectionBlock = { id: "x", type: "text", config: { content: "x" } };
+    const a = reducer(start, { type: "ADD_TO_CONTAINER", containerId: "c1", block: sparse });
+    const placed = a.sections[0].children![0];
+    expect(placed.config).toHaveProperty("style");
+    expect(placed.config.content).toBe("x");
+
+    // INSERT_AFTER on the just-placed leaf
+    const sparse2: SectionBlock = { id: "y", type: "image", config: {} };
+    const b = reducer(a, { type: "INSERT_AFTER", afterId: placed.id, block: sparse2 });
+    const inserted = b.sections[0].children![1];
+    expect(inserted.config).toHaveProperty("style");
+    expect(inserted.config).toHaveProperty("advanced");
+  });
+});
+
 describe("UPDATE_BLOCK", () => {
   it("merges config patch and marks dirty", () => {
     const start = withSections([{ id: "a", type: "text", config: { content: "hi" } }]);

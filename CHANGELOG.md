@@ -5,6 +5,53 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
+- **F3.6.2 — `getDefaultBlockConfig(type)` helper exported from
+  `blockDefinitions.ts`. `ADD_BLOCK` + `LOAD_SUCCESS` (plus
+  `ADD_TO_CONTAINER` and `INSERT_AFTER` for consistency) fill missing
+  keys at mount, not at render. Old layouts upgraded transparently;
+  Canvas / RightPanel / frontend no longer need defensive `?? ""`
+  checks for style keys (F3.6.3 builds CSS unification on top).** New
+  exports:
+  - `BASE_DEFAULTS` — shared shape every block inherits
+    (`theme: "light"` plus the F3.6.1 empty structural placeholders
+    `style` / `styleHover` / `styleDark` / `styleBreakpoints` /
+    `styleHoverBreakpoints` / `advanced`). Centralises the contract so
+    legacy layouts that pre-date the F3.6.1 BlockDef edits still
+    backfill correctly.
+  - `getDefaultBlockConfig(type: BlockType)` — returns
+    `structuredClone({ ...BASE_DEFAULTS, ...def.defaultConfig })` with
+    nested objects (`style`, `advanced`) deep-merged so design defaults
+    like `container.style.paddingTop = "12px"` survive on top of the
+    `EMPTY_STYLE_DEFAULTS` floor. Two calls return independent objects
+    (mutating one doesn't affect the other). Unknown block types fall
+    back to a deep-cloned `BASE_DEFAULTS` so callers never get
+    `undefined`.
+  - Reducer: `ADD_BLOCK` (+ `ADD_TO_CONTAINER` + `INSERT_AFTER`)
+    deep-merges the action's `block.config` over
+    `getDefaultBlockConfig(block.type)` so freshly-instantiated blocks
+    are always full-shape and the action's explicit values win on
+    overlap. `LOAD_SUCCESS` walks the section tree (recursing into
+    `children` and `slots`) and backfills missing keys per node;
+    existing values are never overwritten.
+  - Tests: `tests/blockDefinitions.test.ts` adds an F3.6.2 describe
+    block (9 tests) — `BASE_DEFAULTS` shape, full STYLE_PROPS coverage
+    on every `getDefaultBlockConfig`, deep-clone independence,
+    pre-existing design defaults preserved, unknown-type fallback,
+    block-specific scalar/nested defaults survive, advanced defaults
+    are all `""`. `tests/builderReducer.test.ts` adds an F3.6.2
+    describe block (9 tests) — ADD_BLOCK fills defaults for each of
+    the 9 block types, action-wins-on-overlap, design defaults
+    preserved, LOAD_SUCCESS backfills sparse layouts (root +
+    children + slots), nested values preserved, ADD_TO_CONTAINER +
+    INSERT_AFTER consistency. Total 224 → 242 (+18 new).
+  - Files: `src/admin/blockDefinitions.ts`,
+    `src/admin/builder/builderReducer.ts`,
+    `tests/blockDefinitions.test.ts`,
+    `tests/builderReducer.test.ts`,
+    `.claude/prd-blocks.md`, `.claude/prd-builder-ui.md`.
+    `package.json` stays at `0.9.5` — F3.6 phase will bump to 0.9.6 at
+    phase close.
+
 - **F3.6.1 — every `BlockDef.defaultConfig` now declares the full
   style/styleHover/styleDark/styleBreakpoints/styleHoverBreakpoints/advanced
   structure (empty values).** No design values invented — user

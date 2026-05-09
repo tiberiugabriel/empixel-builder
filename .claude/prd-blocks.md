@@ -109,6 +109,40 @@ in BOTH `EMPTY_STYLE_DEFAULTS` (in `blockDefinitions.ts`) and the
 `STYLE_PROPS_SNAPSHOT` array in `tests/blockDefinitions.test.ts`. The
 test asserts both lists agree and will fail loudly until they do.
 
+### `getDefaultBlockConfig(type)` + `BASE_DEFAULTS` (F3.6.2)
+
+F3.6.2 builds the **load-time fill helper** on top of the F3.6.1 schema. Two new exports from `src/admin/blockDefinitions.ts`:
+
+- **`BASE_DEFAULTS`** — shared shape inherited by every block. Contains `theme: "light"` plus the F3.6.1 empty structural placeholders (`style: { ...EMPTY_STYLE_DEFAULTS }`, `styleHover: {}`, `styleDark: {}`, `styleBreakpoints: {}`, `styleHoverBreakpoints: {}`, `advanced: { ...EMPTY_ADVANCED_DEFAULTS }`). Centralises the contract so legacy layouts saved before the F3.6.1 BlockDef edits still backfill correctly.
+- **`getDefaultBlockConfig(type: BlockType)`** — pure function returning a deep-cloned full-shape config. Internally:
+
+  ```ts
+  // Pseudocode — see blockDefinitions.ts for the implementation.
+  function getDefaultBlockConfig(type) {
+    const def = BLOCK_DEFINITIONS.find(d => d.type === type);
+    if (!def) return structuredClone(BASE_DEFAULTS);     // unknown type
+    const merged = structuredClone(BASE_DEFAULTS);
+    for (const [key, value] of Object.entries(structuredClone(def.defaultConfig))) {
+      if (isPlainObject(value) && isPlainObject(merged[key])) {
+        merged[key] = { ...merged[key], ...value };       // deep-merge nested
+      } else {
+        merged[key] = value;                              // BlockDef overrides
+      }
+    }
+    return merged;
+  }
+  ```
+
+  Two calls return **independent object references** — `structuredClone` (or a JSON round-trip on older runtimes) deep-copies every level, so mutating `a.style.fontSize` doesn't bleed into a second call's return. The reducer fills its way through this helper at every mount path so callers never share a structure with the source BlockDef.
+
+Pre-existing design defaults survive intact: `container.style.paddingTop = "12px"` (and the rest of the padding/gap group) is preserved because the BlockDef's nested `style` object is deep-merged on top of `EMPTY_STYLE_DEFAULTS`, not assigned on top of it. Unknown block types receive a deep-cloned `BASE_DEFAULTS` so the helper never returns `undefined`.
+
+Wired into the reducer in F3.6.2:
+- **`ADD_BLOCK`** — deep-merges `action.block.config` over `getDefaultBlockConfig(block.type)`. Action's explicit values win on overlap; missing keys are backfilled. Same fill applies to `ADD_TO_CONTAINER` and `INSERT_AFTER` so any path that lands a fresh block in state goes through the same pipeline. Builder.tsx and `useDragHandlers.ts` shallow-spread `def.defaultConfig` when crafting the action — the reducer's fill is the safety net.
+- **`LOAD_SUCCESS`** — walks the loaded section tree (recursing into `children` and `slots`) and backfills missing keys per node. Existing values are never overwritten. Old layouts saved before F3.6.1 / F3.6.2 upgrade transparently the first time the panel reads them.
+
+The helper is the foundation F3.6.3 builds on — Canvas (`epxStyleString`) and frontend (`buildBlockChromeCss`) can drop their defensive `?? ""` checks for style keys because every key is guaranteed present.
+
 ### StyleSection (declarative Style tab — F3.5.1)
 
 Replaces the ~9 imperative `block.type === "..."` branches in `RightPanel.tsx`. Each entry maps to one section the panel knows how to render. F3.5.1 introduces the type only — F3.5.2 populates `styleTab` per block, F3.5.3 + F3.5.4 land the `SectionRenderer` / `TabRenderer`, F3.5.6 deletes the imperative branches.
