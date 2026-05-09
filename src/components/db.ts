@@ -7,6 +7,10 @@ import { getDb as getSharedDb } from "../dbShared.js";
 // here is unlikely (host caller), but the cost is one regex test per load.
 const COLLECTION_RE = /^[a-z0-9_]+$/;
 
+// EmDash ULIDs — 26-char Crockford base32. Used to short-circuit the slug
+// → ULID resolution when the host already passed a canonical id.
+const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
 export function getBuilderLayout(collection: string, entryId: string, enabled?: boolean): SectionBlock[] | null {
   if (enabled === false) return null;
   if (!COLLECTION_RE.test(collection)) return null;
@@ -18,31 +22,20 @@ export function getBuilderLayout(collection: string, entryId: string, enabled?: 
     // overrode it at plugin construction time.
     const db = getSharedDb();
 
-    // Attempt 1: Direct lookup (could be ULID or slug depending on what was passed)
-    let row = db
-      .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-      .get(collection, entryId) as { sections: string; enabled: number } | undefined;
-
-    // Attempt 2: If not found, try to resolve to the other ID type
-    if (!row) {
-      if (entryId.startsWith("01")) {
-        // It's a ULID, maybe the layout was saved with a slug?
-        const slugRow = db.prepare(`SELECT slug FROM ec_${collection} WHERE id = ?`).get(entryId) as { slug: string } | undefined;
-        if (slugRow && slugRow.slug) {
-          row = db
-            .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-            .get(collection, slugRow.slug) as { sections: string; enabled: number } | undefined;
-        }
-      } else {
-        // It's a slug, maybe the layout was saved with a ULID?
-        const idRow = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(entryId) as { id: string } | undefined;
-        if (idRow && idRow.id) {
-          row = db
-            .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-            .get(collection, idRow.id) as { sections: string; enabled: number } | undefined;
-        }
-      }
+    // Resolve slug → ULID up front when the caller passed a slug. Layouts on
+    // disk are ULID-keyed (after `runSlugToUlidMigration_v1`), so a single
+    // direct query is enough — the previous slug↔ULID fallback chain is gone.
+    let lookupId = entryId;
+    if (!ULID_RE.test(entryId)) {
+      const idRow = db
+        .prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`)
+        .get(entryId) as { id: string } | undefined;
+      if (idRow && idRow.id) lookupId = idRow.id;
     }
+
+    const row = db
+      .prepare("SELECT sections, enabled FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+      .get(collection, lookupId) as { sections: string; enabled: number } | undefined;
 
     if (!row || !row.enabled) return null;
     const parsed = JSON.parse(row.sections) as SectionBlock[];

@@ -5,6 +5,21 @@ SemVer.
 
 ## 0.8.0 — 2026-05-09
 
+- One-shot slug → ULID migration on cold start (KV flag
+  `migration_slug_to_ulid_v1` in `empixel_builder_meta`). Pre-0.8 routes
+  accepted both keys and the read paths walked a slug↔ULID fallback
+  chain on every request; the migration rewrites every slug-keyed
+  `empixel_builder_layouts` row to its canonical ULID by joining on
+  `ec_<collection>.slug`. Conflicts (both keys present) resolve in
+  favour of the row with the newer `updated_at`; ULID wins on ties.
+  Unresolvable slug rows are LEFT IN PLACE and logged — manual recovery
+  via re-save under the new slug. Wrapped in a transaction; idempotent
+  (the flag is set on completion). Plugin routes (`/layout` GET+POST,
+  `/toggle`) and the frontend reader (`components/db.ts`
+  `getBuilderLayout`) drop the multi-query fallback chain — layouts now
+  resolve by ULID directly. The route-level slug → ULID resolution is
+  retained for the fresh-entry case (host CMS hands us a slug for an
+  entry that has never been saved through the builder).
 - Plugin now auto-adds the `empixel_builder INTEGER NOT NULL DEFAULT 0`
   column to `ec_<collection>` on the first `POST /settings` enable (and
   the first `POST /toggle` for collections that skip the collection-level

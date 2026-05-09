@@ -21,6 +21,8 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 14:05 · F2.3 started
+
 ## 2026-05-09 13:30 · F2.1 started
 
 ## 2026-05-09 13:21 · F1.5 started
@@ -34,6 +36,20 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 *(empty)*
 
 ## Done
+
+## 2026-05-09 14:08 · F2.3 done
+- New `runSlugToUlidMigration_v1(db: SqliteDb): void` exported from `src/plugin.ts` and invoked at cold start inside `getDb()` immediately after `runSpacerMigration` (file `src/plugin.ts:142`). Mirrors the existing migration pattern: KV-flag-guarded one-shot via `empixel_builder_meta.migration_slug_to_ulid_v1`, idempotent (re-running after success is a no-op), wrapped in a single `BEGIN ... COMMIT` so a partial failure rolls back.
+- Algorithm: SELECT `(collection, entry_id, updated_at)` from `empixel_builder_layouts`, filter to rows whose `entry_id` doesn't match the ULID regex `/^[0-9A-HJKMNP-TV-Z]{26}$/`, resolve each via `SELECT id FROM ec_<collection> WHERE slug = ?` (cached by `(collection, slug)` so duplicate slugs across collections only hit the host table once), then either `UPDATE` to rename the slug → ULID or, on conflict (canonical ULID row already exists), pick the winner by `updated_at` (newer wins; ties → ULID-keyed row) and `DELETE` the loser. Unresolvable rows are LEFT IN PLACE and logged via `logCaught(null, ...)`. Flag is written even when there are zero candidates so the migration doesn't keep re-running.
+- New `isUlid(value)` + `ULID_RE` helper at the top of `src/plugin.ts`. Replaces the legacy `pageId.startsWith("01")` heuristic in all three remaining route-boundary slug→ULID resolution sites (`/layout` GET + POST, `/toggle`). Tighter check avoids treating slugs that happen to start with "01" as ULIDs (e.g. `01-introduction`).
+- Dropped the multi-query fallback chain:
+  - `src/plugin.ts` `GET /layout`: removed the second SELECT against the `originalSlug` and the ULID→slug pre-lookup (was 2 queries against `ec_<collection>` + 1–2 against `empixel_builder_layouts`). Now: at most 1 slug→ULID resolution + 1 layout SELECT.
+  - `src/plugin.ts` `POST /layout` and `POST /toggle`: same — slug→ULID at the boundary only.
+  - `src/components/db.ts` `getBuilderLayout`: dropped the slug↔ULID branching that ran up to 2 fallback queries. Now: at most 1 slug→ULID resolution + 1 layout SELECT.
+- Slug-related lines in `db.ts` dropped from 7 → 4 (the remaining 4 are: a comment block, the slug→ULID resolution comment, and the single fresh-entry slug→ULID query). `getBuilderLayout` body went from ~30 LOC of branching to ~10 LOC of single direct lookup.
+- Files: `src/plugin.ts`, `src/components/db.ts`, `CHANGELOG.md`, `.claude/prd-backend.md`, `tests/slugToUlidMigration.test.ts` (new), `.claude/coordination/status/agent-a.md`.
+- Tests: 10 new cases in `tests/slugToUlidMigration.test.ts` against a real `better-sqlite3` handle (tmpdir + `mkdtempSync`/`rmSync` cleanup). Coverage: base case (slug→ULID rename + flag set), idempotency (flag-set short-circuit + double-run no-op), conflict resolution (ULID newer / slug newer), unresolved orphans (left in place; flag still set), already-ULID rows (skipped), empty table (flag still set), and one mixed-batch end-to-end pass that exercises every branch.
+- PRD: `.claude/prd-backend.md` — new "Slug → ULID layout migration (v0.8.0)" section explains the algorithm, conflict rules, idempotency, unresolved-row policy, and rollback considerations. Schema note about `entry_id` updated to reflect the post-migration invariant. `/layout` route docs note the single-lookup read path. Files list mentions both cold-start migrations now.
+- Pipeline: green (lint + typecheck + 100 tests + build all pass — total 90 → 100, +10 in `slugToUlidMigration.test.ts`).
 
 ## 2026-05-09 13:43 · F2.1 done
 - New `ensureEmpixelBuilderColumn(db, collection, ctx)` helper in `src/plugin.ts` runs the idempotent DDL `ALTER TABLE ec_<collection> ADD COLUMN empixel_builder INTEGER NOT NULL DEFAULT 0`. Wired into both write paths that depend on the column: `POST /settings` (collection-level enable) and `POST /toggle` (per-entry enable, since an entry toggle can fire without `/settings` ever being called for that collection).

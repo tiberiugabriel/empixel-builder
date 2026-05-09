@@ -46,6 +46,18 @@ function isValidCollection(name: unknown): name is string {
   return typeof name === "string" && COLLECTION_RE.test(name);
 }
 
+// EmDash ULIDs are 26-char Crockford base32 strings starting with `01` (the
+// timestamp prefix for any current/future date). Used to distinguish a row
+// keyed by ULID vs. one that still carries a slug. The cheaper `startsWith
+// ("01")` heuristic appeared in the legacy fallback paths; tightening it to a
+// real format check avoids treating slugs that happen to start with "01" as
+// ULIDs (e.g. `"01-introduction"`).
+const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+function isUlid(value: unknown): value is string {
+  return typeof value === "string" && ULID_RE.test(value);
+}
+
 function badRequest(message: string): Response {
   return new Response(
     JSON.stringify({ error: { message } }),
@@ -127,6 +139,7 @@ function getDb(): SqliteDb {
   }
 
   runSpacerMigration(db);
+  runSlugToUlidMigration_v1(db);
 
   initialisedHandles.add(db);
   return db;
@@ -245,6 +258,178 @@ function runSpacerMigration(db: SqliteDb): void {
   }
 }
 
+/**
+ * One-time migration: rewrite every `empixel_builder_layouts.entry_id` that is
+ * still keyed by slug to its canonical ULID. Pre-0.8 routes accepted both, and
+ * the read paths walked a slug↔ULID fallback chain on every request. After
+ * this migration runs, every row is keyed by ULID and the readers can do a
+ * single direct lookup.
+ *
+ * Idempotent — flagged in `empixel_builder_meta.migration_slug_to_ulid_v1`
+ * after first successful run. Wrapped in a transaction so a partial failure
+ * doesn't leave the table mid-state.
+ *
+ * Conflict resolution: if both `(collection, slug)` and `(collection, ulid)`
+ * rows exist (the user saved under both keys at different times), keep the
+ * newer of the two by `updated_at` and DELETE the loser. When timestamps tie,
+ * the ULID-keyed row wins because that's the canonical schema going forward.
+ *
+ * Unresolvable rows (slug doesn't match any `ec_<collection>.slug`) are LEFT
+ * IN PLACE and logged. Deleting them is too aggressive — the user may rename
+ * an entry's slug via the host CMS and want to recover the layout manually
+ * by re-saving against the new slug. Orphans are harmless: the read path
+ * after this migration only matches by ULID, so unresolved slug rows simply
+ * never get returned (until somebody fixes them by hand).
+ */
+export function runSlugToUlidMigration_v1(db: SqliteDb): void {
+  const FLAG = "migration_slug_to_ulid_v1";
+  try {
+    const existing = db.prepare("SELECT value FROM empixel_builder_meta WHERE key = ?").get(FLAG);
+    if (existing) return;
+
+    interface Row {
+      collection: string;
+      entry_id: string;
+      updated_at: string | null;
+    }
+
+    const rows = db
+      .prepare("SELECT collection, entry_id, updated_at FROM empixel_builder_layouts")
+      .all() as Row[];
+
+    // Filter to rows that still look slug-shaped — anything that already
+    // matches the ULID format is canonical and skipped.
+    const slugRows = rows.filter((r) => !ULID_RE.test(r.entry_id));
+
+    if (slugRows.length === 0) {
+      // Nothing to migrate. Mark the flag so we don't keep running this
+      // every cold start.
+      db.prepare("INSERT OR REPLACE INTO empixel_builder_meta (key, value) VALUES (?, ?)").run(
+        FLAG,
+        String(Date.now())
+      );
+      return;
+    }
+
+    // Resolve slug → ULID via `ec_<collection>` for each row. Cache the
+    // resolution by `(collection, slug)` so we don't re-prepare/run for
+    // duplicates inside the same migration pass.
+    const resolutionCache = new Map<string, string | null>();
+    function resolveSlug(collection: string, slug: string): string | null {
+      const key = `${collection}::${slug}`;
+      if (resolutionCache.has(key)) return resolutionCache.get(key) ?? null;
+      // Validate collection so we don't end up running DDL/DML against
+      // attacker-shaped table names if a row got planted by hand. The
+      // canonical write paths already validate, but defence-in-depth.
+      if (!isValidCollection(collection)) {
+        resolutionCache.set(key, null);
+        return null;
+      }
+      let resolved: string | null = null;
+      try {
+        const idRow = db
+          .prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`)
+          .get(slug) as { id: string } | undefined;
+        if (idRow && typeof idRow.id === "string" && ULID_RE.test(idRow.id)) {
+          resolved = idRow.id;
+        }
+      } catch (err) {
+        // Table missing / locked / corrupt → log and leave the row in place.
+        // We log at module load time; runtime ctx isn't threaded down here.
+        logCaught(
+          null,
+          `slug→ULID migration: ec_${collection} lookup for slug=${slug} failed`,
+          err
+        );
+      }
+      resolutionCache.set(key, resolved);
+      return resolved;
+    }
+
+    // Wrap the rewrite in a transaction. better-sqlite3's prepare/run is
+    // synchronous, so a manual BEGIN / COMMIT is the simplest way to keep
+    // the table consistent if any single statement throws mid-pass.
+    const updateStmt = db.prepare(
+      "UPDATE empixel_builder_layouts SET entry_id = ?, updated_at = current_timestamp WHERE collection = ? AND entry_id = ?"
+    );
+    const deleteStmt = db.prepare(
+      "DELETE FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?"
+    );
+    const conflictRowStmt = db.prepare(
+      "SELECT entry_id, updated_at FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?"
+    );
+
+    let migrated = 0;
+    let unresolved = 0;
+    let conflictsResolved = 0;
+
+    db.exec("BEGIN");
+    try {
+      for (const row of slugRows) {
+        const ulid = resolveSlug(row.collection, row.entry_id);
+        if (!ulid) {
+          unresolved += 1;
+          continue;
+        }
+
+        // Check for a pre-existing canonical row at (collection, ulid). If
+        // present, resolve the conflict and DELETE the slug-keyed loser.
+        const existingUlid = conflictRowStmt.get(row.collection, ulid) as
+          | { entry_id: string; updated_at: string | null }
+          | undefined;
+
+        if (existingUlid) {
+          // Conflict — keep the newer row by updated_at (lexicographic
+          // string compare works on the SQLite `current_timestamp` ISO-8601
+          // format and is monotonic). When equal, prefer the canonical
+          // ULID-keyed row.
+          const slugTs = row.updated_at ?? "";
+          const ulidTs = existingUlid.updated_at ?? "";
+          if (slugTs > ulidTs) {
+            // Slug row is newer — overwrite the ULID row's contents by
+            // deleting the existing ULID row and renaming the slug row.
+            deleteStmt.run(row.collection, ulid);
+            updateStmt.run(ulid, row.collection, row.entry_id);
+          } else {
+            // ULID row is newer or tied — drop the slug row.
+            deleteStmt.run(row.collection, row.entry_id);
+          }
+          conflictsResolved += 1;
+        } else {
+          // No conflict — straight rename.
+          updateStmt.run(ulid, row.collection, row.entry_id);
+          migrated += 1;
+        }
+      }
+
+      db.prepare("INSERT OR REPLACE INTO empixel_builder_meta (key, value) VALUES (?, ?)").run(
+        FLAG,
+        String(Date.now())
+      );
+
+      db.exec("COMMIT");
+    } catch (innerErr) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        // best-effort
+      }
+      throw innerErr;
+    }
+
+    if (migrated > 0 || conflictsResolved > 0 || unresolved > 0) {
+      console.log(
+        `[empixel-builder] slug→ULID migration: migrated=${migrated} conflicts=${conflictsResolved} unresolved=${unresolved}`
+      );
+    }
+  } catch (err) {
+    console.error(
+      "[empixel-builder] slug→ULID migration failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
@@ -269,38 +454,24 @@ export function createPlugin() {
             }
 
             const db = getDb();
-            // Resolve slug to ULID if it doesn't look like a ULID (doesn't start with 01)
-            let originalSlug = pageId;
-            if (!pageId.startsWith("01")) {
+            // Fresh-entry case: the host CMS may pass a slug for an entry
+            // that has never been saved through the builder before. We still
+            // need slug → ULID resolution at the route boundary so the
+            // single direct lookup below works. Rows on disk are already
+            // ULID-keyed after `runSlugToUlidMigration_v1` (cold start);
+            // the legacy fallback chain that walked both keys is gone.
+            if (!isUlid(pageId)) {
               try {
                 const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(pageId) as { id: string } | undefined;
                 if (row && row.id) pageId = row.id;
               } catch (err) {
                 logCaught(ctx, `layout GET: slug→ULID lookup failed for ec_${collection}`, err);
               }
-            } else {
-              try {
-                const slugRow = db.prepare(`SELECT slug FROM ec_${collection} WHERE id = ?`).get(pageId) as { slug: string } | undefined;
-                if (slugRow && slugRow.slug) originalSlug = slugRow.slug;
-              } catch (err) {
-                logCaught(ctx, `layout GET: ULID→slug lookup failed for ec_${collection}`, err);
-              }
             }
 
             const row = db
               .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
               .get(collection, pageId) as { sections: string } | undefined;
-              
-            // Fallback for old layouts saved by slug
-            if (!row && originalSlug !== pageId) {
-               const fallbackRow = db
-                 .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-                 .get(collection, originalSlug) as { sections: string } | undefined;
-               if (fallbackRow) {
-                 const fallbackSections = stripUnknownBlocks(JSON.parse(fallbackRow.sections) as SectionBlock[]);
-                 return { data: { sections: fallbackSections } };
-               }
-            }
 
             if (!row) return { data: null };
             const sections = stripUnknownBlocks(JSON.parse(row.sections) as SectionBlock[]);
@@ -319,7 +490,11 @@ export function createPlugin() {
             }
 
             const db = getDb();
-            if (!pageId.startsWith("01")) {
+            // Same as GET: slug → ULID at the route boundary so the row is
+            // always written under its canonical ULID key. After
+            // `runSlugToUlidMigration_v1` no row should remain keyed by
+            // slug, so the upsert below targets a single canonical row.
+            if (!isUlid(pageId)) {
               try {
                 const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(pageId) as { id: string } | undefined;
                 if (row && row.id) pageId = row.id;
@@ -466,7 +641,9 @@ export function createPlugin() {
           }
 
           const db = getDb();
-          if (!entryId.startsWith("01")) {
+          // Resolve slug → ULID at the route boundary for fresh entries; on-disk
+          // rows are ULID-keyed after `runSlugToUlidMigration_v1`.
+          if (!isUlid(entryId)) {
             try {
               const row = db.prepare(`SELECT id FROM ec_${collection} WHERE slug = ?`).get(entryId) as { id: string } | undefined;
               if (row && row.id) entryId = row.id;

@@ -5,7 +5,7 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 
 ## Files
 - `src/index.ts` — Plugin descriptor (entry point)
-- `src/plugin.ts` — 6 REST routes + content hook
+- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`)
 - `src/types.ts` — Block interfaces + type definitions
 - `src/dbShared.ts` — Shared SQLite handle factory (`getDb()`)
 
@@ -113,11 +113,16 @@ re-introduces SQL injection — see audit C1.
 
 ### `layout` — GET + POST
 **GET** `?pageId=<id>&collection=<name>` → Load layout.
-- Resolves slug ↔ ULID automatically (tries `ec_<collection>` table)
+- If `pageId` doesn't match the ULID format, resolves slug → ULID once
+  via `ec_<collection>.slug`. This is needed only for the fresh-entry
+  case (host CMS hands the builder a slug for an entry never saved
+  through the builder before). On-disk rows are ULID-keyed after
+  `runSlugToUlidMigration_v1` (see Migrations).
+- Single `SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?` lookup — no fallback chain.
 - Returns `{ data: { sections: SectionBlock[] } }` or `{ data: null }`
 
 **POST** `{ pageId, collection, sections }` → Save layout.
-- Resolves slug to ULID before saving
+- Same slug → ULID resolution as GET — writes always land under the canonical ULID key.
 - Upserts row in `empixel_builder_layouts`
 - Returns `{ success: true }`
 
@@ -184,7 +189,7 @@ CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
 )
 ```
 
-Note: `entry_id` stores the ULID (not slug). Legacy rows may use slug as `entry_id` — the GET/POST handlers include fallback logic for old slug-based rows.
+Note: `entry_id` stores the ULID. Pre-0.8 rows that landed under a slug key are rewritten to their canonical ULID by `runSlugToUlidMigration_v1` on cold start (see "Slug → ULID layout migration" below). After that runs, both the route handlers and the frontend reader do a single direct `WHERE entry_id = ?` lookup — the legacy slug↔ULID fallback chain is gone.
 
 Table: `empixel_builder_meta` (v0.6)
 
@@ -210,6 +215,62 @@ Stores migration flags and other plugin metadata. Sync access from `getDb()` so 
 5. Write `INSERT OR REPLACE INTO empixel_builder_meta (key, value) VALUES ('migration_spacer_v1', <timestamp>)`.
 
 Per-row failures are caught and logged; the migration flag is still written so the loop doesn't re-run forever. To re-run a failed migration, manually delete the meta row.
+
+## Slug → ULID layout migration (v0.8.0)
+
+`runSlugToUlidMigration_v1(db)` runs once per database on first `getDb()`
+call, immediately after `runSpacerMigration`. Pre-0.8 the
+`empixel_builder_layouts.entry_id` column accepted either a ULID or a slug
+depending on which UI path saved the row, so the read paths walked a
+slug↔ULID fallback chain on every request. This migration rewrites every
+slug-keyed row to its canonical ULID and drops the multi-query fallback
+from the readers.
+
+Steps:
+
+1. Read `empixel_builder_meta` for `migration_slug_to_ulid_v1`. If present, skip.
+2. `SELECT collection, entry_id, updated_at FROM empixel_builder_layouts`.
+   Filter to rows whose `entry_id` does not match the ULID format
+   (`/^[0-9A-HJKMNP-TV-Z]{26}$/`).
+3. For each candidate row, resolve the slug via
+   `SELECT id FROM ec_<collection> WHERE slug = ?` (the same query the
+   route handlers used pre-migration).
+4. Rewrite — wrapped in a single `BEGIN ... COMMIT` so a partial failure
+   rolls back. Conflict resolution when both `(collection, slug)` and
+   `(collection, ulid)` already exist:
+   - Compare `updated_at` (lexicographic compare on the SQLite
+     `current_timestamp` ISO-8601 string is monotonic).
+   - The newer row wins; the loser is `DELETE`d. On ties the ULID-keyed
+     row wins because that's the canonical schema going forward.
+5. Unresolvable rows (slug doesn't match any host entry) are LEFT IN
+   PLACE and logged via `logCaught(null, ...)`. They're harmless once
+   the read path matches by ULID — the row simply never gets returned.
+   Manual recovery: rename the slug in the host CMS to match, or
+   re-save the layout against the new entry.
+6. Write `INSERT OR REPLACE INTO empixel_builder_meta (key, value)
+   VALUES ('migration_slug_to_ulid_v1', <timestamp>)` to flag the run.
+
+The migration is **idempotent and additive** — re-running after a
+successful pass is a no-op, and aborting/re-running mid-pass restarts
+from the same set of slug-keyed rows (the transaction rolls back on
+failure). Rollback considerations: the migration only writes
+`UPDATE` / `DELETE`, so reverting is a matter of restoring from a DB
+backup. There's no inverse operation that turns ULIDs back into
+slugs, but the legacy fallback paths in `plugin.ts` and `db.ts` would
+need to be restored too if a downgrade were needed.
+
+After this lands:
+
+- `plugin.ts` `GET /layout` does ONE `SELECT ... WHERE entry_id = ?`
+  query against the resolved ULID (slug-resolution at the route
+  boundary is retained ONLY for the fresh-entry case where the host
+  CMS hands the builder a slug for an entry that has never been
+  saved before).
+- `plugin.ts` `POST /layout` and `POST /toggle` likewise resolve at
+  the boundary and write under the canonical ULID.
+- `components/db.ts` `getBuilderLayout` does ONE `SELECT ...` against
+  the resolved ULID. Pre-0.8 this function ran up to three queries
+  (direct lookup → slug→ULID → ULID→slug fallback chain).
 
 ## KV Storage
 
