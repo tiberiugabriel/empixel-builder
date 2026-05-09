@@ -296,6 +296,57 @@ Save button disabled when: isSaving OR (not isDirty AND not isBreakpointsDirty)
 - **Responsive frame** — `frameStyle` for resizable preview switched from `overflow: hidden` to `overflowX: hidden` (vertical scroll preserved).
 - **Empty state** — `.epx-canvas--empty .epx-canvas__preview-frame` is flex-centered both axes so the placeholder lands middle of viewport.
 - **Per-block previews receive `activeBreakpoint`** via `PreviewProps`, so previews can bp-merge their config (used by `TextEditorPreview`).
+- **F3.6.5 — Canvas wraps each root-level block in a full-width
+  `.epx-canvas-block-host`.** `.epx-canvas__list` was `display: flex;
+  flex-direction: column` and flex children fold to intrinsic content
+  width — so a leaf block at canvas root (button / icon / divider-spacer
+  promoted via `isRootAllowedType`) collapsed on the canvas while looking
+  fine on the host site (the host page's container gives the block-root
+  its own block-context). Switched `.epx-canvas__list` to plain
+  `display: block` (normal flow does the vertical stacking), and
+  `Canvas.tsx`'s `frameContent` now wraps each root iteration:
+  ```jsx
+  <div
+    className={`epx-canvas-block-host${inlineInner ? " epx-canvas-block-host--inline-inner" : ""}`}
+    data-epx-block-host={section.id}
+  >
+    {/* SortableBlock or ContainerBlock, exactly as before */}
+  </div>
+  ```
+  CSS rule (in `builder.css`):
+  ```css
+  .epx-canvas-block-host { display: block; width: 100%; }
+  .epx-canvas-block-host--inline-inner { text-align: start; }
+  ```
+  Children inside containers stay UNwrapped — the container's
+  `epx-container-block__children` flex/grid IS the block-context for its
+  children, exactly like `SectionContainer.astro` on the frontend.
+  Wrapping there would poison the container layout.
+  - **Inline-display exception** — when `block.config.style.display ∈
+    { inline-flex, inline-block, inline-grid, inline }` (or the active bp's
+    `styleBreakpoints[bp].display` is one of those values), the host stays
+    full-width but adds `--inline-inner` so `text-align: start` anchors the
+    inline child at the left. Without this an inline button would render
+    wherever default text alignment placed it. Detection lives in the new
+    `isInnerInlineDisplay(block, activeBreakpoint)` export from
+    `Canvas.tsx`. Mirrors how the frontend resolves bp overrides — a block
+    that flips display per breakpoint flips `--inline-inner` automatically.
+  - **Doesn't break**: BlockOverlay (drag handle, add buttons, delete) and
+    drop indicators are children of the SortableBlock / ContainerBlock,
+    which are now children of the host wrapper — pointer-events,
+    positioning, and z-index still resolve against the inner block. Hover
+    + selection borders are rendered by `epx-block-preview` /
+    `epx-container-block` on the inner element. Breakpoint preview width
+    simulation works because the host wrapper sits inside the resizable
+    `epx-canvas__preview-frame`.
+  - **Tests**: `tests/canvasCss.test.ts` adds two describe blocks. The
+    `isInnerInlineDisplay` block exercises detection (4 cases). The
+    `Canvas — root host wrapper (F3.6.5)` block renders `<Canvas>` via
+    `react-dom/server` and asserts wrapper presence on root blocks
+    (container + leaf), absence on container children, the
+    `--inline-inner` modifier on inline-display roots, and that the
+    empty-state placeholder still renders without a host wrapper. 283 →
+    292 tests.
 - **Label overflow detector** — small `useEffect` in `Builder.tsx` runs `MutationObserver` + `ResizeObserver` to set `data-overflow="true"` on `.epx-side-input__label--full` / `.epx-spacing-ctrl__label` when truncated. CSS `::after { content: "..." }` shows literal three dots; `text-overflow: ellipsis` fallback only used when CSS variant unsupported.
 
 ## TODO

@@ -394,7 +394,27 @@
       .epx-canvas__empty-icon { font-size: 48px; margin-bottom: 12px; }
       .epx-canvas__empty-state h3 { margin: 0 0 6px; font-size: 16px; color: var(--epx-text-mid); }
       .epx-canvas__empty-state p { margin: 0; font-size: 13px; }
-      .epx-canvas__list { display: flex; flex-direction: column; }
+      /* F3.6.5 — `.epx-canvas__list` is normal-flow `display: block` (was
+         `flex; flex-direction: column`). Reason: flex children fold to
+         content width by default, so a leaf block promoted to canvas root
+         (e.g. button, icon, divider-spacer) collapsed instead of filling
+         the canvas. Each root-level child is now wrapped in
+         `.epx-canvas-block-host` (see Canvas.tsx) which forces full width
+         on the wrapper while letting the inner block's own
+         `style.display` (incl. `inline-flex` / `inline-block`) win. The
+         vertical stacking that flex-column gave us is what normal block
+         flow gives us anyway. The `position: relative; transform:
+         translateZ(0)` rule lower in this file is the containing-block
+         trick for fixed/absolute descendants and is preserved. */
+      .epx-canvas__list { display: block; }
+      .epx-canvas-block-host { display: block; width: 100%; }
+      /* Inline-display exception — when the inner block's
+         `config.style.display` is `inline-flex` / `inline-block` /
+         `inline-grid` / `inline`, the host stays full-width but anchors
+         the inline child to the left. Without this, an inline button
+         would either stretch (if the host forced it) or float wherever
+         text-align defaulted. */
+      .epx-canvas-block-host--inline-inner { text-align: start; }
 
       /* ── Block preview (leaf blocks) ── */
       .epx-block-preview {

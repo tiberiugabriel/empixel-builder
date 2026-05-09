@@ -1142,6 +1142,107 @@ Branch: `feature/agentC-F3.5.1`. Single commit (see git log).
 
 **No blockers.**
 
+## 2026-05-09 · F3.6.5 starting
+
+Branch: `feature/agentC-F3.6.5`.
+
+**Goal**: wrap each root-level block on Canvas in `<div class="epx-canvas-block-host">` so leaves at the canvas root render full-width by default. The frontend doesn't have this issue (the host page's container gives the block-root its own block-context), but `.epx-canvas__list` is `display: flex; flex-direction: column` — flex children fold to content width unless the child sets `flex: 1` or `width: 100%`. So a button or icon promoted to root via `isRootAllowedType` collapses on the canvas while looking fine in production.
+
+**Plan**:
+1. Move `.epx-canvas__list` off flex-column. Today the rule sets `display: flex; flex-direction: column` (line 397) plus `position: relative; transform: translateZ(0)` (line 1508) for the absolute/fixed/sticky containing block. The flex setup isn't load-bearing — the only behavior we care about is "stack root blocks vertically", which `display: block` gives us for free in normal flow. Keep the `position: relative; transform: translateZ(0)` line untouched (containing-block trick).
+2. Inject the wrapper in `Canvas.tsx` only for the root-level loop (the `sections.map(...)` inside the `<SortableContext>`). Children inside containers stay unwrapped — the container's `epx-container-block__children` flex/grid IS the block-context for its children, exactly like `SectionContainer.astro` on the frontend.
+3. Inline-display exception: read `block.config.style.display` at render time. If it's `inline-flex`, `inline-block`, `inline-grid`, or `inline`, mark the host `--inline-inner` so the inner block keeps its intrinsic width while the host stays full-width. Default behavior (no inline display) — block fills the host (relying on the block's own selector `[data-epx-block]` rule from styleUtils, which already emits `width: 100%` for block-level layout).
+4. CSS: `.epx-canvas-block-host { display: block; width: 100%; }` plus an `--inline-inner` modifier that wraps the inner element in a `text-align: left` host so the inline child anchors to the left without shrinking the host.
+5. Test: extend `tests/canvasCss.test.ts` with a Canvas-DOM block that mounts `<Canvas>` via `react-dom/server` and asserts the wrapper is present on root blocks but absent on container children.
+
+**Risk**: `.epx-canvas__list` flex-column → block. The two writes I'm aware of are (a) line 397 (the original) and (b) line 1508 (the position/transform addendum). Both are in `builder.css`. Before the change I'll grep for any other rule that targets `epx-canvas__list > *` or relies on flex-item behavior — if the resize handles or drop indicator depend on it, I'll patch them rather than re-introduce the flex.
+
+**No `src/types.ts` change** — all changes are admin-UI-only.
+
+## 2026-05-09 · F3.6.5 done
+
+Branch: `feature/agentC-F3.6.5`. Single commit (commit SHA filled in below after `git commit`).
+
+**Files changed**:
+- `src/admin/Canvas.tsx` — `frameContent` wraps each root-level
+  `sections.map(...)` iteration in `<div class="epx-canvas-block-host"
+  data-epx-block-host="<id>">…</div>`. Wrapper key moved from the inner
+  block to the host (otherwise React would warn about duplicate keys).
+  New exported helper `isInnerInlineDisplay(block, activeBreakpoint)` that
+  reads `block.config.style.display` (with active-bp
+  `styleBreakpoints[bp].display` taking precedence on non-desktop) and
+  returns `true` for `inline-flex` / `inline-block` / `inline-grid` /
+  `inline`. Used to flip the `--inline-inner` modifier on the host so the
+  inner block keeps its intrinsic width while the host stays full-width.
+- `src/admin/builder/styles/builder.css` — `.epx-canvas__list` switched
+  from `display: flex; flex-direction: column` to `display: block` (the
+  flex column was the source of the "leaf collapses to content width"
+  issue). Added `.epx-canvas-block-host { display: block; width: 100%; }`
+  and `.epx-canvas-block-host--inline-inner { text-align: start; }`.
+  Comment block above the rule explains why the flex went away (vertical
+  stacking is what normal block flow gives us anyway, plus the
+  `position: relative; transform: translateZ(0)` rule lower in the file
+  is preserved for the containing-block trick).
+- `tests/canvasCss.test.ts` — two new describe blocks. (a)
+  `isInnerInlineDisplay` — 4 cases covering unset / block-level /
+  inline-* / bp-override. (b) `Canvas — root host wrapper (F3.6.5)` — 5
+  cases that render `<Canvas>` via `react-dom/server` and assert wrapper
+  presence on root blocks, absence on container children, the
+  `--inline-inner` modifier on inline-display roots, and that the
+  empty-state placeholder renders without a host wrapper.
+- `CHANGELOG.md` — F3.6.5 entry above F3.6.3 / F3.6.4 in the
+  `## Unreleased — 0.9.6 prep` section. (Pre-existing `<<<<<<< HEAD`
+  marker on line 8 was inherited from main and left untouched — not in
+  scope for this task and not in any single agent's column.)
+- `.claude/prd-builder-ui.md` — Canvas section documents the wrapper +
+  CSS rule + inline-display exception detection + test layout.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test && npm run build` all green. 292 tests pass (283 → 292, +9 new from the two F3.6.5 describe blocks in `canvasCss.test.ts`).
+
+**Implementation notes**:
+- **Why not flex-column?** The flex layout wasn't load-bearing — the only
+  behavior we cared about was "stack root blocks vertically", which
+  `display: block` gives us free in normal flow. The
+  `position: relative; transform: translateZ(0)` rule lower in
+  `builder.css` (containing block for fixed/absolute/sticky descendants)
+  is the actually-load-bearing rule and it stays untouched. The
+  `body.epx-resizing .epx-canvas__list { pointer-events: none }` rule
+  works on any display type so resize-drag still freezes interactions.
+- **Why wrap container blocks at root too?** A root container that
+  declares `display: inline-flex` / `inline-grid` would also collapse to
+  intrinsic width. Wrapping every root block — leaf or container —
+  unifies the behavior and makes the wrapper rule trivial to reason
+  about. Containers that use the default block display fill the host
+  (no visual change vs. before).
+- **Why NOT wrap container children?** A container's
+  `epx-container-block__children` div has its own flex/grid layout —
+  exactly like `SectionContainer.astro` on the frontend. Wrapping each
+  child in a full-width div would poison the flex/grid math (children
+  would all become full-width regardless of the container's
+  `flex-direction: row`). Frontend parity: `BlockRenderer.astro`
+  doesn't wrap leaves either; it just dispatches to the block component
+  and the `SectionContainer` parent's flex/grid is the block-context.
+- **Inline-display detection**: reads at render time from
+  `config.style.display`, with `styleBreakpoints[activeBp].display`
+  taking precedence on non-desktop. Same precedence the frontend uses,
+  so a block that switches `display: inline-flex` → `block` per
+  breakpoint flips the `--inline-inner` modifier automatically as the
+  user toggles bp on the canvas.
+- **`epx-block-preview { width: 100%; }`** is intentional and
+  preserved. It makes the SortableBlock wrapper full-width inside the
+  host so hover and click areas span the row. The actual inner
+  `[data-epx-block]` element keeps whatever `display` the block sets via
+  styleUtils (block-level by default, inline-* via the exception). For
+  inline-* blocks the visible button anchors at the left via the host's
+  `text-align: start`.
+
+**No `src/types.ts` proposal**: all changes are admin-UI-only. The
+helper `isInnerInlineDisplay` is exported from `Canvas.tsx` (Agent C's
+column) and read only by tests + Canvas itself.
+
+**No blockers.**
+
 ## Blocked
 
 *(empty — when blocked, also drop a file under `../blocked/` so the orchestrator sees it on next sync)*

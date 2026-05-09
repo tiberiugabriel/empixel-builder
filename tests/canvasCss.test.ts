@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildCanvasBlockCss } from "../src/admin/Canvas.js";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Canvas, buildCanvasBlockCss, isInnerInlineDisplay } from "../src/admin/Canvas.js";
 import { buildBlockChromeCss } from "../src/components/styleUtils.js";
 import type { BlockType, SectionBlock } from "../src/types.js";
 
@@ -201,5 +203,179 @@ describe("buildCanvasBlockCss — active-breakpoint preview overlay", () => {
     const idxOverlay14 = canvasCss.lastIndexOf("font-size:14px");
     expect(idx20).toBeGreaterThanOrEqual(0);
     expect(idxOverlay14).toBeGreaterThan(idx20);
+  });
+});
+
+// ─── F3.6.5 — root host wrapper ──────────────────────────────────────────────
+//
+// Each root-level block on Canvas sits inside `<div class="epx-canvas-block-host">`
+// that forces width: 100%. Solves the "leaf block at canvas root collapses to
+// content width" issue (button / icon / divider-spacer promoted to root via
+// `isRootAllowedType` were folding to intrinsic width because
+// `.epx-canvas__list` was `display: flex; flex-direction: column`). Children
+// inside containers stay unwrapped — the container's `epx-container-block__children`
+// flex/grid IS the block-context for its children, exactly like
+// `SectionContainer.astro` on the frontend (parity with `BlockRenderer.astro`).
+//
+// Inline-display exception — when the inner block's `config.style.display ∈
+// { inline-flex, inline-block, inline-grid, inline }`, the host still spans
+// the canvas but adds `--inline-inner` so `text-align: start` anchors the
+// inline child at the left.
+
+describe("isInnerInlineDisplay", () => {
+  it("returns false when block.config.style.display is unset", () => {
+    const block: SectionBlock = { id: "B1", type: "text", config: { theme: "light" } };
+    expect(isInnerInlineDisplay(block, "desktop")).toBe(false);
+  });
+
+  it("returns false for block-level display values (block, flex, grid, …)", () => {
+    for (const display of ["block", "flex", "grid", "table", "list-item"]) {
+      const block: SectionBlock = {
+        id: "B1",
+        type: "text",
+        config: { theme: "light", style: { display } },
+      };
+      expect(isInnerInlineDisplay(block, "desktop")).toBe(false);
+    }
+  });
+
+  it("returns true for every inline-* display value", () => {
+    for (const display of ["inline", "inline-block", "inline-flex", "inline-grid"]) {
+      const block: SectionBlock = {
+        id: "B1",
+        type: "button",
+        config: { theme: "light", style: { display } },
+      };
+      expect(isInnerInlineDisplay(block, "desktop")).toBe(true);
+    }
+  });
+
+  it("respects active-bp override on styleBreakpoints[bp].display", () => {
+    const block: SectionBlock = {
+      id: "B1",
+      type: "button",
+      config: {
+        theme: "light",
+        style: { display: "block" },
+        styleBreakpoints: { "mobile-portrait": { _px: 575, display: "inline-flex" } },
+      },
+    };
+    // Desktop reads from base style → block-level
+    expect(isInnerInlineDisplay(block, "desktop")).toBe(false);
+    // Mobile reads the bp override → inline-flex
+    expect(isInnerInlineDisplay(block, "mobile-portrait")).toBe(true);
+    // Other bp without override falls back to base style → block-level
+    expect(isInnerInlineDisplay(block, "tablet-portrait")).toBe(false);
+  });
+});
+
+describe("Canvas — root host wrapper (F3.6.5)", () => {
+  // Render a static-markup snapshot of <Canvas> with a representative root
+  // tree: container with a child + leaf at root + inline-display leaf at
+  // root. Asserts wrapper presence on root blocks, absence on container
+  // children, and the inline-inner modifier on the inline-display root.
+  //
+  // Canvas reads `useEffect` for the global stylesheet — that effect doesn't
+  // fire under SSR, but the JSX structure we're testing renders synchronously.
+  // dnd-kit's `useSortable` / `useDroppable` hooks gracefully no-op without a
+  // `DndContext` (they return inert defaults), so SSR is safe.
+  const noop = () => {};
+
+  function renderCanvas(sections: SectionBlock[]): string {
+    return renderToStaticMarkup(
+      createElement(Canvas, {
+        sections,
+        selectedId: null,
+        onSelect: noop,
+        onRemove: noop,
+        onAddToContainer: noop,
+        dropIndicatorId: null,
+        onAddAfter: noop,
+        activeBreakpoint: "desktop",
+      }),
+    );
+  }
+
+  it("wraps each root-level block in `.epx-canvas-block-host`", () => {
+    // Two root blocks: a container and a leaf — both are wrapped.
+    const sections: SectionBlock[] = [
+      { id: "C1", type: "container", config: { theme: "light" }, children: [] },
+      { id: "T1", type: "text", config: { theme: "light" } },
+    ];
+    const html = renderCanvas(sections);
+
+    // Two host wrappers, one per root block.
+    const hostMatches = html.match(/class="epx-canvas-block-host(?:\s|")/g) ?? [];
+    expect(hostMatches.length).toBe(2);
+
+    // Each carries a `data-epx-block-host` pointing at the block id.
+    expect(html).toContain('data-epx-block-host="C1"');
+    expect(html).toContain('data-epx-block-host="T1"');
+  });
+
+  it("wrapper is full-width via the .epx-canvas-block-host class (CSS rule lives in builder.css)", () => {
+    // The wrapper selector itself is the contract — CSS is inspected by the
+    // builder.css test below. Here we just confirm the class lands on the
+    // wrapper element (not on the inner block).
+    const sections: SectionBlock[] = [
+      { id: "T1", type: "text", config: { theme: "light" } },
+    ];
+    const html = renderCanvas(sections);
+
+    // Wrapper class on the outer div, BEFORE the SortableBlock's
+    // `epx-block-preview` div.
+    const hostIdx = html.indexOf("epx-canvas-block-host");
+    const previewIdx = html.indexOf("epx-block-preview");
+    expect(hostIdx).toBeGreaterThanOrEqual(0);
+    expect(previewIdx).toBeGreaterThan(hostIdx);
+  });
+
+  it("does NOT wrap children inside containers", () => {
+    // Container with one leaf child: the container is wrapped, the child
+    // (rendered inside `epx-container-block__children`) is not.
+    const sections: SectionBlock[] = [
+      {
+        id: "C1",
+        type: "container",
+        config: { theme: "light" },
+        children: [{ id: "T1", type: "text", config: { theme: "light" } }],
+      },
+    ];
+    const html = renderCanvas(sections);
+
+    // Exactly one wrapper — the container at root, not the child inside.
+    const hostMatches = html.match(/class="epx-canvas-block-host(?:\s|")/g) ?? [];
+    expect(hostMatches.length).toBe(1);
+    expect(html).toContain('data-epx-block-host="C1"');
+    expect(html).not.toContain('data-epx-block-host="T1"');
+  });
+
+  it("adds `--inline-inner` modifier when block.config.style.display is inline-*", () => {
+    // Two root blocks: one with `display: inline-flex` (button), one without.
+    const sections: SectionBlock[] = [
+      {
+        id: "BTN",
+        type: "button",
+        config: { theme: "light", style: { display: "inline-flex" } },
+      },
+      { id: "T1", type: "text", config: { theme: "light" } },
+    ];
+    const html = renderCanvas(sections);
+
+    // Inline-flex button gets the modifier.
+    expect(html).toMatch(
+      /class="epx-canvas-block-host epx-canvas-block-host--inline-inner"[^>]*data-epx-block-host="BTN"/,
+    );
+    // Plain text root host does NOT get the modifier.
+    expect(html).toMatch(
+      /class="epx-canvas-block-host"[^>]*data-epx-block-host="T1"/,
+    );
+  });
+
+  it("emits no host wrapper for an empty canvas (empty-state placeholder is rendered instead)", () => {
+    const html = renderCanvas([]);
+    expect(html).not.toContain("epx-canvas-block-host");
+    // The empty state placeholder still renders.
+    expect(html).toContain("Start building your page");
   });
 });

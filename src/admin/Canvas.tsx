@@ -100,6 +100,31 @@ function buildActiveBpPreviewCss(
 }
 
 /**
+ * F3.6.5 — Whether the inner block at the canvas root is laid out as an
+ * inline-level element. Read from `config.style.display`, with the active
+ * breakpoint's `styleBreakpoints[activeBp].display` taking precedence when
+ * defined (mirrors how the frontend resolves bp-overrides). The host
+ * wrapper stays `width: 100%` regardless; this only flips the
+ * `--inline-inner` modifier so the host left-anchors the inline child.
+ *
+ * Exported for tests — `tests/canvasCss.test.ts` reuses it.
+ */
+export function isInnerInlineDisplay(
+  block: SectionBlock,
+  activeBreakpoint: BreakpointId,
+): boolean {
+  const config = block.config as Record<string, unknown>;
+  const baseStyle = (config.style as Record<string, unknown> | undefined) ?? {};
+  const bpStyle =
+    activeBreakpoint !== "desktop"
+      ? (config.styleBreakpoints as Record<string, Record<string, unknown>> | undefined)?.[activeBreakpoint]
+      : undefined;
+  const raw = (bpStyle?.display ?? baseStyle.display) as string | undefined;
+  if (typeof raw !== "string") return false;
+  return raw === "inline-flex" || raw === "inline-block" || raw === "inline-grid" || raw === "inline";
+}
+
+/**
  * Per-block CSS for Canvas: full frontend bundle (drift-free) plus an
  * active-breakpoint preview overlay layered on top. Exported for testing —
  * keeps Canvas's CSS path inspectable without mounting the React tree.
@@ -260,37 +285,51 @@ export function Canvas({
     <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
       <div className="epx-canvas__list">
         {sections.map((section) => {
+          // F3.6.5 — root-level blocks sit inside an `.epx-canvas-block-host`
+          // wrapper that forces `width: 100%`. Solves the "leaf block at
+          // canvas root collapses to content width" issue (button / icon /
+          // divider-spacer promoted to root via `isRootAllowedType`). The
+          // wrapper is root-only — children inside containers stay
+          // unwrapped because the container's own flex/grid context gives
+          // them the same block-context the frontend's `SectionContainer`
+          // gives them (parity with `BlockRenderer.astro`). When the inner
+          // block declares `display: inline-*`, the wrapper keeps full
+          // width but anchors the inline child via `--inline-inner`.
+          const inlineInner = isInnerInlineDisplay(section, activeBreakpoint);
+          const hostClass = `epx-canvas-block-host${inlineInner ? " epx-canvas-block-host--inline-inner" : ""}`;
           if (isContainerType(section.type)) {
             return (
-              <ContainerBlock
-                key={section.id}
-                section={section}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                onRemove={onRemove}
-                onAddToContainer={onAddToContainer}
-                dropIndicatorId={dropIndicatorId}
-                onAddAfter={onAddAfter}
-                containerId={null}
-                onBlockContextMenu={onBlockContextMenu}
-                activeBreakpoint={activeBreakpoint}
-              />
+              <div key={section.id} className={hostClass} data-epx-block-host={section.id}>
+                <ContainerBlock
+                  section={section}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onRemove={onRemove}
+                  onAddToContainer={onAddToContainer}
+                  dropIndicatorId={dropIndicatorId}
+                  onAddAfter={onAddAfter}
+                  containerId={null}
+                  onBlockContextMenu={onBlockContextMenu}
+                  activeBreakpoint={activeBreakpoint}
+                />
+              </div>
             );
           }
           return (
-            <SortableBlock
-              key={section.id}
-              section={section}
-              containerId={null}
-              slotIndex={null}
-              isSelected={section.id === selectedId}
-              onSelect={() => onSelect(section.id)}
-              onRemove={() => onRemove(section.id)}
-              isDropTarget={section.id === dropIndicatorId}
-              onAddAfter={(type) => onAddAfter(section.id, type)}
-              onBlockContextMenu={onBlockContextMenu}
-              activeBreakpoint={activeBreakpoint}
-            />
+            <div key={section.id} className={hostClass} data-epx-block-host={section.id}>
+              <SortableBlock
+                section={section}
+                containerId={null}
+                slotIndex={null}
+                isSelected={section.id === selectedId}
+                onSelect={() => onSelect(section.id)}
+                onRemove={() => onRemove(section.id)}
+                isDropTarget={section.id === dropIndicatorId}
+                onAddAfter={(type) => onAddAfter(section.id, type)}
+                onBlockContextMenu={onBlockContextMenu}
+                activeBreakpoint={activeBreakpoint}
+              />
+            </div>
           );
         })}
       </div>

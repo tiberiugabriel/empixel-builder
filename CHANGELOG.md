@@ -5,6 +5,61 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
+- **F3.6.5 — Canvas wraps each root-level block in
+  `.epx-canvas-block-host` (full-width).** Solves the "leaf block at canvas
+  root collapses to content width" issue: `.epx-canvas__list` was
+  `display: flex; flex-direction: column` and flex children fold to
+  intrinsic width — so a button / icon / divider-spacer promoted to root
+  via `isRootAllowedType` collapsed on the canvas while looking fine on
+  the host site (the host page's container gives the block-root its own
+  block-context). The fix has two parts in lockstep:
+  - `.epx-canvas__list` switched to plain `display: block` (normal flow).
+    Vertical stacking is what normal block flow gives us anyway. The
+    `position: relative; transform: translateZ(0)` rule lower in
+    `builder.css` (containing-block trick for fixed/absolute descendants)
+    is preserved.
+  - `Canvas.tsx`'s `frameContent` now wraps each `sections.map(...)`
+    iteration in `<div class="epx-canvas-block-host" data-epx-block-host="<id>">…</div>`.
+    The wrapper is `display: block; width: 100%`. The inner block keeps
+    its own `style.display` intent: `inline-flex` / `inline-block` /
+    `inline-grid` / `inline` keep the inner element at intrinsic width
+    inside the full-width host (host gets the `--inline-inner` modifier
+    so `text-align: start` anchors the inline child at the left). All
+    other display values render as block-level full-width.
+  - **Children inside containers stay unwrapped.** A container's
+    `epx-container-block__children` flex/grid IS the block-context for
+    its children, exactly the same way `SectionContainer.astro`'s flex/grid
+    is the block-context on the frontend (parity with
+    `BlockRenderer.astro`'s leaf dispatch). Wrapping there would
+    poison the container layout.
+  - Inline-display detection: new `isInnerInlineDisplay(block,
+    activeBreakpoint)` exported from `Canvas.tsx` reads
+    `block.config.style.display`, with the active bp's
+    `styleBreakpoints[bp].display` taking precedence on non-desktop bp.
+    Mirrors how the frontend resolves bp-overrides — switching display
+    per breakpoint flips `--inline-inner` automatically.
+  - Doesn't break: drag-and-drop (BlockOverlay, drop targets), hover
+    and selection borders (still rendered by `epx-block-preview` /
+    `epx-container-block` on the inner element), breakpoint preview
+    width simulation (the host wrapper sits inside the resizable
+    `epx-canvas__preview-frame`).
+  - Tests: `tests/canvasCss.test.ts` adds two describe blocks. (a)
+    `isInnerInlineDisplay` — 4 cases covering unset / block-level /
+    inline-* / bp-override. (b) `Canvas — root host wrapper (F3.6.5)`
+    — 5 cases that render `<Canvas>` via `react-dom/server` and assert
+    wrapper presence on root blocks (container + leaf), absence on
+    container children, the `--inline-inner` modifier on inline-display
+    roots, and that the empty-state placeholder still renders without a
+    host wrapper. Total test count 283 → 292.
+  - Files: `src/admin/Canvas.tsx` (frameContent wraps roots; new
+    `isInnerInlineDisplay` export), `src/admin/builder/styles/builder.css`
+    (`.epx-canvas__list` → block; new `.epx-canvas-block-host` rule +
+    `--inline-inner` modifier), `tests/canvasCss.test.ts` (+9 cases),
+    `.claude/prd-builder-ui.md` (Canvas section documents the wrapper),
+    `.claude/coordination/status/agent-c.md` (start + done entries).
+    `package.json` stays at `0.9.5` — F3.6 phase will bump to 0.9.6 at
+    phase close.
+
 - **F3.6.3 — Canvas now calls `buildBlockChromeCss` identically with the
   frontend `*.astro` components. Drift between admin preview and host
   render dies by construction.** Previously `Canvas.tsx`'s
