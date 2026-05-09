@@ -21,6 +21,49 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 · F4.4 PAUSED — types proposal pending
+
+Branch: `feature/agentC-F4.4` (worktree at
+`/Users/tiberiugabriel/Websites/emdash/emdash_plugins/empixel-agent-c`,
+HEAD `d7dd326` from main / F4.5 just-landed).
+
+**Investigation**: F4.4 introduces a new block type `field-binding`
+(per Q7 in the master report). Followed the brief's "try the local
+path first — KISS" instruction:
+
+- `BlockType` (`src/types.ts:3-12`) is a closed string-literal type
+  alias. Type aliases are not extensible via declaration merging in
+  TS, so a local `field-binding` literal cannot be folded into the
+  union without editing `src/types.ts`.
+- `BlockDef.type` (`src/admin/blockDefinitions.ts:191`) is typed
+  `BlockType`. Loosening it to `BlockType | "field-binding"` only
+  inside `blockDefinitions.ts` would still leave runtime gates
+  rejecting the new type:
+  - `BLOCK_TYPES` set (`src/types.ts:36-46`) does not contain
+    `"field-binding"`, so `isKnownBlockType("field-binding")` returns
+    false.
+  - `stripUnknownBlocks` is called by both `src/components/db.ts:267`
+    (frontend reader) and `src/plugin.ts:565` (save / save-validation
+    response path). Both would silently drop `field-binding` blocks
+    on load and on the API write path.
+  - `PREVIEW_COMPONENTS` is typed `Record<BlockType, ...>` so the
+    map will fail to compile until the union is extended.
+
+So the local path is not viable — a small `src/types.ts` edit is
+required. Per the agent contract (`coordination/README.md` rule 5,
+`ownership.md`'s 🔒 row, and the brief's hard restrictions),
+sub-agents must not edit `src/types.ts`. Filed proposal at
+`.claude/coordination/types-proposals.md` (entry dated 2026-05-09).
+
+**No source code changed yet.** Waiting on orchestrator to merge the
+types PR. On resume:
+1. Rebase `feature/agentC-F4.4` on the new `main`.
+2. Add the `BlockDef` entry, LeftPanel section, preview component,
+   `FieldBinding.astro`, `BlockRenderer.astro` dispatch,
+   `components/index.ts` registration, tests, CHANGELOG entry, PRD
+   updates per the F4.4 brief.
+3. Pipeline + commit.
+
 ## 2026-05-10 · F4.5 done
 
 Branch: `feature/agentC-F4.5`. Single commit (SHA written by HEREDOC
