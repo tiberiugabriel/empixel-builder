@@ -5,6 +5,23 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **F3.5.5 — universal `<AdvancedTab />` component.** Extract
+  `src/admin/right-panel/AdvancedTab.tsx`. One component covers
+  Width / Height / Padding / Margin / Position+Offset / Z-Index /
+  CSS ID / CSS Classes / Custom CSS for every block — no per-type
+  branching. Reads `block.config.advanced` (for the
+  position/z-index/css/customCss group) and `block.config.style`
+  (for width/height/padding/margin), dispatching merged
+  `{ advanced }` or `{ style }` patches via `onChange`. Reuses the
+  existing `controls/` primitives (`SpacingControl`,
+  `DimensionControl`, `SelectRow`, `NumberRow`, `TextRow`,
+  `CodeEditor`, `FieldGroup`) so the markup is identical to the
+  inline JSX in `RightPanel.tsx`. The Offset block is conditionally
+  revealed only when `advanced.position` is non-empty (matches the
+  legacy behavior). `TabRenderer` now renders this component for
+  the `advanced` tab — replaces the F3.5.4 placeholder. F3.5.6
+  deletes the inline `AdvancedTab` function from `RightPanel.tsx`.
+
 - **F3.5.4 — `TabRenderer` + `getVisibleTabs(block)`.** New
   `src/admin/right-panel/TabRenderer.tsx` wires the 3-tab shell
   (Fields / Style / Advanced) to the declarative `BlockDef` schema.

@@ -21,6 +21,17 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 19:50 · F3.5.5 started
+
+Branch: `feature/agentC-F3.5.5`. Worktree at latest `main` (`7bb17d3`).
+Extracting universal `<AdvancedTab />` into
+`src/admin/right-panel/AdvancedTab.tsx`. Replaces F3.5.4's
+placeholder in `TabRenderer.tsx`. Reads `block.config.advanced` +
+`block.config.style`, dispatches `onChange` patches. Inline JSX in
+`RightPanel.tsx` stays put — F3.5.6 owns that swap. Reuses existing
+`controls/` primitives (`SpacingControl`, `DimensionControl`,
+`SelectRow`, `NumberRow`, `TextRow`, `CodeEditor`, `FieldGroup`).
+
 ## 2026-05-09 19:10 · F3.5.4 started
 
 Branch: `feature/agentC-F3.5.4`. Worktree at latest `main` (`fde0ee9`).
@@ -72,6 +83,66 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-09 20:05 · F3.5.5 done
+
+Branch: `feature/agentC-F3.5.5`. Single commit (see git log).
+
+**Files changed**:
+- `src/admin/right-panel/AdvancedTab.tsx` — new (242 LOC). Universal
+  `<AdvancedTab block onChange activeBreakpoint />`. Renders Width
+  (Fix/Min/Max) / Height (Fix/Min/Max) / Padding / Margin /
+  Position+Offset (conditional) / Z-Index / CSS ID / CSS Classes /
+  Custom CSS. Reads `block.config.advanced` (`AdvancedConfig`) and
+  `block.config.style`. Dispatches `{ advanced: {...} }` patches for
+  the position/z-index/css/customCss group and `{ style: {...} }`
+  patches for Width/Height/Padding/Margin — both merged so unrelated
+  keys survive single-field edits. Reuses existing `controls/`
+  primitives (`DimensionControl`, `SpacingControl`, `SelectRow`,
+  `NumberRow`, `TextRow`, `CodeEditor`, `FieldGroup`). Markup classes
+  copied verbatim from the inline JSX in `RightPanel.tsx` so the
+  F3.5.6 swap is visually invisible.
+- `src/admin/right-panel/TabRenderer.tsx` — `case "advanced":` now
+  renders `<AdvancedTab block={block} onChange={onChange} activeBreakpoint={activeBreakpoint} />`.
+  Removes the F3.5.4 placeholder div.
+- `tests/advancedTab.test.ts` — new (15 tests). Smoke render across
+  all 9 block types (every block shows the same controls, no
+  per-type branching), Custom-CSS selector header tied to `block.id`,
+  dispatch shape for each `advanced.*` field (`cssId` / `cssClasses` /
+  `customCss` / `position` / `zIndex`), preservation of unrelated
+  `advanced` keys when patching one field, conditional Offset
+  reveal driven by `advanced.position`, dispatch shape for
+  `style.*` fields (Padding / Margin / Width / Height — including
+  the `paddingTop` / `marginLeft` / `width` / `minHeight` CSS-key
+  routing), and a "labels match across all 9 block types" assertion
+  that fails if any future change introduces a per-type branch.
+- `tests/tabRenderer.test.ts` — `Advanced tab renders the F3.5.5
+  placeholder` rewritten to `Advanced tab renders the universal
+  AdvancedTab component (F3.5.5)`. Now asserts the placeholder
+  marker is gone and the Custom CSS / CSS ID / CSS Classes / Z-Index
+  labels are present in the output.
+- `CHANGELOG.md` — new F3.5.5 entry above F3.5.4.
+- `.claude/prd-rightpanel.md` — F3.5.5 row flipped to `✅ shipped`,
+  new "F3.5.5 — universal `<AdvancedTab />` component" subsection
+  with the field/control/storage/patch table + universal-Advanced
+  rule. File-tree updated to include `AdvancedTab.tsx` (also
+  back-fills `SectionRenderer.tsx`, `TabRenderer.tsx`, and the
+  `sections/` directory which were missing from the tree).
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test && npm run build` all green. **171 tests pass** (156 → 171, +15 new in `advancedTab.test.ts`; the 1 placeholder test in `tabRenderer.test.ts` was rewritten in place rather than added).
+
+**Final LOC**: `AdvancedTab.tsx` is 242 lines — under the ~250 ceiling. Pure markup + onChange wiring; no business logic the existing controls don't already own.
+
+**Advanced fields found in `RightPanel.tsx`'s inline JSX** (one line): Width (Fix/Min/Max), Height (Fix/Min/Max), Padding, Margin, Position, Offset (conditional on Position), Z-Index, CSS ID, CSS Classes, Custom CSS.
+
+**Block-specific Advanced behavior found**: **none**. The audit confirmed the inline `AdvancedTab` function in `RightPanel.tsx` is already block-agnostic — every code path runs identically for every block type. The new component preserves that property; no `block.type ===` branch was introduced or needed.
+
+**`RightPanel.tsx` UNCHANGED**: F3.5.5 explicitly does not touch the panel. The inline `AdvancedTab` function (~150 LOC) and its call site at the bottom of the panel both stay until F3.5.6 swaps `RightPanel.tsx` onto `<TabRenderer />`.
+
+**No `src/types.ts` proposal**: all new code is admin-UI-only and lives in `src/admin/right-panel/`. Imports the existing `AdvancedConfig` from `right-panel/types.ts`.
+
+**No blockers.**
 
 ## 2026-05-09 19:25 · F3.5.4 done
 

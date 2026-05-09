@@ -4,6 +4,7 @@ import type { BreakpointId, SectionBlock } from "../../types.js";
 import { getBlockDef } from "../blockDefinitions.js";
 import { FieldRenderer } from "../fields/FieldRenderer.js";
 import { SectionRenderer } from "./SectionRenderer.js";
+import { AdvancedTab } from "./AdvancedTab.js";
 import { IconFields, IconStyle, IconAdvanced } from "./icons.js";
 
 /**
@@ -17,7 +18,8 @@ import { IconFields, IconStyle, IconAdvanced } from "./icons.js";
  * - Advanced: always visible (universal CSS ID / classes / custom CSS /
  *   position / z-index controls).
  *
- * F3.5.5 fills in the real Advanced body; F3.5.6 swaps `RightPanel.tsx`.
+ * F3.5.5 wires in the real `<AdvancedTab />`; F3.5.6 swaps
+ * `RightPanel.tsx`.
  */
 
 export type Tab = "fields" | "style" | "advanced";
@@ -165,9 +167,11 @@ export function TabRenderer(props: TabRendererProps): ReactNode {
       )}
 
       {activeTab === "advanced" && (
-        <div className="epx-right-panel__advanced" data-testid="advanced-placeholder">
-          Advanced tab — F3.5.5
-        </div>
+        <AdvancedTab
+          block={block}
+          onChange={onChange}
+          activeBreakpoint={activeBreakpoint}
+        />
       )}
     </>
   );

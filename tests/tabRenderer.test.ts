@@ -128,7 +128,11 @@ describe("TabRenderer", () => {
     }
   });
 
-  it("Advanced tab renders the F3.5.5 placeholder", () => {
+  it("Advanced tab renders the universal AdvancedTab component (F3.5.5)", () => {
+    // F3.5.5 replaced the F3.5.4 placeholder with `<AdvancedTab />`.
+    // The body should expose the universal Advanced controls (Custom CSS
+    // header is the easiest sentinel — it's always rendered regardless
+    // of position state).
     const block = makeBlock("text");
     const html = renderToStaticMarkup(
       createElement(TabRenderer, {
@@ -139,8 +143,11 @@ describe("TabRenderer", () => {
         activeBreakpoint: "desktop",
       }),
     );
-    expect(html).toContain('data-testid="advanced-placeholder"');
-    expect(html).toContain("F3.5.5");
+    expect(html).not.toContain('data-testid="advanced-placeholder"');
+    expect(html).toContain("Custom CSS");
+    expect(html).toContain("CSS ID");
+    expect(html).toContain("CSS Classes");
+    expect(html).toContain("Z-Index");
   });
 
   it("Style tab is omitted from header for html block", () => {

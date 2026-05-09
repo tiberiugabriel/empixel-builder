@@ -16,7 +16,7 @@ The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for th
 | F3.5.2 | ✅ shipped (0.9.5 prep) | All 9 `BlockDef` entries populate `fieldsTab` + `styleTab`. Non-trivial Style logic extracted into `src/admin/right-panel/sections/`: `TextEditorDropCapSection.tsx` (paragraph spacing + drop cap), `VideoSourceSection.tsx` (aspect ratio + filter), `DividerLineSection.tsx` (full divider-line picker), `IconBlockStyleSection.tsx` (icon color/size/rotate). Imperative `block.type ===` branches in `RightPanel.tsx` stay in place — F3.5.6 deletes them. |
 | F3.5.3 | ✅ shipped (0.9.5 prep) | `right-panel/SectionRenderer.tsx` — pure switch on `StyleSection.kind`, renders the matching control. 109 LOC, exhaustive via `assertNever`. Dispatcher added in this PR; wired into `RightPanel.tsx` by F3.5.6. |
 | F3.5.4 | ✅ shipped (0.9.5 prep) | `right-panel/TabRenderer.tsx` — owns the 3-tab shell. Exports `getVisibleTabs(block)` (drives Style auto-hide for `html` and any block missing `styleTab`), the `TabRenderer` JSX component, and the `useAutoSelectTab(block, activeTab, setActiveTab)` hook. Body dispatches Fields → `<FieldRenderer>`, Style → `<SectionRenderer>`, Advanced → placeholder until F3.5.5. `RightPanel.tsx` unchanged; F3.5.6 owns the swap. |
-| F3.5.5 | ⬜ planned | `right-panel/AdvancedTab.tsx` — extract Advanced tab. |
+| F3.5.5 | ✅ shipped (0.9.5 prep) | `right-panel/AdvancedTab.tsx` — extract universal Advanced tab. One component covers every block — no per-type branching. `TabRenderer` plugs it into the `advanced` case (replaces the F3.5.4 placeholder). |
 | F3.5.6 | ⬜ planned | Drop imperative `block.type ===` branches in `RightPanel.tsx`; retire `fields` / `styleFields` aliases. |
 | F3.5.7 | ⬜ planned | Code-split per-block panels (lazy import). |
 | F3.5.8 | ⬜ planned | Polish + docs sweep. |
@@ -88,13 +88,55 @@ The module also exports `useAutoSelectTab(block, activeTab, setActiveTab)`. Effe
 
 `RightPanel.tsx` is unchanged in F3.5.4 — the imperative `block.type ===` branches and the existing `activeTab` state both stay put. F3.5.6 swaps the panel onto `<TabRenderer />` (and `useAutoSelectTab`) in a single PR.
 
+### F3.5.5 — universal `<AdvancedTab />` component
+
+`src/admin/right-panel/AdvancedTab.tsx` is the universal Advanced-tab body. **One component renders the Advanced tab identically for every block type** — there is no `block.type ===` branching anywhere in the Advanced surface, and no per-block customization. The audit confirmed the inline JSX in `RightPanel.tsx` was already block-agnostic; F3.5.5 simply lifts it out.
+
+```ts
+interface AdvancedTabProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId | null;
+}
+
+export function AdvancedTab(props: AdvancedTabProps): ReactNode;
+```
+
+Universal rule: a new block type does not need to declare anything for the Advanced tab. As long as the Advanced controls write through `block.config.advanced` (`AdvancedConfig`) and `block.config.style.*`, the same component works.
+
+Field surface (top to bottom, identical for all 9 block types):
+
+| Field | Control | Stored in | Patch shape |
+|---|---|---|---|
+| Width (Fix / Min / Max) | `DimensionControl` | `block.config.style.{width\|minWidth\|maxWidth}` | `{ style }` |
+| Height (Fix / Min / Max) | `DimensionControl` | `block.config.style.{height\|minHeight\|maxHeight}` | `{ style }` |
+| Padding (T/R/B/L) | `SpacingControl` | `block.config.style.padding{Top\|Right\|Bottom\|Left}` | `{ style }` |
+| Margin (T/R/B/L) | `SpacingControl` | `block.config.style.margin{Top\|Right\|Bottom\|Left}` | `{ style }` |
+| Position | `SelectRow` (Default / Relative / Absolute / Fixed / Sticky) | `block.config.advanced.position` | `{ advanced }` |
+| Offset (T/R/B/L) | `SpacingControl` (forceExpanded, **only when `position` is non-empty**) | `block.config.advanced.{top\|right\|bottom\|left}` | `{ advanced }` |
+| Z-Index | `NumberRow` | `block.config.advanced.zIndex` | `{ advanced }` |
+| CSS ID | `TextRow` | `block.config.advanced.cssId` | `{ advanced }` |
+| CSS Classes | `TextRow` | `block.config.advanced.cssClasses` | `{ advanced }` |
+| Custom CSS | `CodeEditor` (`language="css"`, `selectorHeader="[data-epx-block=\"<id>\"]"`) | `block.config.advanced.customCss` | `{ advanced }` |
+
+Dispatch shape:
+- `{ advanced }` patches go through `writeAdvanced({ ...advanced, ...patch })` so partial edits preserve the unchanged keys (e.g. typing in CSS ID never wipes `cssClasses`).
+- `{ style }` patches go through `{ ...style, ...patch }` so the same merge guarantee applies for Width/Height/Padding/Margin.
+- `activeBreakpoint` is currently unused — Advanced fields write to base `style` regardless of the active breakpoint, matching the legacy inline behavior. The prop stays in the signature for symmetry with `<TabRenderer />` and any future breakpoint-aware extension.
+
+Wiring: `TabRenderer.tsx`'s `case "advanced":` now returns `<AdvancedTab block={block} onChange={onChange} activeBreakpoint={activeBreakpoint} />`. The F3.5.4 placeholder is gone. `RightPanel.tsx` still owns its inline `AdvancedTab` function until F3.5.6 swaps the panel over to `<TabRenderer />`.
+
 ## Architecture
 
 ```
 RightPanel.tsx (3 tabs: Fields, Style, Advanced)         # 1671 LOC
 ├─ right-panel/                                          # audit M1, conservative slice
-│  ├─ icons.tsx  # IconFields, IconStyle, IconAdvanced, IconStateNormal, IconStateHover
-│  └─ types.ts   # AdvancedConfig — admin-only shape for `config.advanced`
+│  ├─ icons.tsx           # IconFields, IconStyle, IconAdvanced, IconStateNormal, IconStateHover
+│  ├─ types.ts            # AdvancedConfig — admin-only shape for `config.advanced`
+│  ├─ SectionRenderer.tsx # F3.5.3 — pure dispatcher on `StyleSection.kind` (Style tab)
+│  ├─ TabRenderer.tsx     # F3.5.4 — 3-tab shell + getVisibleTabs / useAutoSelectTab
+│  ├─ AdvancedTab.tsx     # F3.5.5 — universal Advanced tab (Width/Height/Padding/Margin/Position/Z-Index/CSS ID/Classes/Custom CSS)
+│  └─ sections/           # F3.5.2 — extracted custom Style-tab renderers
 ├─ fields/
 │  ├─ FieldRenderer.tsx         # Generic field dispatcher (12 types)
 │  ├─ JsonArrayField.tsx        # Expandable item list
