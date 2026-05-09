@@ -21,6 +21,30 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 23:55 · F4.10 started
+
+- Branch: `feature/agentB-F4.10` off worktree at latest main (76e0495 — F4.1 + F4.2 + F4.3 in).
+- Goal: image blocks emit responsive `<picture>`/`<img srcset>` so the browser downloads the smallest appropriate image. Lighthouse target > 95 for image-heavy pages on hosts with format-conversion (S3 + image resizing, R2 + Cloudflare Image Resizing, etc.).
+- **Investigation of EmDash's `<Image>`** (read `node_modules/emdash/src/components/EmDashImage.astro` + `Image.astro` + `media/url.ts` + storage `local.ts` / `s3.ts`):
+  - `EmDashImage` (= `Image` from `emdash/ui`) takes `MediaValue` (`{ id, src?, meta?, width?, height?, alt?, provider? }`). Plugin layout JSON persists `ImageMediaRef` (`{ id, storageKey, alt?, filename? }`) — different shape, no `src`/`meta`/`width`/`height`. Adapting requires a normalization pass on every block at render time, plus a width/height lookup that's not in the persisted ref. Out of scope for F4.10 — same conclusion F2.2 reached.
+  - **More importantly**: `EmDashImage` only emits responsive `srcset` when the active media provider exposes `ImageEmbed.getSrc({ width, height, format })`. The local storage adapter (`local.getPublicUrl`) returns `${baseUrl}/${key}` — no transform. The S3 adapter (`s3.getPublicUrl`) returns `${publicUrl}/${key}` — no transform unless an upstream CDN intercepts. So `EmDashImage` itself emits a plain `<img>` for the local + plain-S3 majority of hosts. Routing through it would add the normalization plumbing for zero responsive benefit on those hosts.
+- **Decision: Path 2 (hand-rolled `<picture>`).** Cleanest plugin-side path. KISS:
+  1. Add `resolveResponsiveSrcSet(key, opts)` to `media.ts`. Returns either `{ srcSet: { avif?, webp?, fallback }, sizes }` when the host's resolver supports format hints — detected by introspecting the URL shape `getPublicMediaUrl(key)` returns — or `null` otherwise. EmDash core's `getPublicMediaUrl` returns flat URLs today, so the helper returns `null` for the local + plain-S3 case → plain `<img>` falls through (no regression).
+  2. Detection mechanism: hosts that wire format-conversion expose it via a custom hook on `Astro.locals.emdash` shape (or a query-param contract — keep it forward-compatible). For F4.10 we ship the helper + a feature flag the host can opt into via `getPublicMediaUrl` returning a URL with a `?format=` placeholder we can substitute, OR the plugin user passing a `transform` query convention. Simplest: emit a `<picture>` whose `<source>` URLs are derived by appending `?format=webp&w=N` / `?format=avif&w=N` to the resolved URL when an opt-in marker is present, with the `<img>` fallback always the original-format URL. CDN that intercepts those query params (Cloudflare Image Resizing, Vercel Image Optimization, Netlify Image CDN, custom S3-Fronted-by-CF) does the work; CDNs that don't ignore the query string (default S3) fall through to the same image so the page still renders correctly.
+  3. **Default size set**: `[480, 800, 1200, 1920]`. **Default `sizes`**: `(max-width: 768px) 100vw, 50vw`. **Format set**: AVIF first, WebP next, original (JPEG/PNG) as `<img src>` fallback.
+  4. `Image.astro` chooses `<picture>` when `resolveResponsiveSrcSet` returns a non-null result; plain `<img>` otherwise. Existing chrome (`data-epx-block`, `id`, classes, link wrap, caption, alt, `loading=lazy`, `decoding=async`, `style=imgInline`) is preserved verbatim. The `<picture>` wraps an existing `<img>` (no behavioral change for browsers without `<picture>` support).
+  5. Default off (returns `null`) for the local-runtime fallback URL (`/_emdash/api/media/file/...`) — that route doesn't speak transforms either.
+- Tests:
+  1. `media.test.ts` — extend with a `describe("resolveResponsiveSrcSet")` block: null when key falsy, null when no resolver, null on local-runtime fallback URL (preserve no-regression promise), populated `{ srcSet, sizes }` when adapter URL contains an opt-in marker (using a stub adapter that emits `${baseUrl}/${key}?epx=1`).
+  2. `Image.astro` doesn't have a unit test today (it's an `.astro` SFC — vitest can't render it without astro/server). Instead, structure the helper so the actual srcset string-building is unit-testable via `buildResponsiveSrcSet(baseUrl, widths, format)`. Test the assembled markup intent at the helper level — assert the URL set and `sizes` string match the spec.
+- Files:
+  - Edit: `src/components/Image.astro` — pick `<picture>` over `<img>` when responsive markup is available; preserve all existing chrome.
+  - Edit: `src/components/media.ts` — add `resolveResponsiveSrcSet`, `buildResponsiveSrcSet`, and the constants `RESPONSIVE_DEFAULT_WIDTHS` / `RESPONSIVE_DEFAULT_SIZES`. Re-export from `index.ts`.
+  - Edit: `tests/media.test.ts` — extend with the new describe block.
+  - Edit: `CHANGELOG.md` — append F4.10 bullet under the existing `## Unreleased — 1.0.0 prep` section.
+  - Edit: `.claude/prd-frontend.md` — document the responsive image flow + size/format defaults + fallback path.
+- Coordination: Concurrent C on F4.7 (BackgroundControl split, admin only, branch `feature/agentC-F4.7`) is disjoint — admin path, my work is frontend. No conflicts. The `## Unreleased — 1.0.0 prep` section in CHANGELOG is shared; I append.
+
 ## 2026-05-09 23:50 · F4.1 started
 
 - Branch: `feature/agentB-F4.1` off latest main (0d767dd, v0.9.6).
@@ -87,6 +111,39 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 - Coordination: Agent A is fixing the related backend bug on a parallel branch (`/entries`). Doc-id format `<collection>::<entryId>` is canonical (per `src/plugin.ts:80` `layoutDocId`); A and B's fixes converge on this key. No `interfaces.md` change needed.
 
 ## Done
+
+## 2026-05-10 00:05 · F4.10 done
+
+- Path chosen: **2 (hand-rolled `<picture>`)**. EmDash's `<Image>` component (= `EmDashImage` from `emdash/ui`) only emits responsive `srcset` when the active media provider exposes `ImageEmbed.getSrc({ width, height, format })`. The local + plain-S3 storage adapters don't (verified by reading `node_modules/emdash/src/storage/local.ts` and `s3.ts` — both return flat `${baseUrl}/${key}` URLs with no transform layer). So routing through it would have added a `MediaValue ← ImageMediaRef` normalization pass plus a width/height lookup that's not in the persisted ref, all for zero responsive benefit on the majority of hosts. Path 2 ships responsive markup the moment a host wires a format-aware CDN — no EmDash-side cooperation required.
+- New helpers (in `src/components/media.ts`):
+  - `RESPONSIVE_DEFAULT_WIDTHS = [480, 800, 1200, 1920]`. Phone (480) → 4K (1920 ≈ 2x typical desktop). Four breakpoints — enough granularity for the browser's source selection without flooding `srcset` with ten entries.
+  - `RESPONSIVE_DEFAULT_SIZES = "(max-width: 768px) 100vw, 50vw"`. Image fills the viewport on phone, half-width on desktop. Standard heuristic; future blocks can override.
+  - `appendImageTransformParams(baseUrl, format, w)` — internal URL builder. Appends `?format=<fmt>&w=<n>` (or `&format=…` if URL already has a query). Handles undefined format (emits `?w=<n>` only — used for the original-format `<img srcset>` fallback).
+  - `buildResponsiveSrcSet(baseUrl, widths, format?)` — pure string builder. Emits comma-joined `<url> <w>w` entries.
+  - `isLegacyLocalRuntimeUrl(url)` — detects the `/_emdash/api/media/file/...` route. Used for opt-out (that route doesn't honor `?format=` / `?w=`).
+  - `resolveResponsiveSrcSet(key, opts)` — feature-detected wrapper. Returns `{ avif, webp, fallback, src, sizes, widths }` or `null`. `null` triggers the plain-`<img>` degradation path in `Image.astro`. Triggers when: key is falsy / no adapter / adapter returns undefined / adapter resolves to legacy local-runtime URL.
+- `Image.astro` updates:
+  - Imports `resolveResponsiveSrcSet` alongside `resolveMediaUrl`.
+  - Computes `responsive = resolveResponsiveSrcSet(image?.storageKey, { locals: Astro.locals })` once at the top of the frontmatter.
+  - When `responsive` is non-null, emits `<picture>` with `<source type="image/avif" srcset=… sizes=…>`, `<source type="image/webp" srcset=… sizes=…>`, and the existing `<img>` (now with `srcset` + `sizes` for the original-format fallback). When null, emits the same plain `<img>` it shipped pre-F4.10 — byte-identical markup for hosts on local-runtime / no-adapter setups.
+  - Branches in BOTH the link-wrapped path (`caption && linkHref`) and the unwrapped path. Preserves all existing chrome (`data-epx-block`, `id`, classes, alt, width/height attrs, inline `style`, `loading=lazy`, `decoding=async`, link wrap target/rel/customAttrs).
+- Files changed:
+  - `src/components/media.ts` — added helpers + constants + types.
+  - `src/components/Image.astro` — `<picture>` markup.
+  - `src/components/index.ts` — re-exports `buildResponsiveSrcSet`, `resolveResponsiveSrcSet`, `RESPONSIVE_DEFAULT_WIDTHS`, `RESPONSIVE_DEFAULT_SIZES`, type `ResponsiveImageFormat`, `ResponsiveSrcSet`, `ResolveResponsiveSrcSetOptions`.
+  - `tests/media.test.ts` — added 15 cases across 4 new describe blocks.
+  - `CHANGELOG.md` — appended F4.10 bullet under `## Unreleased — 1.0.0 prep` (above the F4.2 bullet — chronological order, F4.10 ships after F4.1+F4.2 merged).
+  - `.claude/prd-frontend.md` — new "Responsive image pipeline (F4.10)" section, updated "Image Fields" reference to `<Image>` from emdash/ui to point at the new section's path-1-rejection rationale, marked TODO `[x]`.
+  - `.claude/coordination/status/agent-b.md` — start + done entries.
+- Tests added (`tests/media.test.ts`):
+  - `appendImageTransformParams (F4.10)` — 3 cases: no-existing-query, with-existing-query, undefined-format.
+  - `buildResponsiveSrcSet (F4.10)` — 3 cases: comma-joined output, query-string preservation, undefined-format.
+  - `isLegacyLocalRuntimeUrl (F4.10)` — 2 cases: matches legacy path, doesn't match adapter URLs.
+  - `resolveResponsiveSrcSet (F4.10)` — 7 cases: null on falsy key, null on no adapter, null on legacy fallback URL (the F2.2 no-regression promise — verified explicitly), null on undefined adapter return, full result with adapter-resolved URL, query-string preservation, caller-supplied widths/sizes overrides.
+  - Total: 350 → 365 (+15).
+- Coordination: no `interfaces.md` change. The new exports (`resolveResponsiveSrcSet`, `buildResponsiveSrcSet`, etc.) are public API surface for `empixel-builder/components` but they're plugin-internal helpers — admin previews and tests can import them, but no other agent owns code that needs to consume them. Agent C's F4.7 (BackgroundControl split) is disjoint — admin path, my work is frontend. CHANGELOG `## Unreleased — 1.0.0 prep` was already opened by F4.1 — I appended above the existing F4.2 bullet.
+- Pipeline: lint + typecheck + 365/365 tests + build all green on first try.
+- Anything surprising: nothing major. The legacy local-runtime opt-out (`isLegacyLocalRuntimeUrl`) was important to add explicitly — without it, a host running on the local-runtime fallback would ship `<picture>` with `<source>` URLs like `/_emdash/api/media/file/img.png?format=avif&w=480` that 404 on every breakpoint, forcing the browser into the `<img src>` fallback for every load. By explicitly opting out, hosts on local-runtime see the same plain `<img>` they did pre-F4.10. F2.2 no-regression promise preserved.
 
 ## 2026-05-09 23:55 · F4.1 done
 

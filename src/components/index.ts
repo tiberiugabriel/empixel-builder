@@ -24,6 +24,22 @@ export { default as BuilderWrapper } from "./BuilderWrapper.astro";
 // importing the legacy local-runtime URL.
 export { resolveMediaUrl } from "./media.js";
 export type { MediaUrlResolver, ResolveMediaUrlOptions } from "./media.js";
+// F4.10 — responsive image pipeline. `Image.astro` uses these to emit
+// `<picture>` markup with AVIF + WebP `<source>` elements + an
+// `<img srcset>` fallback when the host's storage adapter supports
+// format conversion. Re-exported so admin previews and tests can also
+// build the same markup.
+export {
+  buildResponsiveSrcSet,
+  resolveResponsiveSrcSet,
+  RESPONSIVE_DEFAULT_WIDTHS,
+  RESPONSIVE_DEFAULT_SIZES,
+} from "./media.js";
+export type {
+  ResponsiveImageFormat,
+  ResponsiveSrcSet,
+  ResolveResponsiveSrcSetOptions,
+} from "./media.js";
 
 export const blockComponents: Record<string, unknown> = {
   text: Text,

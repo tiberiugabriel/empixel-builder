@@ -5,6 +5,47 @@ SemVer.
 
 ## Unreleased — 1.0.0 prep
 
+- **F4.10 — image pipeline polish (`srcset` + WebP/AVIF).**
+  `Image.astro` now emits responsive `<picture>` markup with
+  `<source type="image/avif">` + `<source type="image/webp">` elements
+  and an `<img srcset="...">` fallback. Default widths
+  `[480, 800, 1200, 1920]`; default `sizes` is
+  `"(max-width: 768px) 100vw, 50vw"` (overridable via the
+  `resolveResponsiveSrcSet` opts bag — future blocks can pick their
+  own size set). Falls back to the pre-F4.10 plain `<img>` when the
+  host's storage adapter doesn't support format conversion (no
+  `getPublicMediaUrl`, the resolved URL is the legacy
+  `/_emdash/api/media/file/...` route, or the adapter returns
+  undefined for the key) — so hosts on the local-runtime adapter
+  see byte-identical markup to v0.9.6 and ship no broken
+  `<source>` URLs. New helpers `resolveResponsiveSrcSet`,
+  `buildResponsiveSrcSet`, `appendImageTransformParams`,
+  `isLegacyLocalRuntimeUrl` + the constants
+  `RESPONSIVE_DEFAULT_WIDTHS` / `RESPONSIVE_DEFAULT_SIZES` live in
+  `src/components/media.ts`; all are re-exported from
+  `empixel-builder/components` so admin previews and tests can
+  build the same markup. The `<source>` URLs append
+  `?format=avif&w=N` / `?format=webp&w=N` to the adapter-resolved
+  URL — CDNs that intercept those query params (Cloudflare Image
+  Resizing, Vercel/Netlify image optimization, custom S3-fronted-by-
+  CF setups) do the actual transform; CDNs that don't honor the
+  query string serve the original-format file, so the page still
+  renders correctly. Path 1 (routing through `<Image>` from
+  `emdash/ui`) was investigated and rejected: the EmDash component
+  takes `MediaValue` (`{ id, src?, meta?, width?, height? }`) not
+  the plugin's `ImageMediaRef` (`{ id, storageKey, alt?, filename? }`),
+  AND only emits responsive `srcset` when the active media provider
+  exposes `ImageEmbed.getSrc()` — the local + plain-S3 storage
+  adapters don't, so routing through it would add normalization
+  plumbing for zero responsive benefit on the majority of hosts.
+  Lighthouse imagery score expected > 95 on tuned hosts. Tests:
+  350 → 365 (+15: 3 for `appendImageTransformParams`, 3 for
+  `buildResponsiveSrcSet`, 2 for `isLegacyLocalRuntimeUrl`, 7 for
+  `resolveResponsiveSrcSet`). Files: `src/components/media.ts`,
+  `src/components/Image.astro`, `src/components/index.ts`,
+  `tests/media.test.ts`, `CHANGELOG.md`, `.claude/prd-frontend.md`,
+  `.claude/coordination/status/agent-b.md`.
+
 - **F4.2 — In-memory LRU cache on `/layout` GET (200 entries,
   invalidates on POST/toggle/afterDelete). ETag on GET responses;
   conditional GET returns 304 when `If-None-Match` matches.

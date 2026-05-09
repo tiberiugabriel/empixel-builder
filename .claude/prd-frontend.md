@@ -430,10 +430,105 @@ EmDash also ships an `<Image image={...} />` component in `emdash/ui` for
 fields shaped as the EmDash `MediaValue` type (`{ id, src, meta?, … }`).
 Plugin layouts persist the older `ImageMediaRef` shape (no `src`/`meta`),
 so swapping `<img>` for `<Image>` directly would require a normalization
-pass. Pending that, every block component uses raw `<img>` driven by
-`resolveMediaUrl` — same end result, fewer moving parts.
+pass. F4.10 considered routing through it for the responsive image
+pipeline and rejected the path — see "Responsive image pipeline (F4.10)"
+below for the rationale. Every block component uses raw `<img>` (or
+`<picture>` post-F4.10) driven by `resolveMediaUrl` and
+`resolveResponsiveSrcSet` — same end result, fewer moving parts.
 
 Never use raw hand-built `/_emdash/api/...` URLs. Never assume image is a string.
+
+## Responsive image pipeline (F4.10)
+
+`Image.astro` emits responsive `<picture>` markup so the browser
+downloads the smallest appropriate file. Three layers cooperate:
+
+1. **`buildResponsiveSrcSet(baseUrl, widths, format?)`** (in `media.ts`) —
+   pure string builder. Returns a comma-joined `srcset` value. URLs are
+   produced by `appendImageTransformParams(baseUrl, format, w)` which
+   appends `?format=<fmt>&w=<n>` (or `&format=…&w=…` if the URL already
+   has a query string). Format `undefined` emits `?w=<n>` only — used
+   for the original-format `<img srcset>` fallback.
+2. **`resolveResponsiveSrcSet(key, opts)`** (in `media.ts`) — feature-
+   detected wrapper. Returns `{ avif, webp, fallback, src, sizes,
+   widths }` when an adapter-resolved URL is available, or `null` when
+   format conversion isn't supported. `null` triggers the plain-`<img>`
+   degradation path in `Image.astro`. The fallback path triggers when:
+   - `key` is falsy (no media reference).
+   - `Astro.locals.emdash.getPublicMediaUrl` is missing (no adapter wired).
+   - The adapter resolves to the legacy local-runtime fallback
+     (`/_emdash/api/media/file/...`) — that route doesn't honor
+     `?format=` / `?w=`, so we'd ship `<source>` URLs that 404. Detected
+     via `isLegacyLocalRuntimeUrl(url)`.
+   - The adapter returns `undefined` for the key (no fallback URL).
+3. **`Image.astro`** chooses `<picture>` over `<img>` when
+   `resolveResponsiveSrcSet` returns non-null. Existing chrome
+   (`data-epx-block`, `id`, classes, link wrap, caption, alt,
+   `loading=lazy`, `decoding=async`, `style=imgInline`) is preserved
+   verbatim — the `<picture>` simply wraps the existing `<img>` with
+   AVIF + WebP `<source>` siblings. Plain `<img src>` is the
+   `<picture>` fallback for browsers without `<picture>` support, so
+   end users on every browser see at least the original image.
+
+**Defaults** (overridable per-call via opts).
+
+| Default | Value | Constant |
+|---------|-------|----------|
+| Widths  | `[480, 800, 1200, 1920]` (phone → 4K) | `RESPONSIVE_DEFAULT_WIDTHS` |
+| Sizes   | `(max-width: 768px) 100vw, 50vw` (full-width on phone, half-width on desktop) | `RESPONSIVE_DEFAULT_SIZES` |
+| Formats | AVIF first (best compression), WebP next, original-format last | hard-coded in the picture markup |
+
+Future blocks can override widths and sizes by calling
+`resolveResponsiveSrcSet(key, { locals, widths, sizes })` directly.
+
+**Output markup**:
+
+```html
+<picture>
+  <source type="image/avif" srcset="<base>?format=avif&w=480 480w, …" sizes="(max-width: 768px) 100vw, 50vw" />
+  <source type="image/webp" srcset="<base>?format=webp&w=480 480w, …" sizes="(max-width: 768px) 100vw, 50vw" />
+  <img src="<base>" srcset="<base>?w=480 480w, …" sizes="(max-width: 768px) 100vw, 50vw"
+       alt="..." width="..." height="..." style="..." loading="lazy" decoding="async" />
+</picture>
+```
+
+CDNs that intercept the query params (Cloudflare Image Resizing,
+Vercel Image Optimization, Netlify Image CDN, custom
+S3-fronted-by-Cloudflare) do the actual format conversion + size
+fan-out. CDNs that ignore the query string serve the original file —
+the page still renders correctly, just without the optimization. KISS:
+the markup is forward-compatible without requiring the host to declare
+which transforms are supported up front.
+
+**Path 1 (`<Image>` from `emdash/ui`) — investigated, rejected.**
+F4.10 evaluated routing the plugin's image block through EmDash's
+`EmDashImage` component. Two reasons it loses:
+
+1. **Shape mismatch.** `EmDashImage` takes `MediaValue` (`{ id, src?,
+   meta?, width?, height?, alt? }`); the plugin persists `ImageMediaRef`
+   (`{ id, storageKey, alt?, filename? }`). No `meta`, no
+   `width`/`height`, no `src`. Adapting requires an O(blocks)
+   normalization pass at render time plus a width/height lookup that
+   isn't in the persisted ref.
+2. **No responsive benefit on the local + plain-S3 majority of hosts.**
+   `EmDashImage` only emits `srcset` when the active media provider
+   exposes `ImageEmbed.getSrc({ width, height, format })`. The default
+   `local()` storage adapter's `getPublicUrl` returns
+   `${baseUrl}/${key}` with no transform. `s3()` returns
+   `${publicUrl}/${key}` — no transform either, unless an upstream
+   CDN intercepts. So `EmDashImage` falls back to a plain `<img>`
+   for the same hosts where our `<picture>` markup also gracefully
+   degrades. Routing through it would add the normalization plumbing
+   for zero responsive benefit on those hosts.
+
+The hand-rolled `<picture>` (path 2) is the smaller plugin-side
+implementation and ships responsive markup the moment a host wires a
+format-aware CDN — no `EmDashImage`-side cooperation required.
+
+**Lighthouse expectation**: imagery-heavy pages on hosts with format
+conversion (S3 + Cloudflare Image Resizing, R2 + Cloudflare Image
+Resizing, Vercel/Netlify image optimization) should score > 95 on the
+imagery axis. Hosts on the local adapter see no regression vs. v0.9.6.
 
 ## Props Flow (Page → Blocks)
 
@@ -730,7 +825,7 @@ call. Single source of truth for spacing CSS lives in `styleUtils.ts`.
 - [x] Implement breakpoint media queries (`buildBreakpointCss` / `buildBreakpointHoverCss`)
 - [x] Apply hover CSS via `:hover` pseudo-selector from `styleHover`
 - [x] Apply dark-theme CSS from `styleDark` (via `getEffectiveStyle`)
-- [ ] Add responsive image optimization (`<picture>` / `srcset`)
+- [x] Add responsive image optimization (`<picture>` / `srcset`) (F4.10)
 - [ ] Add SEO metadata (og:image, schema.org)
 - [ ] Test nested containers (3+ levels deep)
 - [x] Add Astro components: text-editor, video, button, icon, html, divider-spacer (v0.6)

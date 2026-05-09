@@ -1,7 +1,7 @@
 ---
 import type { ImageConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
-import { resolveMediaUrl } from "./media.js";
+import { resolveMediaUrl, resolveResponsiveSrcSet } from "./media.js";
 
 interface Props {
   value: ImageConfig;
@@ -60,6 +60,17 @@ const imgHeightAttr = dims?.h;
 // turns those into fetchable URLs via Astro.locals.emdash.getPublicMediaUrl.
 const imgSrc = resolveMediaUrl(image?.storageKey, { locals: Astro.locals }) ?? undefined;
 const imgAlt = image?.alt ?? image?.filename ?? "";
+
+// F4.10 — responsive `<picture>` markup. `resolveResponsiveSrcSet`
+// returns null when the host's storage adapter doesn't support format
+// conversion (local-runtime fallback, missing `getPublicMediaUrl`, or
+// falsy key) — in that case we degrade to a plain `<img>` and the
+// pre-F4.10 behavior is preserved verbatim. When non-null, we emit
+// `<picture>` with AVIF + WebP `<source>` elements and an
+// `<img srcset>` fallback so browsers/CDNs that honor format query
+// params (Cloudflare Image Resizing, Vercel/Netlify image
+// optimization, etc.) download the smallest appropriate file.
+const responsive = resolveResponsiveSrcSet(image?.storageKey, { locals: Astro.locals });
 
 const imgStyleCfg = (cfg.imgStyle ?? {}) as Record<string, string | undefined>;
 const imgInline = (() => {
@@ -122,10 +133,26 @@ if (imgSrc && allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
     <div class="epx-img-frame">
       {caption && linkHref ? (
         <a href={linkHref} target={linkTarget} rel={linkRel} {...linkCustomAttrs}>
-          <img src={imgSrc} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+          {responsive ? (
+            <picture>
+              <source type="image/avif" srcset={responsive.avif} sizes={responsive.sizes} />
+              <source type="image/webp" srcset={responsive.webp} sizes={responsive.sizes} />
+              <img src={imgSrc} srcset={responsive.fallback} sizes={responsive.sizes} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+            </picture>
+          ) : (
+            <img src={imgSrc} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+          )}
         </a>
       ) : (
-        <img src={imgSrc} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+        responsive ? (
+          <picture>
+            <source type="image/avif" srcset={responsive.avif} sizes={responsive.sizes} />
+            <source type="image/webp" srcset={responsive.webp} sizes={responsive.sizes} />
+            <img src={imgSrc} srcset={responsive.fallback} sizes={responsive.sizes} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+          </picture>
+        ) : (
+          <img src={imgSrc} alt={imgAlt} width={imgWidthAttr} height={imgHeightAttr} style={imgInline || undefined} loading="lazy" decoding="async" />
+        )
       )}
     </div>
     {caption && <figcaption>{caption}</figcaption>}
