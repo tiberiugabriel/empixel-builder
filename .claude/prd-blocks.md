@@ -106,7 +106,7 @@ makes the cascade work without `!important`. See
 [`prd-theme.md`](prd-theme.md) for the full cascade table, tie-break
 audit, and authoring workflows.
 
-`EMPTY_STYLE_DEFAULTS` and `EMPTY_ADVANCED_DEFAULTS` are exported from `src/admin/blockDefinitions.ts`. `EMPTY_STYLE_DEFAULTS` mirrors the canonical `STYLE_PROPS` array in `src/components/styleUtils.ts` (Agent B's column — local `const`, not exported, so we replicate the key set as a contract). The 36 keys cover padding/margin/sizing/border-radius/border-width/overflow/typography/blend-mode/aspect-ratio/filter — every CSS property the plugin's render pipeline knows about.
+`EMPTY_STYLE_DEFAULTS` and `EMPTY_ADVANCED_DEFAULTS` are exported from `src/admin/blockDefinitions.ts`. **As of 1.0.5, `EMPTY_STYLE_DEFAULTS` is derived from the exported `STYLE_PROPS` array in `src/components/styleUtils.ts`** via `Object.fromEntries(STYLE_PROPS.map((k) => [k, ""]))` — single source of truth. The 36 keys cover padding/margin/sizing/border-radius/border-width/overflow/typography/blend-mode/aspect-ratio/filter — every CSS property the plugin's render pipeline knows about.
 
 Pre-existing design defaults still survive the F3.6.1 merge:
 - `container.style` retains `paddingTop/Right/Bottom/Left = "12px"` and `columnGap/rowGap = "6px"` (the merge spreads `EMPTY_STYLE_DEFAULTS` first, then design overrides win).
@@ -114,10 +114,12 @@ Pre-existing design defaults still survive the F3.6.1 merge:
 - `video.defaultConfig` retains `aspectRatio: "16:9"` and the `video.{src,autoplay,mute,...}` group.
 - `divider-spacer.defaultConfig` retains the full `divider: { style, width, length, color, colorAlpha, align }` group.
 
-If `STYLE_PROPS` in `styleUtils.ts` ever gains a new entry, mirror it
-in BOTH `EMPTY_STYLE_DEFAULTS` (in `blockDefinitions.ts`) and the
-`STYLE_PROPS_SNAPSHOT` array in `tests/blockDefinitions.test.ts`. The
-test asserts both lists agree and will fail loudly until they do.
+**Style-key sync convention (1.0.5+).** Future style-key additions land
+in `STYLE_PROPS` in `src/components/styleUtils.ts` only. `EMPTY_STYLE_DEFAULTS`
+in `blockDefinitions.ts` and `tests/blockDefinitions.test.ts` both
+import the same exported `STYLE_PROPS` constant — no parallel mirrors
+to maintain. The pre-1.0.5 sync debt (three places to keep aligned)
+is gone.
 
 ### F3.6.7 — parity snapshot guard (`tests/parity/all.test.ts`)
 

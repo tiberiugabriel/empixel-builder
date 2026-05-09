@@ -176,7 +176,20 @@ export function buildBackgroundCss(style: Record<string, unknown>, opts?: MediaU
 
 // ─── Full inline style string ─────────────────────────────────────────────────
 
-const STYLE_PROPS = [
+/**
+ * Canonical list of CSS-property keys the plugin's CSS pipeline knows how to
+ * emit. Every key here maps 1:1 to a kebab-case CSS declaration via
+ * `camelToKebab`. Spacing keys (`padding*` / `margin*`) additionally get
+ * legacy-symbolic resolution through `LEGACY_SPACING_PROP_SET` +
+ * `normalizeLegacySpacing` (F3.6.4).
+ *
+ * Exported (1.0.5 — debt cleanup) so the admin schema in
+ * `src/admin/blockDefinitions.ts` can derive `EMPTY_STYLE_DEFAULTS` from
+ * this list instead of maintaining a parallel mirror. Also referenced by
+ * `tests/blockDefinitions.test.ts` directly. Single source of truth —
+ * future style-key additions only need to land here.
+ */
+export const STYLE_PROPS = [
   "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
   "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
   "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight",

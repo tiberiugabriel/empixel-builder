@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { BlockType } from "../src/types.js";
+import { STYLE_PROPS } from "../src/components/styleUtils.js";
 import {
   BASE_DEFAULTS,
   BLOCK_DEFINITIONS,
@@ -214,34 +215,17 @@ describe("F3.5.2 + F3.5.6 — migrated BlockDef instances", () => {
 // ─── F3.6.1 — full defaultConfig structural shape ────────────────────────────
 
 describe("F3.6.1 — defaultConfig structural shape", () => {
-  // Source-of-truth replication. `STYLE_PROPS` lives in
-  // `src/components/styleUtils.ts` (Agent B's column) as a non-exported
-  // local `const`. Replicating the array verbatim here is the cheapest
-  // way to enforce the contract without forking the styleUtils file
-  // for an export. If `STYLE_PROPS` ever gains a new entry, mirror it
-  // BOTH here and in `EMPTY_STYLE_DEFAULTS` (in blockDefinitions.ts) —
-  // this test will fail loudly until they agree.
-  const STYLE_PROPS_SNAPSHOT = [
-    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-    "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
-    "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight",
-    "borderTopLeftRadius", "borderTopRightRadius",
-    "borderBottomRightRadius", "borderBottomLeftRadius",
-    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-    "overflowX", "overflowY",
-    "textAlign",
-    "fontFamily", "fontSize", "fontWeight",
-    "textTransform", "fontStyle", "textDecoration",
-    "lineHeight", "letterSpacing", "wordSpacing",
-    "mixBlendMode",
-    "aspectRatio",
-    "filter",
-  ] as const;
+  // 1.0.5 — `STYLE_PROPS` is now exported from
+  // `src/components/styleUtils.ts` (debt cleanup); the test imports it
+  // directly so the contract has a single source of truth. Pre-1.0.5
+  // we maintained a `STYLE_PROPS_SNAPSHOT` mirror here AND a parallel
+  // literal `EMPTY_STYLE_DEFAULTS` in `blockDefinitions.ts`. Future
+  // style-key additions only land in `styleUtils.ts`.
 
   // Sanity — EMPTY_STYLE_DEFAULTS itself carries every STYLE_PROPS key.
-  // If this fails, blockDefinitions.ts has drifted from styleUtils.ts.
+  // If this fails, the derivation in blockDefinitions.ts has drifted.
   it("EMPTY_STYLE_DEFAULTS includes every STYLE_PROPS key", () => {
-    for (const key of STYLE_PROPS_SNAPSHOT) {
+    for (const key of STYLE_PROPS) {
       expect(EMPTY_STYLE_DEFAULTS).toHaveProperty(key);
       // Empty string per the F3.6.1 contract — no design values invented.
       expect(EMPTY_STYLE_DEFAULTS[key]).toBe("");
@@ -257,7 +241,7 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
   it("every block's defaultConfig.style has every STYLE_PROPS key", () => {
     for (const def of BLOCK_DEFINITIONS) {
       const styleDefault = (def.defaultConfig.style ?? {}) as Record<string, unknown>;
-      for (const key of STYLE_PROPS_SNAPSHOT) {
+      for (const key of STYLE_PROPS) {
         expect(
           styleDefault,
           `block "${def.type}" defaultConfig.style is missing STYLE_PROPS key "${key}"`,
@@ -344,7 +328,7 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
     for (const def of BLOCK_DEFINITIONS) {
       const styleDefault = (def.defaultConfig.style ?? {}) as Record<string, string>;
       const allowed = PRE_EXISTING[def.type] ?? {};
-      for (const key of STYLE_PROPS_SNAPSHOT) {
+      for (const key of STYLE_PROPS) {
         const expected = allowed[key] ?? "";
         expect(
           styleDefault[key],
@@ -358,25 +342,10 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
 // ─── F3.6.2 — getDefaultBlockConfig + BASE_DEFAULTS ─────────────────────────
 
 describe("F3.6.2 — getDefaultBlockConfig", () => {
-  // STYLE_PROPS keys mirror the F3.6.1 contract — replicated here as a
-  // separate snapshot so this test doesn't reach into the F3.6.1 block
-  // for its own variable.
-  const STYLE_PROPS_SNAPSHOT = [
-    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-    "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
-    "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight",
-    "borderTopLeftRadius", "borderTopRightRadius",
-    "borderBottomRightRadius", "borderBottomLeftRadius",
-    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-    "overflowX", "overflowY",
-    "textAlign",
-    "fontFamily", "fontSize", "fontWeight",
-    "textTransform", "fontStyle", "textDecoration",
-    "lineHeight", "letterSpacing", "wordSpacing",
-    "mixBlendMode",
-    "aspectRatio",
-    "filter",
-  ] as const;
+  // 1.0.5 — `STYLE_PROPS` is imported at the top of the file (single
+  // source of truth from `src/components/styleUtils.ts`). Pre-1.0.5
+  // both this describe and F3.6.1 carried their own
+  // `STYLE_PROPS_SNAPSHOT` mirror; the export removed the need.
 
   it("BASE_DEFAULTS carries the shared shape — theme + style + advanced + bp maps", () => {
     expect(BASE_DEFAULTS).toHaveProperty("theme", "light");
@@ -394,7 +363,7 @@ describe("F3.6.2 — getDefaultBlockConfig", () => {
   it("getDefaultBlockConfig(\"text\") has every STYLE_PROPS key in style + content default", () => {
     const cfg = getDefaultBlockConfig("text");
     const style = cfg.style as Record<string, unknown>;
-    for (const key of STYLE_PROPS_SNAPSHOT) {
+    for (const key of STYLE_PROPS) {
       expect(style, `text default style is missing key "${key}"`).toHaveProperty(key);
     }
     // Block-specific default survives
@@ -444,7 +413,7 @@ describe("F3.6.2 — getDefaultBlockConfig", () => {
       expect(cfg, `${type} missing theme`).toHaveProperty("theme");
       // Every STYLE_PROPS key present on every block's style default.
       const style = cfg.style as Record<string, unknown>;
-      for (const key of STYLE_PROPS_SNAPSHOT) {
+      for (const key of STYLE_PROPS) {
         expect(
           style,
           `${type} default style is missing STYLE_PROPS key "${key}"`,
@@ -477,7 +446,7 @@ describe("F3.6.2 — getDefaultBlockConfig", () => {
     expect(cfg).toHaveProperty("style");
     expect(cfg).toHaveProperty("advanced");
     const style = cfg.style as Record<string, unknown>;
-    for (const key of STYLE_PROPS_SNAPSHOT) {
+    for (const key of STYLE_PROPS) {
       expect(style, `unknown-type style missing "${key}"`).toHaveProperty(key);
     }
   });

@@ -2,6 +2,24 @@
 
 Append-only log. Most recent entry on top. The orchestrator reads this to decide phase advancement.
 
+## 2026-05-09 24:30 · feature/agentB-style-props-export done
+
+- Branch: `feature/agentB-style-props-export` off `main` (fe17cac, v1.0.4). Released as v1.0.5.
+- `STYLE_PROPS` exported. `src/components/styleUtils.ts` line 179 — added `export` keyword + a doc-comment describing it as the single source of truth for the plugin's CSS-property keys + the legacy-spacing gating. The literal is unchanged (36 keys: padding/margin/sizing/border-radius/border-width/overflow/typography/blend-mode/aspect-ratio/filter — same `as const` tuple, same order). Re-exported from `src/components/index.ts` next to the other 1.0.x public exports.
+- Admin mirror dropped. `src/admin/blockDefinitions.ts` imports `STYLE_PROPS` from `../components/styleUtils.js` and derives `EMPTY_STYLE_DEFAULTS = Object.fromEntries(STYLE_PROPS.map((k) => [k, ""]))`. The 22-line literal collapses to one line. Doc comment updated to describe the derivation; no longer talks about "mirror" / "replicate". All 12 spread sites (`{ ...EMPTY_STYLE_DEFAULTS }` in BlockDef defaultConfig + `BASE_DEFAULTS.style`) untouched — they still consume the derived object.
+- Test mirror dropped. `tests/blockDefinitions.test.ts` imports `STYLE_PROPS` once at the top from `../src/components/styleUtils.js`. Both `STYLE_PROPS_SNAPSHOT` literal arrays (one per describe block — F3.6.1 + F3.6.2) gone. The four `for (const key of STYLE_PROPS_SNAPSHOT)` references became `for (const key of STYLE_PROPS)`. Test count unchanged (414 → 414); only the snapshot mirror disappears.
+- Cross-domain edits (`src/admin/blockDefinitions.ts` + `tests/blockDefinitions.test.ts`) per the brief. One-time exception documented in CHANGELOG and prd-blocks.md. Future style-key additions only need to land in `STYLE_PROPS`.
+- Files: `src/components/styleUtils.ts` (export keyword + doc comment), `src/components/index.ts` (re-export), `src/admin/blockDefinitions.ts` (import + derived `EMPTY_STYLE_DEFAULTS`), `tests/blockDefinitions.test.ts` (import + 4 snapshot references switched), `package.json` (1.0.4 → 1.0.5), `CHANGELOG.md` (new `## 1.0.5` section), `.claude/prd-frontend.md` (new "STYLE_PROPS exported (1.0.5 — debt cleanup)" subsection under Style Utilities), `.claude/prd-blocks.md` (sync convention rewritten under "Style-key sync convention (1.0.5+)"), `.claude/coordination/status/agent-b.md`.
+- Pipeline: lint + typecheck + 414/414 tests + build all green on first try (no test adapt needed beyond the snapshot rewrites).
+- Acceptance: STYLE_PROPS exported from styleUtils.ts ✓; admin no longer maintains a parallel list ✓; pipeline green ✓; existing 414 tests pass ✓.
+- Out of scope / not touched: `STYLE_PROPS` ordering / contents (debt-cleanup release intentionally invents nothing); `BASE_DEFAULTS.style` declaration (still spreads `{ ...EMPTY_STYLE_DEFAULTS }` — derivation is transparent).
+
+## 2026-05-09 24:10 · feature/agentB-style-props-export started
+
+- Branch: `feature/agentB-style-props-export` off latest main (fe17cac, v1.0.4).
+- Goal: F3.6.1 sync-debt cleanup. `STYLE_PROPS` lives in `src/components/styleUtils.ts` as a non-exported `const` array. `src/admin/blockDefinitions.ts` mirrors the same key list verbatim as `EMPTY_STYLE_DEFAULTS`; `tests/blockDefinitions.test.ts` mirrors it AGAIN as a local `STYLE_PROPS_SNAPSHOT` (twice — F3.6.1 describe + F3.6.2 describe). Three places to keep in sync, every future style-key addition needs three matching edits.
+- Plan: export `STYLE_PROPS` from `styleUtils.ts`, re-export from `src/components/index.ts`. Admin's `EMPTY_STYLE_DEFAULTS` derives from `Object.fromEntries(STYLE_PROPS.map((k) => [k, ""]))`. Test drops both `STYLE_PROPS_SNAPSHOT` arrays; references the imported `STYLE_PROPS` directly. Cross-domain edits in `blockDefinitions.ts` + `blockDefinitions.test.ts` are documented one-time exceptions per the brief. v1.0.4 → v1.0.5.
+
 ## 2026-05-09 23:55 · fix/F4.1-style-not-applied done
 
 - F4.1 reverted. Frontend rendering now emits one inline `<style is:global>` per block (pre-F4.1 behavior). `LayoutRenderer.astro` emits the F1.3 reset CSS as its own inline `<style is:global>` at the top of the rendered output (gated on `sections.length > 0`); the F4.1 `epxLocals.empixelLayoutCss = []` init + post-iteration IIFE drain are gone. Each leaf block frontmatter (`Text.astro` / `Image.astro` / `Button.astro` / `Icon.astro` / `Video.astro` / `Html.astro` / `DividerSpacer.astro` / `TextEditor.astro` / `SectionContainer.astro` / `FieldBinding.astro`) drops the `epxLocals.empixelLayoutCss.push(allCss)` block and restores `<style set:html={allCss} is:global />` after the JSX root. `SectionContainer.astro` also restores the second separate `<style is:global>` for the HTML5-video controls override (pre-F4.1 had two style tags, F4.1 had folded them into the same payload).

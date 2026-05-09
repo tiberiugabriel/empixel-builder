@@ -3,6 +3,31 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 1.0.5 — 2026-05-09
+
+**Debt cleanup — `STYLE_PROPS` exported from `styleUtils.ts`.** F3.6.1
+landed the full default `style` shape via `EMPTY_STYLE_DEFAULTS` in
+`src/admin/blockDefinitions.ts`, mirroring the canonical key list from
+`src/components/styleUtils.ts`'s non-exported `STYLE_PROPS` literal.
+The mirror was a sync-debt — every future style-key addition needed
+matching edits in three places (`STYLE_PROPS`, `EMPTY_STYLE_DEFAULTS`,
+plus the `STYLE_PROPS_SNAPSHOT` arrays in `tests/blockDefinitions.test.ts`'s
+two describes). Now `STYLE_PROPS` is `export`-ed from `styleUtils.ts`
+(re-exported from `src/components/index.ts` for the public surface)
+and the admin schema derives `EMPTY_STYLE_DEFAULTS` via
+`Object.fromEntries(STYLE_PROPS.map((k) => [k, ""]))`. The test imports
+`STYLE_PROPS` directly and drops both snapshot mirrors. Single source
+of truth — future style-key additions only need to land in
+`styleUtils.ts`.
+
+- `src/components/styleUtils.ts`: `const STYLE_PROPS` → `export const STYLE_PROPS`. Doc-comment added explaining the contract.
+- `src/components/index.ts`: re-exports `STYLE_PROPS`.
+- `src/admin/blockDefinitions.ts`: imports `STYLE_PROPS` from `../components/styleUtils.js`. `EMPTY_STYLE_DEFAULTS` body collapses from a 22-line literal to one `Object.fromEntries(...)` derivation.
+- `tests/blockDefinitions.test.ts`: drops two `STYLE_PROPS_SNAPSHOT` literals (one per describe block); imports `STYLE_PROPS` once at the top and references it directly. Test count unchanged (414/414).
+
+No runtime behaviour change. No public API break vs. 1.0.4 (the
+addition is purely additive — a new named export). PRDs updated.
+
 ## 1.0.4 — 2026-05-09
 
 **Cleanup — drop legacy `empixel_builder_layouts` provisioning from

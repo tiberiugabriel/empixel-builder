@@ -340,6 +340,25 @@ render of every block in the layout. The output is deterministic per
   unmemoized v0.9.6 helper. The wrap is purely a performance lever;
   no public-API change.
 
+### `STYLE_PROPS` exported (1.0.5 — debt cleanup)
+
+`STYLE_PROPS` is the canonical list of CSS-property keys the plugin's
+CSS pipeline emits (every key maps 1:1 to a kebab-case CSS declaration
+via `camelToKebab`). 1.0.5 promoted it from a non-exported `const` to
+an `export const`, re-exported from `src/components/index.ts`.
+
+**Sync convention.** `EMPTY_STYLE_DEFAULTS` in
+`src/admin/blockDefinitions.ts` derives from `STYLE_PROPS` via
+`Object.fromEntries(STYLE_PROPS.map((k) => [k, ""]))`. The test suite
+imports `STYLE_PROPS` directly. Future style-key additions only need
+to land in `STYLE_PROPS` — no parallel mirrors.
+
+Pre-1.0.5 the same list lived in three places (the local in
+`styleUtils.ts`, the literal in `blockDefinitions.ts`, two
+`STYLE_PROPS_SNAPSHOT` arrays in `tests/blockDefinitions.test.ts`).
+Each style-key addition needed three matching edits. The export
+collapsed the contract to one source.
+
 ## Database Query (db.ts)
 
 ### getBuilderLayout — v0.9 (F3.4 + F3.5 + fix/F3.4-backcompat-3arg)

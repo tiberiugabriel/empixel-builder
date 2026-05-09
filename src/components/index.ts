@@ -41,6 +41,11 @@ export type {
   ResponsiveSrcSet,
   ResolveResponsiveSrcSetOptions,
 } from "./media.js";
+// 1.0.5 — debt cleanup. Canonical list of CSS-property keys the plugin's
+// CSS pipeline emits. Re-exported so admin code (`blockDefinitions.ts`)
+// and tests can derive their default-shape contract from a single source
+// of truth instead of mirroring the array.
+export { STYLE_PROPS } from "./styleUtils.js";
 
 export const blockComponents: Record<string, unknown> = {
   text: Text,

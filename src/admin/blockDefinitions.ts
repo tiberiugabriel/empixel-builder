@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { BlockType, BreakpointId, SectionBlock } from "../types.js";
+import { STYLE_PROPS } from "../components/styleUtils.js";
 import type { BackgroundType } from "./controls/BackgroundControl.js";
 import type { TypographyValue } from "./controls/TypographyControl.js";
 import { TextEditorDropCapSection } from "./right-panel/sections/TextEditorDropCapSection.js";
@@ -230,47 +231,25 @@ export interface BlockDef {
 // ─── Block Definitions ────────────────────────────────────────────────────────
 
 /**
- * F3.6.1 — full default `style` shape, mirroring the canonical
- * `STYLE_PROPS` list in `src/components/styleUtils.ts` (Agent B's
- * column — not exported, so we replicate the key set here as a
- * read-only contract). Every key the plugin's CSS pipeline knows
- * about is present with an empty string value, so `block.config.style`
- * always has the same shape regardless of what the user has touched.
+ * F3.6.1 — full default `style` shape. Every key the plugin's CSS
+ * pipeline knows about is present with an empty string value, so
+ * `block.config.style` always has the same shape regardless of what
+ * the user has touched.
  *
  * Empty values are intentional: F3.6.1 introduces NO design defaults.
  * F3.6.2 builds the load-time `getDefaultBlockConfig(type)` helper on
- * top of this; F3.6.3 unifies Canvas / frontend CSS generation
- * knowing the keys are always present (no defensive `cssStr(...)`
- * misses).
+ * top of this; F3.6.3 unifies Canvas / frontend CSS generation knowing
+ * the keys are always present (no defensive `cssStr(...)` misses).
  *
- * If `STYLE_PROPS` in `styleUtils.ts` ever gains a new entry, mirror
- * it here AND in the matching test array. The `blockDefinitions.test.ts`
- * shape assertion will fail until both lists agree.
+ * 1.0.5 (debt cleanup) — derived from the canonical `STYLE_PROPS`
+ * array exported by `src/components/styleUtils.ts`. Single source of
+ * truth: future style-key additions only need to land in
+ * `styleUtils.ts`. The test suite (`tests/blockDefinitions.test.ts`)
+ * also references the same imported `STYLE_PROPS` directly.
  */
-export const EMPTY_STYLE_DEFAULTS: Record<string, string> = {
-  // Padding
-  paddingTop: "",    paddingRight: "",  paddingBottom: "",  paddingLeft: "",
-  // Margin
-  marginTop: "",     marginRight: "",   marginBottom: "",   marginLeft: "",
-  // Sizing
-  width: "",         minWidth: "",      maxWidth: "",
-  height: "",        minHeight: "",     maxHeight: "",
-  // Border radius
-  borderTopLeftRadius: "",     borderTopRightRadius: "",
-  borderBottomRightRadius: "", borderBottomLeftRadius: "",
-  // Border width
-  borderTopWidth: "",    borderRightWidth: "",
-  borderBottomWidth: "", borderLeftWidth: "",
-  // Overflow
-  overflowX: "",     overflowY: "",
-  // Typography
-  textAlign: "",
-  fontFamily: "",    fontSize: "",      fontWeight: "",
-  textTransform: "", fontStyle: "",     textDecoration: "",
-  lineHeight: "",    letterSpacing: "", wordSpacing: "",
-  // Misc
-  mixBlendMode: "",  aspectRatio: "",   filter: "",
-};
+export const EMPTY_STYLE_DEFAULTS: Record<string, string> = Object.fromEntries(
+  STYLE_PROPS.map((k) => [k, ""]),
+);
 
 /**
  * F3.6.1 — empty `advanced` defaults. Mirrors `AdvancedConfig` in
