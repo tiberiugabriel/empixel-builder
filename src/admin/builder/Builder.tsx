@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -11,8 +11,23 @@ import { isContainerType, isRootAllowedType, BREAKPOINT_DEFS, DEFAULT_BREAKPOINT
 import { getBlockDef } from "../blockDefinitions.js";
 import { LeftPanel } from "../LeftPanel.js";
 import { Canvas } from "../Canvas.js";
-import { RightPanel } from "../RightPanel.js";
 import { StructurePanel, type StructureDropTarget } from "../StructurePanel.js";
+
+/**
+ * F4.3 — `RightPanel` is the heaviest admin component (it pulls in
+ * every section renderer + every control under `controls/` + the full
+ * `blockDefinitions.ts` graph). Lazy-import so the consumer bundler
+ * can split it into its own chunk; the panel only mounts after a
+ * block is selected, which is plenty of time for the chunk to fetch.
+ *
+ * Loading fallback is a dimension-matched empty placeholder
+ * (`epx-right-panel epx-right-panel--loading`) — same width / shape as
+ * the loaded component, so opening the panel doesn't shift adjacent
+ * canvas / structure-panel layout.
+ */
+const RightPanel = lazy(() =>
+  import("../RightPanel.js").then((m) => ({ default: m.RightPanel })),
+);
 import { ContextMenu } from "../ContextMenu.js";
 import {
   findBlockById,
@@ -383,12 +398,21 @@ export function Builder({ pageId, pageTitle, collection, onBack }: { pageId: str
                     : { height: `calc(100% - ${structure.size}px - 4px)` }
                   }
                 >
-                  <RightPanel
-                    block={selectedBlock}
-                    onChange={(config) => updateBlock(selectedBlock.id, config)}
-                    activeBreakpoint={activeBreakpoint}
-                    breakpointsConfig={breakpointsConfig}
-                  />
+                  <Suspense
+                    fallback={
+                      <aside
+                        className="epx-right-panel epx-right-panel--loading"
+                        aria-busy="true"
+                      />
+                    }
+                  >
+                    <RightPanel
+                      block={selectedBlock}
+                      onChange={(config) => updateBlock(selectedBlock.id, config)}
+                      activeBreakpoint={activeBreakpoint}
+                      breakpointsConfig={breakpointsConfig}
+                    />
+                  </Suspense>
                 </div>
                 {!structureCollapsed && (
                   <div

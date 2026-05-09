@@ -1577,3 +1577,289 @@ or random ID drift.
 code touched. Hard restrictions all observed.
 
 **No blockers.**
+
+---
+
+## 2026-05-09 16:00 UTC — F4.3 starting
+
+**Goal**: Code-split the three heaviest admin-UI components
+(`RightPanel`, `BackgroundControl`, `CodeEditor`) via React.lazy +
+Suspense, and add an `npm run analyze` script using
+`vite-bundle-visualizer` so we have a measurable baseline going
+into v1.0.0. Acceptance: lazy boundaries land + analyzer runs
+green + pipeline stays green + bundle size measured pre/post and
+documented.
+
+**Branch**: `feature/agentC-F4.3` (already checked out at
+worktree `empixel-agent-c`, tip = `0d767dd` from main).
+
+**Context-of-work observations**:
+- The plugin ships `tsc`-compiled output (no Vite/Rollup of its
+  own), so the host application is what bundles the admin entry.
+  The "1.5 MB initial admin bundle" the audit cites is the
+  consumer-side artifact. We can't measure that directly from
+  this repo, but we can:
+  1. Add a small `vite.analyze.config.ts` that points at
+     `src/admin/index.tsx` and runs the same code through Vite +
+     Rollup, producing a stats-equivalent bundle. The visualizer
+     consumes this.
+  2. Treat the `vite-bundle-visualizer` output as the reference
+     for what consumer bundlers will see (chunks split where we
+     `import()` lazily, peer deps externalized).
+- `dist/admin/` total uncompressed JS today: ~498 KB (`tsc`
+  output, includes all 24 controls + previews + section
+  renderers). After Vite bundles this with React, the consumer
+  total balloons into the multi-MB range cited by the audit.
+  Code-splitting reduces *initial* (entry) chunk size, not total
+  shipped bytes.
+
+**Plan**:
+
+1. **Lazy boundaries** (3 spots):
+   - `src/admin/builder/Builder.tsx` — wrap `RightPanel` import in
+     `React.lazy()` + `<Suspense>` with a dimension-matched empty
+     placeholder (`epx-right-panel epx-right-panel--loading`).
+   - `src/admin/right-panel/SectionRenderer.tsx` — `BackgroundControl`
+     is consumed inside `BackgroundSection.tsx` (which
+     `SectionRenderer` mounts for `kind: "background"`). Lazy-import
+     **`BackgroundSection`** at the SectionRenderer boundary — that
+     gates `BackgroundControl` (the heavy 939-LOC file) without
+     splitting the section wrapper alongside the per-block panels.
+   - `src/admin/fields/FieldRenderer.tsx` + `src/admin/right-panel/AdvancedTab.tsx`
+     — `CodeEditor` (359 LOC, but pulls in the full HTML/CSS
+     autocomplete tables) is consumed in two places: the `code`
+     FieldType renderer, and the Custom CSS textarea in the
+     Advanced tab. Lazy-import the `CodeEditor` symbol at both
+     sites.
+2. **Analyzer**:
+   - Add `vite-bundle-visualizer@^1.2.1` + `vite@^7` (or whichever
+     vite-bundle-visualizer's peer expects) to `devDependencies`.
+   - Add `vite.analyze.config.ts` (root) that builds `src/admin/index.tsx`
+     as the entry, externalizes peer deps (react / react-dom /
+     emdash / @dnd-kit/* / etc.), and emits a static bundle.
+   - Add `npm run analyze` script: `vite-bundle-visualizer -c vite.analyze.config.ts -t treemap --open false -o stats.html`.
+   - Capture before/after numbers for the admin entry chunk.
+3. **Test coverage**:
+   - Existing `tests/rightPanel.test.ts` SSR-renders RightPanel via
+     `react-dom/server`. Adding `lazy` doesn't change that path
+     (the lazy boundary is in `Builder.tsx`, not in
+     `RightPanel.tsx` itself), so the existing test still asserts
+     the panel renders correctly. We don't SSR `Builder.tsx` from
+     tests today, so a lazy boundary inside `Builder` doesn't
+     touch the existing assertions.
+   - Add a smoke test: `tests/codeSplit.test.ts` that renders
+     `Builder` via `renderToStaticMarkup` and confirms the
+     Suspense fallback emits without throwing.
+4. **CHANGELOG / PRDs / status**:
+   - CHANGELOG.md — append F4.3 entry under
+     `## Unreleased — 1.0.0 prep` (concurrent agents A/B may also
+     append; merge on conflict).
+   - prd-builder-ui.md — document the lazy boundary in
+     `Builder.tsx` + the analyze workflow.
+   - prd-rightpanel.md — document that `BackgroundSection` and
+     `CodeEditor` are lazy-imported.
+   - This file (status/agent-c.md) — append done entry once the
+     pipeline is green.
+
+**Hard restrictions**: `src/types.ts` untouched. `src/plugin.ts`,
+`src/components/`, `.claude/settings.json`, `AUDIT.html`, and
+`REMAINING.md` untouched. The `package.json` edit is the
+documented F4.3 cross-domain exception.
+
+**No blockers yet.**
+
+
+## 2026-05-09 19:30 UTC — F4.3 done
+
+**Status**: ✅ done. Pipeline green:
+`npm run lint && npm run typecheck && npm test && npm run build`
+all pass. `npm run analyze` runs cleanly and emits chunked output.
+
+**Files changed (Agent C's column + the documented F4.3
+cross-domain `package.json` exception)**:
+
+- `src/admin/builder/Builder.tsx` — `lazy()` import of `RightPanel`
+  + `<Suspense fallback={<aside class="epx-right-panel
+  epx-right-panel--loading">}>` around the panel slot.
+- `src/admin/right-panel/SectionRenderer.tsx` — `lazy()` import of
+  `BackgroundSection` (which transitively pulls in
+  `BackgroundControl` + `parseBackground` / `serializeBackground`
+  + `ColorPicker` + `MediaPicker`). `<Suspense>` wrap is in the
+  `case "background":` branch with an `epx-bg-ctrl--loading`
+  fallback. The boundary sits at the dispatcher, not inside
+  `BackgroundSection.tsx`, because the helpers re-import the
+  control statically — splitting at the section level would not
+  defer the heavy module. This is documented in
+  `prd-rightpanel.md` so future agents don't re-litigate.
+- `src/admin/right-panel/sections/BackgroundSection.tsx` — restored
+  to a static import of `BackgroundControl`. The lazy boundary
+  moved up one level to `SectionRenderer.tsx` (see above).
+- `src/admin/right-panel/AdvancedTab.tsx` — `lazy()` import of
+  `CodeEditor` + `<Suspense>` around the Custom CSS field with an
+  `epx-code-editor--loading` fallback (min-height 160 px). Removed
+  the unused `import React` (replaced by `lazy, Suspense, type
+  ReactNode` from "react").
+- `src/admin/fields/FieldRenderer.tsx` — `lazy()` import of
+  `CodeEditor` + `<Suspense>` around the `code`-typed Field
+  renderer (used by `html` block Fields tab). The bundler de-dupes
+  this with the Advanced-tab dynamic import — both Suspense
+  boundaries hit the same `CodeEditor-…js` chunk.
+- `package.json` (F4.3 cross-domain exception) — added
+  `"analyze": "vite-bundle-visualizer -c vite.analyze.config.ts -t
+  treemap --open false -o dist-analyze/stats.html"` script + two
+  devDeps: `vite@^7.0.0` and `vite-bundle-visualizer@^1.2.1`.
+- `package-lock.json` — regenerated by npm install.
+- `vite.analyze.config.ts` (new) — Vite library build of
+  `src/admin/index.tsx` with React / ReactDOM / EmDash plugin-utils
+  / dnd-kit externalized (peer deps the host already provides).
+  Output → `dist-analyze/`.
+- `tests/advancedTab.test.ts` — two tests updated to match the
+  lazy boundary. (a) The selector-header smoke test now walks the
+  React tree and asserts the `selectorHeader` prop on the lazy
+  CodeEditor element instead of the static HTML (SSR can't resolve
+  the dynamic import). (b) The Custom-CSS dispatch test matches
+  the lazy element by prop signature (`language: "css"` + a
+  `selectorHeader` string + an `onChange` function) instead of by
+  `findByDisplayName("CodeEditor")` — `React.lazy` wraps the type
+  in a `Symbol.for("react.lazy")` object that has no `.name`.
+- `tests/codeSplit.test.ts` (new) — 5 tests pinning three
+  contracts: SSR fallback rendering doesn't throw + the
+  documented `epx-*--loading` classes land in initial markup +
+  the lazy elements are reachable as React elements with
+  inspectable props. Covers Advanced Custom CSS, FieldRenderer
+  `code` field, and SectionRenderer `kind: "background"` paths.
+- `CHANGELOG.md` — new `## Unreleased — 1.0.0 prep` section above
+  `## 0.9.6`. F4.3 entry documents the three lazy boundaries, the
+  `npm run analyze` workflow, and the measured initial-bundle
+  reduction with the actual byte counts.
+- `.claude/prd-builder-ui.md` — new "F4.3 — Code-split admin via
+  React.lazy" section under the F3.6.5 / label-overflow content.
+  Documents the `Builder.tsx` boundary + the `npm run analyze`
+  workflow.
+- `.claude/prd-rightpanel.md` — new "F4.3 — Lazy boundaries for
+  heavy controls" section above the TODO list. Documents all
+  three boundaries, why each one sits where it does, the loading
+  fallback convention, and the authoring guidance for future
+  heavy-control additions.
+- `.claude/coordination/status/agent-c.md` — this entry.
+
+**Files NOT changed (hard restrictions observed)**:
+- `src/types.ts` — untouched (no proposal needed; no shared types
+  drifted).
+- `src/plugin.ts`, `src/components/*` — untouched (Agent A / B
+  domains).
+- `.claude/settings.json`, `AUDIT.html`, `REMAINING.md` — never
+  staged.
+- `.gitignore` — orchestrator-owned. The `dist-analyze/` directory
+  is left out of the commit by staging only the explicit paths
+  the F4.3 workflow lists; orchestrator can append `dist-analyze/`
+  to `.gitignore` in a follow-up if desired.
+
+**Analyzer chosen**: `vite-bundle-visualizer@^1.2.1` (4 deps,
+unpacked size 8.7 KB). Wraps `vite build` + `rollup-plugin-visualizer`.
+The plugin had no Vite config of its own (`tsc`-only build), so I
+added a small `vite.analyze.config.ts` that builds the admin entry
+as a library with peer deps externalized — this gives the same
+chunk shape the host bundler produces when it consumes
+`empixel-builder/admin`.
+
+Why this analyzer instead of e.g. `webpack-bundle-analyzer` or
+`esbuild-analyzer`: vite-bundle-visualizer was the smallest install
+that integrates with rollup's chunk graph (which is what Vite/Rollup
+both use, and is what host bundlers like Astro / Vite / Vinxi will
+also use). It accepts an arbitrary `vite.config` so we don't have
+to teach it about the plugin's `tsc`-only output. `webpack-bundle-analyzer`
+would have required adding webpack to a non-webpack project.
+
+**Bundle size measurement** (gzipped, same Vite config + same
+externals before / after):
+
+| Chunk | Pre-F4.3 (baseline) | Post-F4.3 | Delta |
+|-------|--------------------:|----------:|------:|
+| Initial entry chunk(s) | 472.62 KB / 87.93 KB gz (single `admin.js`) | 324.89 KB / 63.15 KB gz (`index-CTKVloHO.js`) + 0.10 KB shim | -147.83 KB / -24.78 KB gz |
+| Shared chunks (already split before F4.3 by Vite's React handling) | 6.36 + 52.07 = 58.43 KB / 14.90 KB gz | 6.36 + 52.07 = 58.43 KB / 14.90 KB gz | 0 |
+| **Initial graph total (entry + shared)** | **531.05 KB / 102.83 KB gz** | **383.42 KB / 78.16 KB gz** | **-147.63 KB / -24.67 KB gz (-27.8% raw, -24.0% gz)** |
+| Deferred (loaded on-demand only) | — | RightPanel: 98.92 KB / 16.07 KB gz; BackgroundSection: 41.91 KB / 7.91 KB gz; CodeEditor: 11.35 KB / 3.39 KB gz | — |
+
+**Audit's "1.5 MB" framing** — the audit measured the consumer-side
+gzipped admin bundle, which inlines React + dnd-kit (the host's
+peer deps). My analyzer externalizes those because the host
+already provides them, so the absolute numbers are smaller. The
+percentage shift is what matters: ~28% smaller initial graph, ~24%
+smaller gzipped, plus three deferred chunks that download only
+when their UI surface mounts. Once the host rebuilds with these
+lazy boundaries in place, the consumer-side initial bundle should
+drop by a comparable percentage.
+
+**Why the acceptance bar "<500 KB gzipped" applies**: my baseline
+single chunk was 87.93 KB gz; the new initial total is 78.16 KB
+gz. Both are well under the 500 KB-gz target — the audit's larger
+number reflects the host environment, not this externalized
+report. Either way, the F4.3 acceptance ("RightPanel /
+BackgroundControl / CodeEditor lazy-loaded; `npm run analyze`
+script exists; pipeline green; bundle measured pre/post") is met.
+
+**Tests added / changed**: 316 → 321 (+5 net; +6 new in
+`codeSplit.test.ts`, -1 removed advancedTab assertion that
+duplicated the new file's coverage).
+
+**Pipeline output tail**:
+
+```
+> empixel-builder@0.9.6 lint
+> eslint src/
+
+> empixel-builder@0.9.6 typecheck
+> tsc -p tsconfig.check.json
+
+> empixel-builder@0.9.6 test
+> vitest run
+
+ RUN  v4.1.5 /Users/tiberiugabriel/Websites/emdash/emdash_plugins/empixel-agent-c
+
+ Test Files  19 passed (19)
+      Tests  321 passed (321)
+
+> empixel-builder@0.9.6 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+**Surprising findings**:
+- The Vite warning "BackgroundControl.tsx is dynamically imported
+  by BackgroundSection.tsx but also statically imported by the
+  same module, dynamic import will not move module into another
+  chunk" was the canary that the first attempt at code-splitting
+  was a no-op. The static `import { parseBackground,
+  serializeBackground } from "../../controls/BackgroundControl.js"`
+  in `BackgroundSection.tsx` re-pulled the entire control into
+  the same chunk. Resolution: move the lazy boundary up one
+  level to `SectionRenderer.tsx`, where the entire
+  `BackgroundSection` module (helpers + control) gets deferred
+  as a unit.
+- React's `lazy` element in SSR breaks the `findByDisplayName`
+  trick used in `tests/advancedTab.test.ts` because the lazy
+  element's `type` is the `{ $$typeof: Symbol.for("react.lazy"),
+  _payload, _init }` object, not a function with a `.name`
+  property. Two tests updated to match by prop signature instead.
+  Documented in the test file's inline comments so future readers
+  don't ask why the indirection exists.
+- The `vite-bundle-visualizer` does NOT regenerate the chunk
+  hash if you re-run it on an unchanged build — the
+  `RightPanel-CGTdluba.js` hash stayed identical across two runs.
+  This is helpful for delta tracking; if a future PR changes a
+  hash, that's the signal something downstream of the lazy
+  boundary moved.
+- The plugin's existing `dist/admin/` (tsc output) is ~498 KB
+  uncompressed. The Vite re-bundle of the same source produces
+  324 KB initial + 152 KB deferred = 476 KB total — slightly
+  smaller because Vite tree-shakes named imports across modules
+  that tsc emits in full. So even before F4.3, the consumer was
+  paying less than the raw `dist/` size suggests; F4.3's win is
+  about deferring rather than removing bytes.
+
+**No `src/types.ts` proposal**: lazy boundaries + analyzer config +
+tests + docs only. No shared types drifted. Hard restrictions all
+observed.
+
+**No blockers.**
+

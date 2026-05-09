@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import type { BreakpointId, SectionBlock } from "../../types.js";
 import {
   parseSide,
@@ -15,8 +15,21 @@ import {
   SelectRow,
   TextRow,
 } from "../controls/FieldRow.js";
-import { CodeEditor } from "../controls/CodeEditor.js";
 import type { AdvancedConfig } from "./types.js";
+
+/**
+ * F4.3 — Custom CSS uses `CodeEditor`, which is the same heavy
+ * control consumed by the Fields-tab `code` renderer. The Advanced
+ * tab is reachable for every block (not just blocks with a code
+ * field), but the Custom CSS textarea is at the bottom of a long
+ * scrolling form — most users open the panel without scrolling that
+ * far. Lazy-import keeps the initial chunk lean; React de-dupes the
+ * dynamic import with the FieldRenderer copy so the editor downloads
+ * once across the whole admin app.
+ */
+const CodeEditor = lazy(() =>
+  import("../controls/CodeEditor.js").then((m) => ({ default: m.CodeEditor })),
+);
 
 /**
  * Universal Advanced tab (F3.5.5). Renders identically for every block
@@ -230,12 +243,22 @@ export function AdvancedTab({ block, onChange }: AdvancedTabProps): ReactNode {
 
       <div className="epx-field">
         <label className="epx-field__label">Custom CSS</label>
-        <CodeEditor
-          value={advanced.customCss ?? ""}
-          onChange={(v) => set("customCss", v)}
-          language="css"
-          selectorHeader={selector}
-        />
+        <Suspense
+          fallback={
+            <div
+              className="epx-code-editor epx-code-editor--loading"
+              aria-busy="true"
+              style={{ minHeight: 160 }}
+            />
+          }
+        >
+          <CodeEditor
+            value={advanced.customCss ?? ""}
+            onChange={(v) => set("customCss", v)}
+            language="css"
+            selectorHeader={selector}
+          />
+        </Suspense>
       </div>
     </div>
   );

@@ -675,9 +675,70 @@ Dirty label: `color-mix(in srgb, var(--epx-text-faint), white 45%)`
 | `VideoSourceControl` | `VideoSourceControl.tsx` | video block (Fields tab) — provider auto-detect (YT/Vimeo/HTML5), per-provider params (autoplay/mute/controls/captions/lazy/intro toggles/controls color) |
 | `CodeEditor` | `CodeEditor.tsx` | html block (Fields tab, language="html"), Custom CSS in Advanced (language="css") |
 
+## F4.3 — Lazy boundaries for heavy controls (1.0.0 prep)
+
+The right-panel surface contains the three heaviest admin
+components, all gated behind `React.lazy` so the consumer bundler
+splits them into separate chunks:
+
+| Component | Owner | Lazy boundary | Fallback class |
+|-----------|-------|---------------|----------------|
+| `RightPanel` | `src/admin/RightPanel.tsx` | `src/admin/builder/Builder.tsx` (panel slot) | `epx-right-panel epx-right-panel--loading` |
+| `BackgroundSection` (transitively pulls in `BackgroundControl` + `parseBackground` / `serializeBackground` + `ColorPicker` + `MediaPicker`) | `src/admin/right-panel/sections/BackgroundSection.tsx` | `src/admin/right-panel/SectionRenderer.tsx`, `case "background"` of the `StyleSection.kind` switch | `epx-bg-ctrl epx-bg-ctrl--loading` (min-height 220 px) |
+| `CodeEditor` | `src/admin/controls/CodeEditor.tsx` | Two sites: `src/admin/right-panel/AdvancedTab.tsx` (Custom CSS) and `src/admin/fields/FieldRenderer.tsx` (`code` field type — used by the `html` block's Custom HTML Fields entry) | `epx-code-editor epx-code-editor--loading` (min-height 140–160 px) |
+
+### Why the boundaries sit here, not on the leaf component
+
+- **`RightPanel` is split at `Builder.tsx`** rather than at its own
+  module so the entire right-panel module graph (which pulls in
+  every section renderer + every control) is the deferred chunk.
+  Splitting inside `RightPanel.tsx` would still load the whole
+  graph through the root import.
+- **`BackgroundControl` is split via `BackgroundSection`** at the
+  `SectionRenderer` boundary. `BackgroundSection.tsx` itself
+  imports the helpers (`parseBackground`, `serializeBackground`)
+  statically; if you move the lazy boundary one level lower
+  (inside `BackgroundSection`), Rollup keeps the control in the
+  same chunk because the helpers re-import it. The
+  `SectionRenderer` boundary cleanly defers the entire wrapper.
+- **`CodeEditor` has two boundaries** because two consumers
+  (Advanced Custom CSS + the `code` field renderer) need it on
+  different code paths. The bundler de-dupes the lazy import — both
+  Suspense boundaries hit the same chunk on first load.
+
+### Loading states
+
+All three fallbacks are dimension-matched empty placeholders with
+`aria-busy="true"`. They reserve the same vertical / horizontal
+slot as the loaded component so the panel doesn't shift while the
+chunk fetches. None ship a spinner — the chunks are small enough
+that the placeholder flashes briefly and then resolves; spinners
+would add visual noise.
+
+The `--loading` modifier classes are reserved for future shimmer /
+skeleton styling. Today they just identify the placeholder in the
+DOM (and in `tests/codeSplit.test.ts`).
+
+### Authoring guidance for future block / control work
+
+If you add a new control under `controls/` that's heavier than
+~30 KB raw, follow the same pattern: `lazy()` it at the consumer
+boundary (Section / Field / Tab — wherever the dispatcher lives),
+wrap the consumer-side render in `<Suspense>` with a
+dimension-matched `epx-…--loading` placeholder, and re-run
+`npm run analyze` to verify the chunk landed in a separate file.
+The `vite.analyze.config.ts` is the source of truth for the chunk
+report — open `dist-analyze/stats.html` to inspect.
+
+If you add a new block whose Style tab needs a brand-new heavy
+section, prefer to add the lazy boundary at `SectionRenderer.tsx`
+(matching the `BackgroundSection` pattern) rather than inside the
+section file itself.
+
 ## TODO
 
 - [ ] Wire MediaPicker into FieldRenderer as a generic `image` field type (currently used inline only inside image block + Background)
 - [ ] Keyboard shortcuts within controls (Escape to cancel, Enter to confirm)
 - [x] Add rich-text field type (Portable Text editor) — v0.6
 - [x] Add code field type (multi-language CodeEditor) — v0.6
+- [x] Code-split heavy admin controls — F4.3 (1.0.0 prep)

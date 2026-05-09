@@ -58,6 +58,28 @@ function findByDisplayName(node: ReactNode, name: string): ReactElement | undefi
   })[0];
 }
 
+/**
+ * Locate the lazy-wrapped `CodeEditor` element. F4.3 wraps the editor
+ * in `React.lazy(...)` so it no longer appears as a function-component
+ * with a `name` of "CodeEditor". The lazy element's `type` is a
+ * `{ $$typeof: Symbol.for("react.lazy"), _payload, _init }` object,
+ * but the props (selectorHeader / onChange / language) live on the
+ * element itself and are reachable via the same tree walk. Match by
+ * the unique `language: "css"` + `selectorHeader` prop combination
+ * the Custom CSS textarea uses.
+ */
+function findLazyCodeEditor(node: ReactNode): ReactElement | undefined {
+  return findAll(node, (el) => {
+    const p = el.props as { language?: unknown; selectorHeader?: unknown; onChange?: unknown };
+    return (
+      typeof p.language === "string" &&
+      p.language === "css" &&
+      typeof p.selectorHeader === "string" &&
+      typeof p.onChange === "function"
+    );
+  })[0];
+}
+
 function renderTree(block: SectionBlock, onChange: (next: Record<string, unknown>) => void): ReactNode {
   return AdvancedTab({ block, onChange, activeBreakpoint: "desktop" });
 }
@@ -89,17 +111,18 @@ describe("AdvancedTab — smoke", () => {
   });
 
   it("uses the block.id to compose the Custom-CSS selector header", () => {
+    // F4.3 — `CodeEditor` is now `React.lazy`-wrapped, so SSR renders
+    // the Suspense fallback (empty placeholder) instead of the editor
+    // body. The `selectorHeader` prop is still computed in
+    // `AdvancedTab` and passed to the lazy element; we walk the tree
+    // and assert the prop value rather than the static HTML.
     const block = makeBlock("text");
     block.id = "abc-123";
-    const html = renderToStaticMarkup(
-      createElement(AdvancedTab, {
-        block,
-        onChange: () => {},
-        activeBreakpoint: "desktop",
-      }),
-    );
-    // ` " ` is HTML-escaped as `&quot;` in the static markup output.
-    expect(html).toContain("[data-epx-block=&quot;abc-123&quot;]");
+    const tree = renderTree(block, () => {});
+    const codeEditor = findLazyCodeEditor(tree);
+    expect(codeEditor).toBeDefined();
+    const selectorHeader = (codeEditor!.props as { selectorHeader: string }).selectorHeader;
+    expect(selectorHeader).toBe('[data-epx-block="abc-123"]');
   });
 });
 
@@ -132,8 +155,11 @@ describe("AdvancedTab — advanced.* dispatch", () => {
     let captured: Record<string, unknown> | null = null;
     const block = makeBlock("text");
     const tree = renderTree(block, (next) => { captured = next; });
-    // CodeEditor is referenced by component identity, not label.
-    const codeEditor = findByDisplayName(tree, "CodeEditor");
+    // F4.3 — `CodeEditor` is `React.lazy`-wrapped, so it no longer
+    // shows up under the function name "CodeEditor". Match on its
+    // unique prop signature (`language: "css"` + `selectorHeader`).
+    void findByDisplayName; // kept available for sibling tests
+    const codeEditor = findLazyCodeEditor(tree);
     expect(codeEditor).toBeDefined();
     const onChange = (codeEditor!.props as { onChange: (v: string) => void }).onChange;
     onChange("color: red");

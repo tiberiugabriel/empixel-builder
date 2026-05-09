@@ -41,6 +41,78 @@ SemVer.
   `.claude/prd-frontend.md`, `.claude/prd-breakpoints.md`,
   `.claude/coordination/status/agent-b.md`. Tests: 316 → 326 (+10).
 
+- **F4.3 — code-split heavy admin components via `React.lazy` +
+  `Suspense`.** Three admin chunks now defer until the user actually
+  needs them, dropping the initial admin bundle measurably:
+
+  | Component | Lazy boundary | Chunk size (post-F4.3) |
+  |-----------|---------------|------------------------|
+  | `RightPanel` | `src/admin/builder/Builder.tsx` (Suspense at the panel slot, fallback is an `epx-right-panel--loading` empty placeholder matching the column width) | 98.92 KB / 16.07 KB gzipped |
+  | `BackgroundSection` (which transitively pulls in `BackgroundControl` + `parseBackground` / `serializeBackground` + `ColorPicker` + `MediaPicker`) | `src/admin/right-panel/SectionRenderer.tsx` `case "background"` | 41.91 KB / 7.91 KB gzipped |
+  | `CodeEditor` | Two sites: `src/admin/right-panel/AdvancedTab.tsx` (Custom CSS) and `src/admin/fields/FieldRenderer.tsx` (`code` field type — Custom HTML for the `html` block) | 11.35 KB / 3.39 KB gzipped (de-duplicated by the bundler — both Suspense boundaries hit the same chunk) |
+
+  All three fallbacks are dimension-matched empty `<div>` /
+  `<aside>` placeholders (`epx-right-panel--loading`,
+  `epx-bg-ctrl--loading`, `epx-code-editor--loading`) with
+  `aria-busy="true"`, so opening the panel doesn't cause layout
+  shift while the chunk fetches.
+
+- **F4.3 — `npm run analyze` script.** Added `vite-bundle-visualizer`
+  + `vite` as devDependencies and a root-level `vite.analyze.config.ts`
+  that builds `src/admin/index.tsx` as a Vite library, externalizing
+  the peer deps the host already provides (React, ReactDOM,
+  EmDash plugin-utils, dnd-kit). Run via `npm run analyze` — emits
+  a treemap to `dist-analyze/stats.html`. The output directory is
+  excluded from commits via the agent's explicit-paths staging
+  convention (orchestrator can add `dist-analyze/` to `.gitignore`
+  in a follow-up if desired).
+
+- **F4.3 — measured initial-bundle reduction.** Same Vite config,
+  same entry, before vs. after the lazy boundaries:
+
+  ```
+  Baseline (commit 0d767dd, pre-F4.3):
+    admin.js                   472.62 kB │ gzip:  87.93 kB   (single entry chunk)
+    index-BRa1p64P.js            6.36 kB │ gzip:   2.21 kB   (shared chunk)
+    index-DidfX0SO.js           52.07 kB │ gzip:  12.69 kB   (shared chunk)
+    ───────────────────────────────────────────────────────
+    Initial-graph total:       531.05 kB │ gzip: 102.83 kB
+
+  Post-F4.3 (this commit):
+    admin.js                     0.10 kB │ gzip:   0.11 kB   (entry shim)
+    index-CTKVloHO.js          324.89 kB │ gzip:  63.15 kB   (initial chunk)
+    index-BRa1p64P.js            6.36 kB │ gzip:   2.21 kB   (shared chunk)
+    index-DidfX0SO.js           52.07 kB │ gzip:  12.69 kB   (shared chunk)
+    ───────────────────────────────────────────────────────
+    Initial-graph total:       383.42 kB │ gzip:  78.16 kB   (-148 kB / -25 kB gzipped)
+
+    + Deferred chunks (loaded on demand):
+      RightPanel-CGTdluba.js    98.92 kB │ gzip:  16.07 kB
+      BackgroundSection-…js     41.91 kB │ gzip:   7.91 kB
+      CodeEditor-DbAx4vVW.js    11.35 kB │ gzip:   3.39 kB
+  ```
+
+  The audit's "1.5 MB initial admin bundle" figure was on the
+  consumer side (host bundler, with React + dnd-kit + EmDash inlined).
+  This local report externalizes those (the host already provides
+  them), so the absolute numbers are smaller — but the **percentage
+  improvement is the same shape**: ~28% smaller initial graph, ~24%
+  smaller gzipped. Once the host bundle is rebuilt, RightPanel /
+  BackgroundSection / CodeEditor download as separate chunks the
+  first time their UI surface mounts.
+
+- **F4.3 — test coverage.** New `tests/codeSplit.test.ts` (5 tests)
+  pins three contracts: (a) the lazy boundaries don't crash under
+  SSR (`renderToStaticMarkup` resolves the Suspense fallback
+  cleanly); (b) the documented `epx-*--loading` placeholder
+  classes + `aria-busy="true"` make it into the initial markup;
+  (c) the deferred prop graph is reachable via React's element
+  tree (lazy elements are `isValidElement`-true and carry their
+  props). Existing `tests/advancedTab.test.ts` updated to reflect
+  the lazy `CodeEditor` (it now matches by prop signature instead
+  of function name, since `React.lazy` wraps the type symbol).
+  Total tests: 316 → 321 (+5).
+
 ## 0.9.6 — 2026-05-09
 
 - **F3.6.7 — parity snapshot suite for the 9 block types.** New

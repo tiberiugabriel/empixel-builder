@@ -349,6 +349,64 @@ Save button disabled when: isSaving OR (not isDirty AND not isBreakpointsDirty)
     292 tests.
 - **Label overflow detector** — small `useEffect` in `Builder.tsx` runs `MutationObserver` + `ResizeObserver` to set `data-overflow="true"` on `.epx-side-input__label--full` / `.epx-spacing-ctrl__label` when truncated. CSS `::after { content: "..." }` shows literal three dots; `text-overflow: ellipsis` fallback only used when CSS variant unsupported.
 
+## F4.3 — Code-split admin via `React.lazy`
+
+Three lazy boundaries split the heaviest admin components into
+separate chunks so the consumer bundler emits them as deferred
+modules. Initial admin graph: 531 KB (raw) / 103 KB (gz) → 383 KB
+(raw) / 78 KB (gz). See CHANGELOG `Unreleased — 1.0.0 prep` for the
+full chunk table.
+
+### Lazy boundary in `Builder.tsx`
+
+`RightPanel` is the heaviest single import in the admin tree (it
+pulls in every section renderer + every control under `controls/`
++ the whole `blockDefinitions.ts` graph). It only mounts after the
+user selects a block, which is plenty of time for the chunk to
+fetch — so `Builder.tsx` does:
+
+```tsx
+const RightPanel = lazy(() =>
+  import("../RightPanel.js").then((m) => ({ default: m.RightPanel })),
+);
+
+// ...inside the right-column render:
+<Suspense
+  fallback={
+    <aside
+      className="epx-right-panel epx-right-panel--loading"
+      aria-busy="true"
+    />
+  }
+>
+  <RightPanel ... />
+</Suspense>
+```
+
+The fallback element matches the loaded `<aside class="epx-right-panel">`
+shape (same width via the column grid template, same border / bg
+via `--loading` variant if the host CSS adds one) so no layout
+shift occurs while the chunk fetches. `epx-right-panel--loading`
+is reserved for future shimmer/skeleton styling — currently it's
+just an empty placeholder.
+
+### Bundle analyzer — `npm run analyze`
+
+`vite-bundle-visualizer` (devDep) consumes the root-level
+`vite.analyze.config.ts`, which builds `src/admin/index.tsx` as a
+Vite library with the host's peer deps externalized (React,
+ReactDOM, EmDash plugin-utils, dnd-kit). Output lands in
+`dist-analyze/stats.html` (treemap). The numbers reported there
+are the JS bytes the host bundler will pay for the plugin's admin
+contribution; React + dnd-kit (which the host already provides)
+do not show up.
+
+Running it after a refactor is the standard way to verify a new
+control / section / block doesn't silently regrow the initial
+graph — open `dist-analyze/stats.html` and confirm the new module
+landed in a deferred chunk (RightPanel / BackgroundSection /
+CodeEditor) rather than the initial entry.
+
 ## TODO
 
 - [ ] Add UNDO action + history stack (push before every mutation)

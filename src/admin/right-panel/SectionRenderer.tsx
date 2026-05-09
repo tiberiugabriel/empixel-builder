@@ -1,4 +1,4 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import type { ReactNode } from "react";
 import type { BreakpointId, SectionBlock, IconGroupValue } from "../../types.js";
 import type { StyleSection } from "../blockDefinitions.js";
@@ -14,7 +14,6 @@ import {
   OverflowSection,
   SpacingSection,
 } from "./sections/BpAwareStyleSections.js";
-import { BackgroundSection } from "./sections/BackgroundSection.js";
 import {
   BorderRadiusSection,
   BorderSection,
@@ -24,6 +23,22 @@ import { OpacitySection } from "./sections/OpacitySection.js";
 import { ImgVisualSection } from "./sections/ImgVisualSection.js";
 import { VideoSourceSection } from "./sections/VideoSourceSection.js";
 import { DividerLineSection } from "./sections/DividerLineSection.js";
+
+/**
+ * F4.3 — `BackgroundSection` pulls in `BackgroundControl` (~939 LOC,
+ * the heaviest control in the admin bundle) plus the helpers it
+ * exports (`parseBackground` / `serializeBackground`). Lazy-import
+ * the wrapper here so the entire branch only loads when the active
+ * block exposes a `kind: "background"` style section AND the user
+ * actually opens the Style tab. Most blocks open the Right panel on
+ * the Fields tab — the Background chunk never enters the initial
+ * graph for those flows.
+ */
+const BackgroundSection = lazy(() =>
+  import("./sections/BackgroundSection.js").then((m) => ({
+    default: m.BackgroundSection,
+  })),
+);
 
 /**
  * Pure dispatcher for the declarative Style tab (F3.5.3).
@@ -60,7 +75,19 @@ export function SectionRenderer({ section, block, onChange, activeBreakpoint }: 
     case "spacing":
       return <SpacingSection {...common} targets={section.targets} />;
     case "background":
-      return <BackgroundSection {...common} modes={section.modes} />;
+      return (
+        <Suspense
+          fallback={
+            <div
+              className="epx-bg-ctrl epx-bg-ctrl--loading"
+              aria-busy="true"
+              style={{ minHeight: 220 }}
+            />
+          }
+        >
+          <BackgroundSection {...common} modes={section.modes} />
+        </Suspense>
+      );
     case "border":
       return <BorderSection {...common} />;
     case "borderRadius":

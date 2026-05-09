@@ -1,13 +1,24 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import type { FieldDef, FieldType, StandardFieldDef, CustomFieldDef, FieldRenderProps } from "../blockDefinitions.js";
 import { JsonArrayField } from "./JsonArrayField.js";
 import { LinkControl, type LinkValue } from "../controls/LinkControl.js";
 import { FieldGroup, SelectRow } from "../controls/FieldRow.js";
 import { NumberWithUnits } from "../controls/NumberWithUnits.js";
-import { CodeEditor } from "../controls/CodeEditor.js";
 import { IconGroup } from "../controls/IconGroup.js";
 import { RichTextField } from "./RichTextField.js";
 import type { IconGroupValue, BreakpointId, SectionBlock } from "../../types.js";
+
+/**
+ * F4.3 — `CodeEditor` (~359 LOC + the full HTML/CSS/JS autocomplete
+ * tables) is consumed in two places: this Fields-tab `code` renderer
+ * and the Advanced-tab Custom CSS textarea. Lazy-import here so a
+ * block that doesn't expose a `code`-typed field never pulls the
+ * editor into its initial chunk. The Advanced tab does its own lazy
+ * import — see `right-panel/AdvancedTab.tsx`.
+ */
+const CodeEditor = lazy(() =>
+  import("../controls/CodeEditor.js").then((m) => ({ default: m.CodeEditor })),
+);
 
 /**
  * Standard `FieldDef` props — read by the per-`type` renderers below.
@@ -55,12 +66,22 @@ const Code: FieldComponent = ({ field, value, onChange, isDirty }) => {
   return (
     <div className={`epx-field${dc}`}>
       <label className={field.labelClassName ?? "epx-field__label"}>{field.label}</label>
-      <CodeEditor
-        value={typeof value === "string" ? value : ""}
-        onChange={(v) => onChange(v)}
-        language={field.language ?? "html"}
-        placeholder={field.placeholder}
-      />
+      <Suspense
+        fallback={
+          <div
+            className="epx-code-editor epx-code-editor--loading"
+            aria-busy="true"
+            style={{ minHeight: 140 }}
+          />
+        }
+      >
+        <CodeEditor
+          value={typeof value === "string" ? value : ""}
+          onChange={(v) => onChange(v)}
+          language={field.language ?? "html"}
+          placeholder={field.placeholder}
+        />
+      </Suspense>
     </div>
   );
 };

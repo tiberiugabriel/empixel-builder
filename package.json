@@ -62,6 +62,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/",
+    "analyze": "vite-bundle-visualizer -c vite.analyze.config.ts -t treemap --open false -o dist-analyze/stats.html",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {
@@ -73,6 +74,8 @@
     "globals": "^17.5.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.59.0",
+    "vite": "^7.0.0",
+    "vite-bundle-visualizer": "^1.2.1",
     "vitest": "^4.1.5"
   }
 }
