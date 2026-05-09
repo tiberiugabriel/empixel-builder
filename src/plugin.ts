@@ -4,6 +4,7 @@ import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
 import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
 import type { LayoutRow, StorageLayoutsCollection } from "./storage-types.js";
 import { ensureStorageMigrationRan } from "./migrations/toStorageV1.js";
+import { ensureLegacySpacingMigrationRan } from "./migrations/legacySpacingV1.js";
 
 const KV_ENABLED = "settings:enabledCollections";
 const KV_BREAKPOINTS = "settings:breakpoints";
@@ -314,6 +315,10 @@ export async function listEntriesForCollection(
   // F3.3 lazy gate — `/entries` is a heavy read so make sure the
   // storage side is fully populated before merging. Idempotent.
   await ensureStorageMigrationRan(ctx);
+  // F3.6.4 lazy gate — sequenced after the storage copy so legacy
+  // SQLite rows have already landed in ctx.storage before this rewrites
+  // their symbolic spacing values to px. Idempotent.
+  await ensureLegacySpacingMigrationRan(ctx);
 
   // Pull per-entry metadata (enabled flag + timestamps) from
   // ctx.storage.layouts. Storage is the only source of truth as of F3.5.
@@ -436,6 +441,11 @@ export function createPlugin() {
             // migration is a graceful no-op (the legacy table never
             // existed) and the flag is set so future calls are free.
             await ensureStorageMigrationRan(ctx);
+            // F3.6.4 lazy gate — sequenced after the storage copy so any
+            // legacy symbolic spacing values (`paddingTop: "md"`) get
+            // rewritten to px on the very first read post-upgrade.
+            // Idempotent + cached after first run.
+            await ensureLegacySpacingMigrationRan(ctx);
 
             // Fresh-entry case: the host CMS may pass a slug for an entry
             // that has never been saved through the builder before.
@@ -465,6 +475,8 @@ export function createPlugin() {
 
             // F3.3 lazy gate — same as GET. Idempotent + cached after first run.
             await ensureStorageMigrationRan(ctx);
+            // F3.6.4 lazy gate — same as GET. Sequenced after F3.3.
+            await ensureLegacySpacingMigrationRan(ctx);
             // Same as GET: slug → ULID at the route boundary so the row is
             // always written under its canonical ULID key.
             pageId = await resolveSlugToUlid(ctx, collection, pageId);
@@ -570,6 +582,9 @@ export function createPlugin() {
           // post-upgrade, so we want the migration to have run before we
           // start putting fresh rows alongside un-migrated legacy rows.
           await ensureStorageMigrationRan(ctx);
+          // F3.6.4 lazy gate — sequenced after F3.3 so toggle reads see
+          // already-normalised spacing values.
+          await ensureLegacySpacingMigrationRan(ctx);
           // Resolve slug → ULID at the route boundary for fresh entries.
           entryId = await resolveSlugToUlid(ctx, collection, entryId);
 
@@ -652,6 +667,9 @@ export function createPlugin() {
           // cascade delete below removes it from the canonical layer too.
           // Idempotent + cached.
           await ensureStorageMigrationRan(ctx);
+          // F3.6.4 lazy gate — keeps the migration chain consistent
+          // even on the delete codepath. Idempotent + cached.
+          await ensureLegacySpacingMigrationRan(ctx);
 
           // Cascade delete from `ctx.storage.layouts`. The legacy DELETE
           // that lived here pre-F3.5 is gone — once F3.3 has copied

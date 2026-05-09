@@ -5,9 +5,10 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 
 ## Files
 - `src/index.ts` — Plugin descriptor (entry point). No more options as of v0.9.0 (`databasePath` removed; storage is configured at the EmDash root)
-- `src/plugin.ts` — 6 REST routes + content hook + `storage.layouts` declaration + storage-only read helper (`readLayoutFromStorage`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`) + lazy gate `ensureStorageMigrationRan` at the top of every layout route + the `content:afterDelete` hook
+- `src/plugin.ts` — 6 REST routes + content hook + `storage.layouts` declaration + storage-only read helper (`readLayoutFromStorage`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`) + lazy gate `ensureStorageMigrationRan` + `ensureLegacySpacingMigrationRan` at the top of every layout route + the `content:afterDelete` hook
 - `src/storage-types.ts` — `LayoutRow` + `StorageLayoutsCollection` types for `ctx.storage.layouts` (consumed by Agent B in `src/components/db.ts`)
 - `src/migrations/toStorageV1.ts` — F3.3 one-shot data migration (`runMigrationToStorageV1` + the lazy-gate wrapper `ensureStorageMigrationRan`). Owns its own dynamically-imported `better-sqlite3` handle for the SQLite-host upgrade bridge.
+- `src/migrations/legacySpacingV1.ts` — F3.6.4 one-shot data migration (`runMigrationLegacySpacingV1` + the lazy-gate wrapper `ensureLegacySpacingMigrationRan`). Walks every stored layout and rewrites legacy symbolic spacing values to px equivalents.
 - `src/types.ts` — Block interfaces + type definitions
 - ~~`src/dbShared.ts`~~ — **Deleted in F3.5.** The plugin no longer holds a SQLite singleton.
 
@@ -258,17 +259,87 @@ ctx.storage rows would be orphaned, but a future re-run of F3.3 (after
 re-upgrading) would consult the legacy table again and resolve
 conflicts via `updatedAt`.
 
+### Data migration — F3.6.4 (`migration_legacy_spacing_v1`)
+
+`src/migrations/legacySpacingV1.ts` exports two symbols:
+
+- `runMigrationLegacySpacingV1(ctx) → Promise<{ migrated, skipped, rowsTouched }>`
+  is the one-shot migration runner. Walks every row in
+  `ctx.storage.layouts.query({ where: { collection } })` for each
+  enabled collection (KV-discovered via `settings:enabledCollections`
+  with `["pages", "posts"]` fallback), recurses through every block's
+  `config.style` / `styleHover` / `styleDark` /
+  `styleBreakpoints[bp]` / `styleHoverBreakpoints[bp]` (and into
+  `block.children` + `block.slots`), and rewrites any symbolic spacing
+  value (`none/sm/md/lg/xl`) on the keys
+  `paddingTop/Right/Bottom/Left` and `marginTop/Right/Bottom/Left`
+  to its px equivalent.
+- `ensureLegacySpacingMigrationRan(ctx)` is the **lazy gate** wrapper
+  called from the top of every layout route handler, sequenced
+  immediately after `ensureStorageMigrationRan` so legacy SQLite rows
+  have landed in storage before this rewrites them. Idempotent + cheap
+  on the hot path (process-local cache; one `ctx.kv.get` per process).
+
+**Mapping (verbatim from the legacy `spacingMap` fallback in
+`SectionContainer.astro`)**:
+
+| Legacy | px |
+|--------|----|
+| `none` | `"0"` |
+| `sm`   | `"32px"` |
+| `md`   | `"48px"` |
+| `lg`   | `"64px"` |
+| `xl`   | `"96px"` |
+
+The key allowlist is the 4 padding sides + 4 margin sides; everything
+else (gap, font-size, etc.) is left alone even if it carries a
+symbolic value. Padding coverage matches the existing fallback;
+margin coverage is forward-looking — the report's master plan groups
+spacing as a unit, and the cost of one extra map lookup per
+(block × style-bag) is negligible.
+
+**Idempotency**: KV flag `state:migration:legacy_spacing_v1` is the
+only gate. Re-running with the flag set returns zero counts. On
+rewrite, `updatedAt` is bumped to a fresh ISO timestamp so the
+`cacheHint.lastModified` path on `getBuilderLayout` invalidates any
+cached page that rendered with the unparsed symbolic value.
+
+**Failure semantics**: per-row failures (storage `put` error,
+malformed `data.sections`) are caught + logged via `ctx.log.warn` and
+recorded in `skipped`. The KV flag is still set at the end of a
+normal run — un-rewritten rows render as the unparsed string from
+F3.6.4 onward (no `spacingMap` fallback once Agent B's frontend half
+ships), so a re-run isn't urgent. Exceptions that escape the runner
+(e.g. `ctx.kv.set` blowing up) leave the flag unset so the next
+request retries.
+
+**Coordination with the frontend half (Agent B)**: Agent B
+concurrently drops the `spacingMap` fallback in
+`SectionContainer.astro`. After both PRs ship, frontend has no
+fallback AND data is migrated. Hosts upgrading 0.9.5 → 0.9.6 may
+briefly see padding / margin render as the unparsed string for one
+request after the upgrade until the lazy gate runs and rewrites the
+stored row. KISS — running the migration on every layout read would
+add a meaningful per-request cost.
+
 ### Migration roadmap
 
 - F3.1 — declarative only. Storage collection declared on `definePlugin`.
 - F3.2 — route handlers go through `ctx.storage.layouts`.
   Writes are storage-only; reads fall back to the legacy table; deletes
   hit both. Migration flags moved to `ctx.kv`.
-- F3.3 (this section) — one-shot migration `migration_to_storage_v1`
+- F3.3 — one-shot migration `migration_to_storage_v1`
   copies every row from `empixel_builder_layouts` into
   `ctx.storage.layouts`. Flag stored in `ctx.kv`. Conflict resolution:
   newer `updatedAt` wins; ties go to storage. Wired through the lazy
   gate `ensureStorageMigrationRan` at the top of every layout route.
+- F3.6.4 (this migration) — `migration_legacy_spacing_v1` rewrites
+  legacy symbolic spacing values to px equivalents. Sequenced after
+  the F3.3 storage copy so legacy SQLite rows have already landed in
+  `ctx.storage` before this rewrites them. Pair with Agent B's
+  frontend half (drop the `spacingMap` fallback in
+  `SectionContainer.astro`) to fully retire the symbolic-spacing
+  path.
 - F3.4 (Agent B) — **done 2026-05-09**. `getBuilderLayout` is now async,
   takes `Astro` (or any `BuilderLayoutContext`) as the first argument,
   and reads through the shared `_plugin_storage` table via
@@ -547,7 +618,7 @@ documented in the README's "Caching builder layouts" section.
 |-----|------|---------|
 | `settings:enabledCollections` | `string[]` | Collections with builder enabled at collection level |
 | `settings:breakpoints` | `BreakpointsConfig` | Global breakpoints config (enabled + px overrides) |
-| `state:migration:<flag>` | `string` | One-shot migration flag (e.g. `state:migration:migration_spacer_v1`, `state:migration:to_storage_v1`). Mirrors the legacy `empixel_builder_meta` row during the F3.2/F3.5 transition. v0.9 — F3.2/F3.3. |
+| `state:migration:<flag>` | `string` | One-shot migration flag (e.g. `state:migration:migration_spacer_v1`, `state:migration:to_storage_v1`, `state:migration:legacy_spacing_v1`). Mirrors the legacy `empixel_builder_meta` row during the F3.2/F3.5 transition. v0.9 — F3.2/F3.3/F3.6.4. |
 
 ## Data Flow
 

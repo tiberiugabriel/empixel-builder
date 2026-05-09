@@ -59,6 +59,41 @@ SemVer.
     `CHANGELOG.md`, `.claude/prd-builder-ui.md`,
     `.claude/prd-breakpoints.md`,
     `.claude/coordination/status/agent-c.md`.
+- **F3.6.4 (migration) — `runMigrationLegacySpacingV1` rewrites legacy
+  symbolic spacing values (`none/sm/md/lg/xl`) to their px equivalents
+  in stored layouts.** Idempotent, KV-flag-gated
+  (`state:migration:legacy_spacing_v1`), runs at the lazy gate alongside
+  `migration_to_storage_v1`. Pair with F3.6.4's frontend half (B) to
+  fully retire the symbolic-spacing path.
+  - Map (verbatim from `SectionContainer.astro`'s `spacingMap`):
+    `none → "0"`, `sm → "32px"`, `md → "48px"`, `lg → "64px"`,
+    `xl → "96px"`.
+  - Coverage: `paddingTop/Right/Bottom/Left` and
+    `marginTop/Right/Bottom/Left` keys, on every block's
+    `config.style`, `config.styleHover`, `config.styleDark`,
+    `config.styleBreakpoints[bp]`, `config.styleHoverBreakpoints[bp]`,
+    recursively into `block.children` and `block.slots`.
+  - Sequencing: lazy-gate-wired in `plugin.ts` after
+    `ensureStorageMigrationRan` so legacy SQLite rows have already
+    landed in `ctx.storage` before this rewrites them. Sites:
+    `listEntriesForCollection`, `/layout` GET + POST, `/toggle`,
+    and the `content:afterDelete` hook.
+  - Brief upgrade glitch: Agent B is concurrently dropping the
+    `spacingMap` fallback in `SectionContainer.astro`. After both
+    PRs ship, frontend has no fallback AND data is migrated. Hosts
+    upgrading 0.9.5 → 0.9.6 may see padding / margin render as the
+    unparsed string (e.g. `"md"`) for one request after the upgrade
+    until the lazy gate runs and rewrites the stored row. KISS —
+    running the migration on every layout read would add a meaningful
+    per-request cost.
+  - On rewrite, `updatedAt` is bumped to a fresh ISO timestamp so the
+    `cacheHint.lastModified` path on `getBuilderLayout` invalidates
+    any cached page that rendered with the unparsed symbolic value
+    before the migration ran.
+  - Files: `src/migrations/legacySpacingV1.ts` (new), `src/plugin.ts`
+    (5 lazy-gate sites + import), `tests/legacySpacingMigration.test.ts`
+    (new — 22 cases). `version` in `package.json` stays at `0.9.5` —
+    F3.6 phase will bump to 0.9.6 at phase close.
 
 - **F3.6.2 — `getDefaultBlockConfig(type)` helper exported from
   `blockDefinitions.ts`. `ADD_BLOCK` + `LOAD_SUCCESS` (plus

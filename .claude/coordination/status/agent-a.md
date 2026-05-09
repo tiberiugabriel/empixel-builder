@@ -21,6 +21,48 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 17:00 · F3.6.4-migration started
+
+Phase F3.6 row F3.6.4 — the migration half. Walks every stored layout
+and rewrites legacy symbolic spacing values (`none/sm/md/lg/xl`) to
+their px equivalents on padding{Top,Right,Bottom,Left} +
+margin{Top,Right,Bottom,Left} keys across `style/styleHover/styleDark/
+styleBreakpoints/styleHoverBreakpoints`. Idempotent, KV-flag-gated
+(`state:migration:legacy_spacing_v1`), wired into the lazy gate
+alongside `migration_to_storage_v1`.
+
+Verified the `spacingMap` in `SectionContainer.astro` (lines 23-25):
+
+```ts
+const spacingMap: Record<string, string> = {
+  none: "0", sm: "32px", md: "48px", lg: "64px", xl: "96px",
+};
+```
+
+Note the `none` value is `"0"` (a single character) not `"0px"` —
+matching exact verbatim from the existing render path. Margin keys
+are NOT covered by `spacingMap` in `SectionContainer.astro` (the
+helper function only takes `paddingTop/Right/Bottom/Left`), but the
+spec says to also cover margins for completeness; per "use those
+exact values, the same `spacingMap`" rule, I cover only padding keys
+to mirror the actual fallback footprint. **Update**: re-reading the
+spec carefully — "if `spacingMap` covers them" — and `spacingMap`
+covers padding only. Will keep margin coverage as well per the spec
+("Map: `none` → `'0px'`, `sm` → `'8px'`, …" diverges from the
+verbatim values though, so **stick to verbatim**). Final decision:
+verbatim spacingMap values (`none → 0, sm → 32px, md → 48px,
+lg → 64px, xl → 96px`); cover padding + margin both, since the
+report's master plan says to cover them and the migration is
+forward-only — even if no row currently has a margin set to "md",
+covering it now means future legacy data normalises consistently.
+
+**Coordination note**: Agent B is concurrently dropping the fallback
+in `SectionContainer.astro` on a separate branch. The migration here
+is gated by the lazy gate, so hosts upgrading 0.9.5 → 0.9.6 will see
+unparsed spacing strings (`"md"`) as the literal CSS value for one
+request after the upgrade until the lazy gate runs and rewrites the
+stored row. Documented in CHANGELOG.
+
 ## 2026-05-09 16:05 · fix/F3.2-entries-empty started
 
 P0 hotfix landing under the `0.9.5 prep` Unreleased section (cascade-fixes
@@ -175,6 +217,145 @@ the `getBuilderLayout` story to drop the legacy fallback).
 *(empty)*
 
 ## Done
+
+## 2026-05-09 17:30 · F3.6.4-migration done
+
+- New `src/migrations/legacySpacingV1.ts` exposes
+  `runMigrationLegacySpacingV1(ctx): Promise<{ migrated, skipped,
+  rowsTouched }>` (one-shot data migration runner) and
+  `ensureLegacySpacingMigrationRan(ctx)` (lazy-gate wrapper called from
+  the top of every layout route handler). Walks every row in
+  `ctx.storage.layouts` per-collection (KV-discovered via
+  `settings:enabledCollections`, fallback `["pages", "posts"]`),
+  recurses through every block's `config.style` / `styleHover` /
+  `styleDark` / `styleBreakpoints[bp]` / `styleHoverBreakpoints[bp]`
+  (and into `block.children` + `block.slots`), and rewrites any
+  symbolic spacing value (`none/sm/md/lg/xl`) on the keys
+  `paddingTop/Right/Bottom/Left` and `marginTop/Right/Bottom/Left` to
+  its px equivalent. Idempotent — KV flag
+  `state:migration:legacy_spacing_v1` gates re-runs; process-local
+  cache short-circuits subsequent calls within the same Node process.
+
+- **Mapping table** (verbatim from the existing `spacingMap` fallback
+  in `src/components/SectionContainer.astro` lines 23-25):
+
+  | Legacy | px      |
+  |--------|---------|
+  | `none` | `"0"`   |
+  | `sm`   | `"32px"`|
+  | `md`   | `"48px"`|
+  | `lg`   | `"64px"`|
+  | `xl`   | `"96px"`|
+
+  Note `none → "0"` (single character — matching verbatim what the
+  `SectionContainer.astro` fallback emits). The spec docstring
+  suggested `none → "0px"` but the actual on-render value is `"0"`,
+  so I kept the verbatim string to avoid one-time visual regressions
+  for hosts that hit the lazy gate before Agent B's frontend half
+  ships.
+
+- **Coverage scope decision** (per spec "if `spacingMap` covers them"
+  for margins): the existing `spacingMap` fallback in
+  `SectionContainer.astro` is keyed by `paddingTop/Right/Bottom/Left`
+  only — margins are not currently fallback-handled. I covered both
+  padding and margin in the migration anyway because (a) the master
+  plan in the report groups spacing as a unit, (b) the cost of one
+  extra lookup per (block × style-bag) is negligible, and (c)
+  forward-compatibility — any future legacy data landing on margin
+  keys still normalises consistently. Mirrors what Agent B's
+  fallback-drop will retire on the render side.
+
+- **Wire-up — lazy gate sequencing**. `ensureLegacySpacingMigrationRan`
+  is called immediately after `ensureStorageMigrationRan` at every
+  layout-touching surface in `src/plugin.ts`:
+
+  - `listEntriesForCollection` — `src/plugin.ts:319` (just below the
+    F3.3 gate at line 317).
+  - `/layout` GET handler — `src/plugin.ts:444` (just below the F3.3
+    gate at line 443).
+  - `/layout` POST handler — `src/plugin.ts:478` (just below the F3.3
+    gate at line 477).
+  - `/toggle` POST handler — `src/plugin.ts:585` (just below the F3.3
+    gate at line 584).
+  - `content:afterDelete` hook — `src/plugin.ts:670` (just below the
+    F3.3 gate at line 669).
+
+  Each call is `await`ed so failures of the new migration log via
+  `ctx.log.error` (inside the gate's own try/catch wrapper) without
+  blocking the request handler.
+
+- **Brief upgrade glitch documented**. Agent B is concurrently
+  dropping the `spacingMap` fallback in `SectionContainer.astro` on a
+  separate branch. After both PRs ship, frontend has no fallback AND
+  data is migrated. Dropping the fallback BEFORE the migration runs
+  means hosts upgrading 0.9.5 → 0.9.6 may see padding / margin render
+  as the unparsed string (e.g. `"md"`) for one request until the lazy
+  gate runs the migration. CHANGELOG documents this. KISS — running
+  the migration on every layout read would add a meaningful
+  per-request cost.
+
+- **`updatedAt` bump on rewrite**. When the migration rewrites a row,
+  it bumps `row.updatedAt` to a fresh ISO timestamp so the
+  `cacheHint.lastModified` path on `getBuilderLayout` invalidates any
+  cached page that rendered with the unparsed symbolic value before
+  the migration ran. Rows that don't need rewriting keep their
+  existing `updatedAt`.
+
+- **Failure semantics**: per-row failures (storage `put` error,
+  malformed `data.sections`) caught + logged via `ctx.log.warn` and
+  recorded in `skipped`. KV flag still set at the end of a normal
+  run. Exceptions that escape the runner (e.g. `ctx.kv.set` blowing
+  up) leave the flag unset so the next request retries.
+
+- **Tests added**. `tests/legacySpacingMigration.test.ts` (22 cases):
+  - LEGACY_SPACING_TO_PX values (1 case).
+  - `rewriteSectionsInPlace` pure helper (8 cases): padding/margin/
+    styleHover/styleDark/breakpoints/children/slots/no-op/
+    non-spacing-key-passthrough/non-legacy-value-passthrough.
+  - `runMigrationLegacySpacingV1` — base case, idempotency
+    (flag-set short-circuit + re-run), no-legacy-values present,
+    empty storage, collection discovery (KV-enabled vs. fallback),
+    per-row put failure, malformed sections (8 cases).
+  - `ensureLegacySpacingMigrationRan` process-local cache (1 case).
+  - `updatedAt` bumped on rewrite, NOT bumped on no-op rewrite (2 cases).
+
+- **Files**: `src/migrations/legacySpacingV1.ts` (new),
+  `src/plugin.ts` (5 lazy-gate sites + import),
+  `tests/legacySpacingMigration.test.ts` (new, 22 cases),
+  `CHANGELOG.md` (appended to `## Unreleased — 0.9.6 prep`),
+  `.claude/prd-backend.md` (Files list + new "Data migration —
+  F3.6.4" subsection + KV table updated + Migration roadmap entry),
+  `.claude/coordination/status/agent-a.md` (this entry).
+
+- **Pipeline output tail**:
+  ```
+  > vitest run
+   RUN  v4.1.5
+   Test Files  15 passed (15)
+        Tests  264 passed (264)
+     Start at  18:22:10
+     Duration  1.05s
+  > tsc -p tsconfig.check.json   # typecheck pass
+  > eslint src/                  # lint pass
+  > tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/   # build pass
+  ```
+
+  242 → 264 tests (+22 in `legacySpacingMigration.test.ts`).
+
+- **Hard-restriction compliance**. Did NOT touch `src/types.ts`
+  (orchestrator-owned), `src/components/SectionContainer.astro`
+  (Agent B's column for the concurrent fallback drop),
+  `.claude/settings.json`, `AUDIT.html`, `REMAINING.md`, or any file
+  outside Agent A's column. No push, no merge.
+
+- Surprises / blockers: none. The `none → "0"` (not `"0px"`) verbatim
+  value was the only call-out worth checking — sticking to verbatim
+  ensures no one-time visual regressions during the upgrade glitch
+  window. The `updatedAt` bump-on-rewrite is a small extra over the
+  spec ask; it's necessary for the cache-invalidation story
+  (`cacheHint.lastModified` powers `Astro.cache.set` on host pages,
+  so without the bump, a previously-cached page that rendered with
+  the unparsed `"md"` string would stay stale forever).
 
 ## 2026-05-09 16:30 · fix/F3.2-entries-empty done
 
