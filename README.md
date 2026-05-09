@@ -45,6 +45,18 @@ export default defineConfig({
 });
 ```
 
+### Options
+
+`empixelBuilder()` accepts an optional configuration object:
+
+| Option         | Type     | Default                       | Description                                                                                                              |
+| -------------- | -------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `databasePath` | `string` | `<process.cwd()>/data.db`     | Path to the SQLite file backing the plugin. Both the plugin runtime and the Astro frontend reader share this connection. |
+
+```js
+empixelBuilder({ databasePath: "./custom/path/data.db" });
+```
+
 ## Usage
 
 Once registered, the **Page Editor** appears in the EmDash admin sidebar at `/_emdash/admin`.

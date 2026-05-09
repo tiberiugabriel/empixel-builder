@@ -7,6 +7,7 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 - `src/index.ts` — Plugin descriptor (entry point)
 - `src/plugin.ts` — 6 REST routes + content hook
 - `src/types.ts` — Block interfaces + type definitions
+- `src/dbShared.ts` — Shared SQLite handle factory (`getDb()`)
 
 ## Runtime requirements (v0.7.1)
 
@@ -36,6 +37,40 @@ soft-fail to `error` level — useful when investigating why a layout
 mysteriously falls back to the unresolved slug, or why an entry table read
 returned nothing. Control flow is unchanged either way; this is purely a
 visibility lever.
+
+## Shared DB factory (v0.7.1)
+
+`src/dbShared.ts` owns the process-wide SQLite handle. Both the plugin
+runtime (`plugin.ts`) and the frontend reader (`components/db.ts`) call
+`getDb()` from this module instead of constructing their own `new Database(...)`
+— the host site holds at most one open file handle to the layouts DB.
+
+Public surface:
+
+- `getDb(opts?: { databasePath?: string })` — returns the cached singleton
+  for the resolved path. Subsequent calls with the same path return the same
+  instance; calling with a different path closes the cached connection and
+  reopens against the new file.
+- `resolveDatabasePath(opts?)` — pure helper. Picks the explicit option, then
+  the configured default, then `<process.cwd()>/data.db`.
+- `setDefaultDatabasePath(databasePath)` — called from `index.ts` when the
+  user passes `empixelBuilder({ databasePath })`. Records the value so
+  later callers don't need to thread the option through.
+
+Plugin option (consumed by `index.ts`):
+
+```ts
+empixelBuilder({ databasePath: "./custom/path/data.db" })
+```
+
+Default behaviour (no option provided) is unchanged — the file lives at
+`process.cwd()/data.db`.
+
+`plugin.ts` keeps a local `getDb()` wrapper (now thin) that delegates to the
+shared factory and runs `CREATE TABLE` / `ALTER TABLE` /
+`runSpacerMigration` once per shared handle (tracked via a `WeakSet`). If
+the host swaps to a different `databasePath` mid-process, the next call
+re-runs schema setup against the new file.
 
 ## API Routes
 

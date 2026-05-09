@@ -17,6 +17,11 @@ SemVer.
   once per rendered layout. Defends builder blocks from theme `* { ... }`
   resets that bleed onto plugin elements (`<figure>`, `<button>`, `<a>`,
   etc.). Skipped when the layout has zero sections.
+- Single shared SQLite connection across the plugin runtime and the frontend
+  reader (`getDb()` in `src/dbShared.ts`). Previously `plugin.ts` and
+  `components/db.ts` each opened their own `new Database(...)` against the
+  same file. New option `empixelBuilder({ databasePath })` controls the
+  path; defaults to `<process.cwd()>/data.db`.
 
 ## 0.7.0 — 2026-05-08
 

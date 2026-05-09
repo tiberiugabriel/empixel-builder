@@ -1,15 +1,13 @@
 import { definePlugin } from "emdash";
 import type { RouteContext, PluginContext } from "emdash";
-import { createRequire } from "node:module";
-import { join } from "node:path";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
 import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
+import { getDb as getSharedDb, type SqliteDb } from "./dbShared.js";
 
 const KV_ENABLED = "settings:enabledCollections";
 const KV_BREAKPOINTS = "settings:breakpoints";
 
 const NON_REMOVABLE_BREAKPOINTS: BreakpointId[] = ["desktop", "tablet-portrait", "mobile-portrait"];
-const _require = createRequire(import.meta.url);
 
 // When set to "1", caught-but-soft-failed errors escalate from warn → error so
 // they're easier to spot during local debugging. The default (off) keeps the
@@ -55,24 +53,17 @@ function badRequest(message: string): Response {
   );
 }
 
-interface SqliteStatement {
-  get(...args: unknown[]): unknown;
-  all(...args: unknown[]): unknown[];
-  run(...args: unknown[]): void;
-}
-
-interface SqliteDb {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-}
-
-let _db: SqliteDb | null = null;
+// Tracks which shared SQLite handles have already been initialised by the
+// plugin runtime. The shared singleton lives in `dbShared.ts` and is reused
+// by the frontend reader (`components/db.ts`); we only need to run schema
+// setup + migrations once per handle, but if the host swaps to a different
+// `databasePath` and the singleton reopens, we need to re-init the new file.
+const initialisedHandles = new WeakSet<SqliteDb>();
 
 function getDb(): SqliteDb {
-  if (_db) return _db;
-  const Database = _require("better-sqlite3");
-  _db = new Database(join(process.cwd(), "data.db")) as SqliteDb;
-  _db.exec(`
+  const db = getSharedDb();
+  if (initialisedHandles.has(db)) return db;
+  db.exec(`
     CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
       collection TEXT NOT NULL,
       entry_id   TEXT NOT NULL,
@@ -83,14 +74,14 @@ function getDb(): SqliteDb {
       PRIMARY KEY (collection, entry_id)
     )
   `);
-  _db.exec(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS empixel_builder_meta (
       key   TEXT PRIMARY KEY,
       value TEXT
     )
   `);
   try {
-    _db.exec("ALTER TABLE empixel_builder_layouts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
+    db.exec("ALTER TABLE empixel_builder_layouts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
   } catch (err) {
     // Most of the time this is the harmless "duplicate column" error from
     // SQLite — the column already exists from a previous run. We still log it
@@ -98,9 +89,10 @@ function getDb(): SqliteDb {
     logCaught(null, "ALTER TABLE add column 'enabled' failed (likely already present)", err);
   }
 
-  runSpacerMigration(_db);
+  runSpacerMigration(db);
 
-  return _db;
+  initialisedHandles.add(db);
+  return db;
 }
 
 /**

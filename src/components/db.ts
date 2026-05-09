@@ -1,36 +1,22 @@
-import { createRequire } from "node:module";
-import { join } from "node:path";
 import type { SectionBlock } from "../types.js";
 import { stripUnknownBlocks } from "../types.js";
+import { getDb as getSharedDb } from "../dbShared.js";
 
 // Same regex as plugin.ts. Collection names are interpolated into SQL
 // identifiers (`ec_${collection}`) so they MUST be validated. Loose input
 // here is unlikely (host caller), but the cost is one regex test per load.
 const COLLECTION_RE = /^[a-z0-9_]+$/;
 
-interface SqliteStatement {
-  get(...args: unknown[]): unknown;
-}
-
-interface SqliteDb {
-  prepare(sql: string): SqliteStatement;
-}
-
-const _require = createRequire(import.meta.url);
-let _db: SqliteDb | null = null;
-
-function getDb(): SqliteDb {
-  if (_db) return _db;
-  const Database = _require("better-sqlite3");
-  _db = new Database(join(process.cwd(), "data.db"), { readonly: true }) as SqliteDb;
-  return _db;
-}
-
 export function getBuilderLayout(collection: string, entryId: string, enabled?: boolean): SectionBlock[] | null {
   if (enabled === false) return null;
   if (!COLLECTION_RE.test(collection)) return null;
   try {
-    const db = getDb();
+    // Shared handle owned by `dbShared.ts`; the plugin runtime opens the
+    // same file for writes, so this reader piggy-backs on that connection
+    // instead of opening a second one. The default path is
+    // `<process.cwd()>/data.db` unless `empixelBuilder({ databasePath })`
+    // overrode it at plugin construction time.
+    const db = getSharedDb();
 
     // Attempt 1: Direct lookup (could be ULID or slug depending on what was passed)
     let row = db
