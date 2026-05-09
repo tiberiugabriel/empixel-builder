@@ -109,6 +109,46 @@ in BOTH `EMPTY_STYLE_DEFAULTS` (in `blockDefinitions.ts`) and the
 `STYLE_PROPS_SNAPSHOT` array in `tests/blockDefinitions.test.ts`. The
 test asserts both lists agree and will fail loudly until they do.
 
+### F3.6.7 — parity snapshot guard (`tests/parity/all.test.ts`)
+
+A second guard exists at the CSS-output level. `tests/parity/all.test.ts`
+holds 9 fixtures (one per block type) plus inline
+`toMatchInlineSnapshot()` assertions on
+`buildBlockChromeCss(config, blockId, opts)`. Each fixture starts from
+`getDefaultBlockConfig(<type>)` so every structural key is present, then
+layers aesthetic values on top to exercise the relevant CSS code paths
+(background / border / radius / shadow / typography / breakpoints /
+hover / dark / advanced). The `container` fixture carries the
+**exhaustive** "every `STYLE_PROPS` entry non-empty" config so the
+snapshot pins the full chrome bundle; the other 8 fixtures cover
+representative per-block subsets.
+
+One additional assertion (`text` block, desktop) locks
+`buildCanvasBlockCss(block, "desktop")` against
+`buildBlockChromeCss(block.config, block.id)` at the chrome-CSS level.
+This is a string-equality check, not a snapshot — extends F3.6.3's
+"both call the same helper" beyond unit-level into a snapshot-level
+contract. If a future Canvas refactor splits the path the equality
+breaks before the snapshots even surface the drift.
+
+**When `styleUtils.ts` changes:**
+
+1. Run `npm test` once. Vitest reports the snapshot diff for every
+   fixture whose CSS output shifted.
+2. Inspect each diff. If the change was intentional, regenerate with
+   `npx vitest -u tests/parity/all.test.ts` (or `npx vitest -u` for
+   everything) and commit the regenerated snapshots in the SAME PR
+   that edited `styleUtils.ts`. The CI history then records what
+   shifted alongside the code change that caused the shift.
+3. If a diff appears that you did NOT intend, that's parity drift
+   — either Canvas / frontend silently stopped agreeing, or a
+   refactor leaked a behavior change. Fix the code. Do NOT
+   regenerate the snapshot.
+
+Inline snapshots (not separate `.snap` files) keep assertion +
+expected output co-located in `tests/parity/all.test.ts` so reviewers
+can read the diff inline without bouncing to a separate file.
+
 ### `getDefaultBlockConfig(type)` + `BASE_DEFAULTS` (F3.6.2)
 
 F3.6.2 builds the **load-time fill helper** on top of the F3.6.1 schema. Two new exports from `src/admin/blockDefinitions.ts`:

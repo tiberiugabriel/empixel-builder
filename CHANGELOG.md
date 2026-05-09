@@ -5,6 +5,38 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
+- **F3.6.7 — parity snapshot suite for the 9 block types.** New
+  `tests/parity/all.test.ts` holds 9 fixtures (one per block type) +
+  inline `toMatchInlineSnapshot()` assertions on
+  `buildBlockChromeCss(config, blockId, opts)`. Each fixture starts
+  from `getDefaultBlockConfig(<type>)` so every structural key
+  (style / styleHover / styleDark / styleBreakpoints /
+  styleHoverBreakpoints / advanced + the F3.6.1 `STYLE_PROPS`
+  placeholders) is present, then layers aesthetic values on top to
+  exercise the relevant CSS code paths. The `container` fixture
+  carries the EXHAUSTIVE "every key non-empty" config — every
+  `STYLE_PROPS` entry has a real value; hover, dark, breakpoint
+  (tablet + mobile), breakpoint-hover, and advanced (cssId /
+  cssClasses / customCss / position + offsets / zIndex) all carry
+  meaningful overrides. The other 8 fixtures cover representative
+  per-block subsets. **One canvas-vs-frontend equality test** (text
+  block, desktop) locks `buildCanvasBlockCss(block, "desktop")`
+  against `buildBlockChromeCss(block.config, block.id)` at the
+  chrome-CSS level — extends the F3.6.3 unification beyond
+  "contains substring" to full-string equality. Future
+  `styleUtils.ts` edits that drift Canvas / frontend rendering
+  surface as snapshot diffs; reviewing each diff IS the
+  verification that the change was intentional and the canvas /
+  frontend stay in sync. Inline snapshots (not separate `.snap`
+  files) keep assertion + expected output co-located for easier
+  diff review. Tests: 306 → 316 (+10 — 9 per-block + 1
+  canvas-vs-frontend equality). Files: `tests/parity/all.test.ts`
+  (new, 517 LOC including the inline expected CSS strings),
+  `.claude/prd-blocks.md` (parity-guard section documenting the
+  snapshot regen / drift workflow), `CHANGELOG.md`,
+  `.claude/coordination/status/agent-c.md` (start + done entries).
+  **No production code touched** — tests + docs only.
+
 - **F3.6.6 — audit + reconcile preview / Astro DOM.** 1:1 walked every
   pair `src/admin/previews/<Block>Preview.tsx` ↔ `src/components/<Block>.astro`
   for the 9 block types and pinned the audit table in

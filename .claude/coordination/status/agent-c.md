@@ -1428,3 +1428,152 @@ column) and read only by tests + Canvas itself.
 ## Blocked
 
 *(empty — when blocked, also drop a file under `../blocked/` so the orchestrator sees it on next sync)*
+
+## 2026-05-09 · F3.6.7 starting
+
+Branch: `feature/agentC-F3.6.7` (worktree at latest `main`).
+
+**Goal**: a fixture per block with every config key populated; vitest
+runs `buildBlockChromeCss(fixture, blockId, opts)` and asserts the
+output matches an inline snapshot. Future changes to `styleUtils.ts`
+that don't update the snapshots fail CI.
+
+**Plan**:
+1. Build 9 fixtures, one per block type (`container`, `text`, `image`,
+   `text-editor`, `video`, `button`, `icon`, `html`, `divider-spacer`),
+   starting from `getDefaultBlockConfig(<type>)` so every key is
+   present. One fixture (`container`) carries the **exhaustive**
+   "every key non-empty" config — covers every STYLE_PROPS key + hover
+   + dark + breakpoints + breakpoint-hover + advanced. Other 8 mix
+   aesthetic real values across enough keys to exercise the relevant
+   CSS code paths.
+2. ONE file `tests/parity/all.test.ts` with 9 `describe`s + 9 inline
+   snapshots via `toMatchInlineSnapshot`. Inline keeps assertion +
+   expected output co-located (KISS, easier diff review).
+3. One canvas-vs-frontend equality assertion (`text` block on
+   `desktop`) that locks `buildCanvasBlockCss(block, "desktop")`
+   against `buildBlockChromeCss(block.config, block.id)` at the
+   chrome-CSS level — extends the F3.6.3 unification.
+4. Document in `prd-blocks.md`: when a developer changes
+   `styleUtils.ts` the snapshots will change; reviewing the snapshot
+   diff IS the verification.
+5. Append CHANGELOG entry under `## Unreleased — 0.9.6 prep`.
+6. Pipeline must be green; first run creates snapshots, second run
+   verifies determinism.
+
+**Files in scope**: `tests/parity/all.test.ts` (new), `CHANGELOG.md`,
+`.claude/prd-blocks.md`, `.claude/coordination/status/agent-c.md`.
+
+**No `src/types.ts` change. No production code touched** — tests +
+docs + CHANGELOG only.
+
+## 2026-05-09 · F3.6.7 done
+
+Branch: `feature/agentC-F3.6.7`. Single commit (commit SHA filled in
+below after `git commit`).
+
+**Files changed**:
+- `tests/parity/all.test.ts` — new file (517 LOC including the
+  inline expected CSS strings). 9 fixtures (one per block type) +
+  10 vitest tests. The `container` fixture is the exhaustive
+  "every key non-empty" config: every `STYLE_PROPS` entry has a
+  real value (padding/margin/sizing/border-radius/border-width/
+  overflow/typography/blendMode/aspectRatio/filter/shadow/
+  textStroke/textShadow/opacity); hover, dark, breakpoint
+  (tablet-portrait + mobile-portrait), breakpoint-hover, and
+  advanced (cssId/cssClasses/customCss/position+offsets/zIndex)
+  all carry meaningful overrides. The other 8 fixtures
+  (`text`, `image`, `text-editor`, `video`, `button`, `icon`,
+  `html`, `divider-spacer`) cover representative per-block
+  subsets that exercise the CSS code paths most relevant to that
+  block (e.g. `image` exercises the `imgScoped: true` path,
+  `button` exercises typography + background + auto-overflow:
+  hidden when border + width + radius are all set, `html`
+  exercises advanced.position + customCss, etc.).
+- One canvas-vs-frontend equality assertion (`text` block,
+  desktop): `buildCanvasBlockCss(block, "desktop")` compared to
+  `buildBlockChromeCss(block.config, block.id)`. Extends F3.6.3's
+  "both call the same helper" into a string-equality contract — if
+  a future Canvas refactor splits the path the equality breaks
+  before the snapshot diffs even surface.
+- Inline snapshots via `toMatchInlineSnapshot()` (not separate
+  `.snap` files). Keeps assertion + expected output co-located in
+  the same file for easier diff review.
+- `CHANGELOG.md` — F3.6.7 entry added at the top of
+  `## Unreleased — 0.9.6 prep` (above F3.6.6).
+- `.claude/prd-blocks.md` — new "F3.6.7 — parity snapshot guard"
+  section documenting the snapshot regen / drift workflow. Lives
+  in the F3.6.1 `defaultConfig` neighbourhood (next to the
+  STYLE_PROPS sync note) so the two related guards sit adjacent.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test &&
+npm run build` all green. 306 → 316 tests pass (+10 — 9 per-block
+parity snapshots + 1 canvas-vs-frontend equality).
+
+**Determinism check**: First run created the 9 inline snapshots
+(`Snapshots 9 written`). Second run passed without regen
+(`Tests 10 passed`). Confirmed deterministic — no JSON ordering
+or random ID drift.
+
+**Implementation notes**:
+- **Why one file, not 9?** KISS. 9 fixtures across 9 files would
+  duplicate the imports + the `fixtureConfig` helper 9 times. Single
+  file with 9 `describe` blocks reads like a reference manual — easy
+  to scan when you're trying to find which fixture covers
+  `imgScoped` or which one carries the exhaustive shadow group.
+- **Why inline, not separate `.snap`?** Vitest supports both. Inline
+  puts the expected CSS string literally on the same line as the
+  assertion. PR reviewers see the diff without context-switching to
+  a `.snap` file in another directory. The cost is a file with long
+  lines (some snapshots run ~300 chars wide for the
+  `container` exhaustive case), but ESLint doesn't lint
+  `tests/` so no `max-len` complaint, and editors with horizontal
+  scroll handle it fine.
+- **Why one canvas-vs-frontend equality test instead of all 9?**
+  KISS. The F3.6.3 unification means Canvas's `buildCanvasBlockCss`
+  delegates to `buildBlockChromeCss` for the chrome bundle, plus
+  layers an active-bp preview on top (the preview is null on
+  `desktop`). Asserting equality on `text` desktop pins the
+  delegation contract; the other 8 blocks would just re-test the
+  same contract with a different fixture. The 9 individual snapshots
+  are what catch per-block CSS drift; the equality test is what
+  catches Canvas-vs-frontend drift specifically. Two different
+  failure modes, two distinct test shapes.
+- **Why fixtures start from `getDefaultBlockConfig`?** Two reasons.
+  (a) Every structural key (`style` / `styleHover` / `styleDark` /
+  `styleBreakpoints` / `styleHoverBreakpoints` / `advanced`) is
+  guaranteed present, so the overlay can shallow-merge without
+  having to pre-populate the placeholders. (b) If F3.6.1 ever
+  changes — a new STYLE_PROPS entry, a new advanced key — the
+  fixtures pick it up automatically and the snapshots grow to
+  reflect it. The fixture overlay only declares the *aesthetic*
+  values that drive CSS output; the structural shape is inherited.
+
+**Surprising findings**:
+- The `container` exhaustive snapshot emits the breakpoint @media
+  rules in the documented largest-px-first order (tablet 992px
+  before mobile 575px). Confirmed with the visible
+  `@media(max-width:992px){...}@media(max-width:575px){...}`
+  sequence in the inline snapshot.
+- The `customCss` path's `selector` keyword substitution works as
+  documented — the container fixture's
+  `selector{transition:all 200ms ease}selector:hover{transform:translateY(-2px)}`
+  emits as
+  `[data-epx-block="C1"]{transition:all 200ms ease}[data-epx-block="C1"]:hover{transform:translateY(-2px)}`,
+  proving the regex catches both bare and pseudo-class variants.
+- The `button` fixture triggers the auto `overflow:hidden` in the
+  chrome bundle (border + width + radius all set, no explicit
+  overflow) — visible at the end of the light-rule body in the
+  snapshot. Documented behavior, but it's the first test that
+  pins it.
+- The `image` snapshot demonstrates the `imgScoped: true` split:
+  alignment + opacity + aspect-ratio land on the host root
+  (`[data-epx-block="IMG1"]{...}`), while border + radius land on
+  the inner `<img>` (`[data-epx-block="IMG1"] img{...}`). The
+  hover variant follows the same split.
+
+**No `src/types.ts` proposal**: tests + docs only. No production
+code touched. Hard restrictions all observed.
+
+**No blockers.**
