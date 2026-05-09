@@ -98,10 +98,30 @@ function parseUpdatedAt(value: string | null | undefined): Date | undefined {
 }
 
 /**
+ * Composite document id used by the plugin runtime to write rows into
+ * `_plugin_storage` (`src/plugin.ts` § `layoutDocId`). The frontend reader
+ * MUST use the identical key — every other query shape (filter on
+ * `(plugin_id, collection)` and post-match on the JSON payload) either
+ * misses entirely (`executeTakeFirst()` returns the wrong row) or collides
+ * with stale orphan rows from earlier dev iterations whose `data` payload
+ * no longer carries `collection` / `entryId`.
+ *
+ * Mirrored locally rather than imported from `src/plugin.ts` to keep the
+ * frontend bundle clean — `plugin.ts` pulls in the full plugin runtime
+ * (route handlers, hooks, etc.) which has no business landing in an Astro
+ * frontend chunk.
+ */
+function layoutDocId(collection: string, entryId: string): string {
+  return `${collection}::${entryId}`;
+}
+
+/**
  * Minimal interface for the Kysely-shaped query builder we actually need.
  * Any object satisfying this works — production uses the real Kysely
- * instance from `Astro.locals.emdash.db`; tests substitute a hand-rolled
- * stub that returns canned rows.
+ * instance EmDash exposes (either on `Astro.locals.emdash.db` for
+ * authenticated requests or via the `getDb()` runtime singleton for
+ * anonymous public page renders); tests substitute a hand-rolled stub
+ * that returns canned rows.
  */
 interface MinimalKysely {
   selectFrom(table: string): MinimalSelectBuilder;
@@ -117,11 +137,51 @@ function isMinimalKysely(value: unknown): value is MinimalKysely {
 }
 
 /**
+ * Resolve a Kysely handle for the current request.
+ *
+ * Order:
+ *   1. `Astro.locals.emdash.db` — present on authenticated/admin requests
+ *      (EmDash middleware `doInit` branch attaches the runtime's `db`).
+ *   2. `getDb()` from `emdash/runtime` — the public accessor for the same
+ *      singleton EmDash uses internally. Anonymous public page renders
+ *      DO NOT receive `db` on `locals.emdash` (the middleware short-circuits
+ *      to `{ collectPageMetadata, collectPageFragments, getPublicMediaUrl }`),
+ *      so the runtime fallback is required for the actual host-page render
+ *      path the builder targets.
+ *
+ * Returns `null` when no handle is reachable (test benches, pre-0.9 EmDash
+ * hosts) — caller short-circuits to `{ sections: null, cacheHint }`.
+ */
+async function resolveKyselyHandle(astro: BuilderLayoutContext): Promise<MinimalKysely | null> {
+  const fromLocals = astro?.locals?.emdash?.db;
+  if (isMinimalKysely(fromLocals)) return fromLocals;
+  try {
+    // Dynamic import so test benches (which never wire `emdash/runtime`) and
+    // non-Astro consumers can still call `getBuilderLayout` without the
+    // module load forcing `getDb()` to throw at import time. The peer dep
+    // (`emdash >= 0.9.0`) guarantees the export exists on real hosts.
+    const runtime = (await import("emdash/runtime")) as { getDb?: () => Promise<unknown> };
+    if (typeof runtime.getDb !== "function") return null;
+    const db = await runtime.getDb();
+    return isMinimalKysely(db) ? db : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Pull a layout row from `_plugin_storage` (EmDash's plugin-scoped storage
- * table). Returns `null` when:
- *   - `Astro.locals.emdash.db` is missing (pre-storage host or test bench).
- *   - No row matches `(plugin_id, collection, data->collection, data->entryId)`.
+ * table) using the canonical composite doc id `${collection}::${entryId}`.
+ *
+ * Single-row deterministic lookup — no scan, no orphan-row collision. The
+ * plugin runtime writes rows under the same key (`src/plugin.ts` §
+ * `layoutDocId`), so the read path is symmetric with the write path.
+ *
+ * Returns `null` when:
+ *   - No row matches `(plugin_id, collection, id)`.
  *   - The stored JSON fails to parse.
+ *   - The DB throws (table missing on pre-EmDash 0.9 hosts, permission
+ *     errors, etc.) — page renders with no layout instead of throwing.
  */
 async function readFromStorage(
   db: MinimalKysely,
@@ -134,6 +194,7 @@ async function readFromStorage(
       .select(["data", "updated_at"])
       .where("plugin_id", "=", PLUGIN_ID)
       .where("collection", "=", STORAGE_COLLECTION)
+      .where("id", "=", layoutDocId(collection, entryId))
       .executeTakeFirst() as { data?: string; updated_at?: string } | undefined;
     if (!row || typeof row.data !== "string") return null;
     let parsed: LayoutRow | undefined;
@@ -142,11 +203,7 @@ async function readFromStorage(
     } catch {
       return null;
     }
-    if (!parsed || parsed.collection !== collection || parsed.entryId !== entryId) {
-      // The narrow query above only fixes `plugin_id` + outer
-      // `collection`; the inner `data` payload identifies the row.
-      return null;
-    }
+    if (!parsed) return null;
     if (parsed.updatedAt === undefined && typeof row.updated_at === "string") {
       parsed.updatedAt = row.updated_at;
     }
@@ -160,67 +217,34 @@ async function readFromStorage(
 }
 
 /**
- * Multi-row variant: scans the plugin's rows in `_plugin_storage` and
- * returns the first row whose `data->collection` and `data->entryId`
- * match. Used as a fallback when the simple `executeTakeFirst()` lookup
- * pulled a different row (the table is keyed on the stored document `id`,
- * not on the composite `(collection, entryId)` payload).
- */
-async function findStorageRow(
-  db: MinimalKysely,
-  collection: string,
-  entryId: string,
-): Promise<LayoutRow | null> {
-  try {
-    const builder = db
-      .selectFrom("_plugin_storage")
-      .select(["data", "updated_at"])
-      .where("plugin_id", "=", PLUGIN_ID)
-      .where("collection", "=", STORAGE_COLLECTION) as unknown as {
-      execute?: () => Promise<Array<{ data?: string; updated_at?: string }>>;
-    } & MinimalSelectBuilder;
-    const rows = typeof builder.execute === "function" ? await builder.execute() : null;
-    if (!rows || !Array.isArray(rows)) return null;
-    for (const row of rows) {
-      if (typeof row.data !== "string") continue;
-      let parsed: LayoutRow | undefined;
-      try {
-        parsed = JSON.parse(row.data) as LayoutRow;
-      } catch {
-        continue;
-      }
-      if (parsed && parsed.collection === collection && parsed.entryId === entryId) {
-        if (parsed.updatedAt === undefined && typeof row.updated_at === "string") {
-          parsed.updatedAt = row.updated_at;
-        }
-        return parsed;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Read a layout for `(collection, entryId)` and return the section tree
  * plus a `cacheHint` the caller passes to `Astro.cache.set(...)`.
  *
  * **v0.9 — F3.4/F3.5 final shape.** Async, takes `Astro` (or any
  * `BuilderLayoutContext`) as the first argument. Reads route through
  * EmDash's plugin storage (`_plugin_storage`, partitioned under
- * `plugin_id="empixel-builder", collection="layouts"`) via
- * `Astro.locals.emdash.db`. The legacy `better-sqlite3` fallback that
- * existed transitionally between F3.4 and F3.5 was dropped — the
- * frontend reader is storage-only. Hosts upgrading from a pre-0.9
- * EmDash that doesn't yet expose `db` on `Astro.locals.emdash` get
- * `null` sections (and the cache tag so a future upgrade still busts
- * cleanly).
+ * `plugin_id="empixel-builder", collection="layouts"`).
  *
- * The plugin runtime's lazy `runMigrationToStorageV1` migration takes
- * care of copying any legacy `empixel_builder_layouts` rows into
- * `ctx.storage.layouts` on the first request after upgrade — by the
- * time the host page renders, the storage side is populated.
+ * **DB handle resolution (the F3.4 hotfix).** Authenticated requests
+ * receive a Kysely instance on `Astro.locals.emdash.db`. Anonymous public
+ * page renders — i.e. the actual host pages the builder targets — DO NOT
+ * (the EmDash middleware short-circuits the locals payload to
+ * `{ collectPageMetadata, collectPageFragments, getPublicMediaUrl }`). The
+ * reader therefore falls back to `getDb()` from `emdash/runtime` (the
+ * public accessor for the same singleton EmDash uses internally) when
+ * `locals.emdash.db` is absent. Pre-0.9 hosts that don't expose either
+ * still get `{ sections: null, cacheHint }` — the page renders without a
+ * layout but the cache tag is still emitted so a future upgrade busts
+ * cleanly.
+ *
+ * **Doc-id symmetry (the F3.4 hotfix).** Rows are looked up by the same
+ * composite doc id the plugin runtime writes them under
+ * (`${collection}::${entryId}`, mirrored from `src/plugin.ts § layoutDocId`).
+ * The previous F3.4 query filtered only on `(plugin_id, collection)` and
+ * called `executeTakeFirst()`, which returned an arbitrary plugin row —
+ * the post-fetch `parsed.collection !== collection` guard then forced
+ * null even when the right row existed. With the doc-id filter added,
+ * the lookup is single-row deterministic.
  */
 export async function getBuilderLayout(
   astro: BuilderLayoutContext,
@@ -238,20 +262,13 @@ export async function getBuilderLayout(
   if (enabled === false) return { sections: null, cacheHint };
   if (!COLLECTION_RE.test(collection)) return { sections: null, cacheHint };
 
-  // Storage path (EmDash multi-driver via `Astro.locals.emdash.db`).
-  // No fallback as of F3.5 — pre-0.9 EmDash hosts that don't expose `db`
-  // on locals get null sections.
-  const handle = astro?.locals?.emdash?.db;
-  if (!isMinimalKysely(handle)) return { sections: null, cacheHint };
+  // Resolve a Kysely handle — `Astro.locals.emdash.db` first (admin path),
+  // `getDb()` from `emdash/runtime` second (anonymous public render path).
+  // Hosts on a pre-0.9 EmDash without either get null sections.
+  const handle = await resolveKyselyHandle(astro);
+  if (!handle) return { sections: null, cacheHint };
 
-  // Try the single-row fast path first. The `PluginStorageRepository`
-  // assigns a stable `id` per row; when the row's `id` happens to match
-  // EmDash's hashing convention `executeTakeFirst()` returns the row
-  // straight away; otherwise the multi-row scan picks it up.
-  let storageRow = await readFromStorage(handle, collection, entryId);
-  if (!storageRow) {
-    storageRow = await findStorageRow(handle, collection, entryId);
-  }
+  const storageRow = await readFromStorage(handle, collection, entryId);
   if (!storageRow) return { sections: null, cacheHint };
 
   const lastModified = parseUpdatedAt(storageRow.updatedAt);

@@ -189,40 +189,53 @@ and the unawaited Promise on its `sections` prop, so
 `<BuilderWrapper sections={getBuilderLayout(Astro, ...)}>` works
 without an explicit `await` at the page level.
 
-Read path (post-F3.5 — storage-only):
+Read path (post-F3.5 — storage-only, with the post-fix/F3.4-frontend-empty handle resolution):
 
-1. **Storage path (only).** When `Astro.locals.emdash.db` is present
-   (Kysely instance EmDash exposes since 0.9), the reader queries the
-   shared `_plugin_storage` table partitioned under
+1. **Storage path (only).** The reader queries the shared
+   `_plugin_storage` table partitioned under
    `plugin_id = "empixel-builder" AND collection = "layouts"` — the
    same partitioning EmDash's internal `PluginStorageRepository` uses
    for the typed `ctx.storage.layouts` handle. Rows live there once
    F3.2 (route handlers) and F3.3 (one-shot migration) ship.
    `PluginStorageRepository` itself is not exported from `emdash`
    today, so the frontend reader queries the table directly via
-   Kysely with the same composite-key filter. No imports from
-   `kysely` — only the public `selectFrom(...).select(...).where(...)`
-   surface is consumed.
-2. **No legacy fallback.** F3.5 dropped the legacy
+   Kysely. The lookup uses the **canonical composite doc id**
+   `${collection}::${entryId}` (mirrored locally from
+   `src/plugin.ts § layoutDocId` — the same key the plugin runtime
+   writes rows under). Single-row deterministic — no scan, no
+   orphan-row collision.
+2. **Kysely handle resolution.** `Astro.locals.emdash.db` first
+   (present on authenticated/admin requests). When it's absent —
+   which is the common case on anonymous public page renders, since
+   the EmDash middleware short-circuits the locals payload to
+   `{ collectPageMetadata, collectPageFragments, getPublicMediaUrl }`
+   for non-authenticated requests — the reader falls back to
+   `getDb()` from `emdash/runtime`, the public accessor for the same
+   singleton EmDash uses internally. Without the runtime fallback,
+   builder-enabled host pages would render the host theme's static
+   template instead of builder content (the bug fixed by
+   `fix/F3.4-frontend-empty`).
+3. **No legacy fallback.** F3.5 dropped the legacy
    `empixel_builder_layouts` SQLite read path together with
    `src/dbShared.ts` and the `better-sqlite3` peer dependency. Hosts
-   that upgrade to v0.9 without first running EmDash 0.9+ (i.e.
-   `Astro.locals.emdash.db` is missing) get `{ sections: null,
-   cacheHint }` — the page renders without a layout but the cache tag
-   is still emitted so a future EmDash upgrade busts cleanly. The
-   plugin runtime's lazy `runMigrationToStorageV1` migration takes
-   care of copying any legacy SQLite rows into `ctx.storage.layouts`
-   on the first request after upgrade, so by the time host pages
-   render the storage side is populated.
+   on a pre-0.9 EmDash that exposes neither `locals.emdash.db` nor
+   `getDb()` get `{ sections: null, cacheHint }` — the page renders
+   without a layout but the cache tag is still emitted so a future
+   EmDash upgrade busts cleanly. The plugin runtime's lazy
+   `runMigrationToStorageV1` migration takes care of copying any
+   legacy SQLite rows into `ctx.storage.layouts` on the first request
+   after upgrade, so by the time host pages render the storage side
+   is populated.
 
 Returns `{ sections, cacheHint }` (v0.8 — F2.4 contract preserved);
 `sections` is `null` when no row, builder disabled, input rejected, or
-the host has no Kysely handle on locals. The `cacheHint.tags` always
-carries `empixel:layout:<collection>:<entryId>` so admin saves can
-invalidate the host page by tag. `cacheHint.lastModified` is parsed
-from the storage row's `updatedAt`; skipped when no row exists or
-parsing fails. The hint is returned on every code path so host pages
-can call `Astro.cache.set(cacheHint)` unconditionally.
+neither `locals.emdash.db` nor the `emdash/runtime` `getDb()` accessor
+yields a Kysely instance. The `cacheHint.tags` always carries
+`empixel:layout:<collection>:<entryId>` so admin saves can invalidate
+the host page by tag. `cacheHint.lastModified` is parsed from the
+storage row's `updatedAt`; skipped when no row exists or parsing
+fails. The hint is returned on every code path so host pages can call
+`Astro.cache.set(cacheHint)` unconditionally.
 
 The `BuilderLayoutContext` interface is purposefully a structural
 subset of Astro: tests mock the `db` handle with a tiny stub, and a

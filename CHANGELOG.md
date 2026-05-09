@@ -44,6 +44,29 @@ SemVer.
     response shape unchanged — `BuilderPage.tsx` /
     `PageSelector.tsx` consume the same `{ id, slug, title,
     created_at, updated_at, builder_enabled }` items as before.
+- **Hotfix — `getBuilderLayout(...)` now finds the layout row in
+  `_plugin_storage`.** Two bugs landed together in F3.4: (1) the reader
+  gated the entire storage read on `Astro.locals.emdash.db` being a
+  Kysely instance, but the EmDash middleware only attaches `db` to
+  `locals.emdash` on **authenticated/admin** requests — anonymous public
+  page renders (the actual host pages the builder targets) get
+  `{ collectPageMetadata, collectPageFragments, getPublicMediaUrl }` only,
+  so the read short-circuited to null; (2) the Kysely query filtered on
+  `(plugin_id, collection)` and called `executeTakeFirst()`, which
+  returned an arbitrary plugin row — the post-fetch
+  `parsed.collection !== collection` guard then forced null even when the
+  matching row existed (and collided with stale orphan rows on real
+  data). The fix: resolve the Kysely handle through `Astro.locals.emdash.db`
+  first, then fall back to `await getDb()` from `emdash/runtime` (the
+  public accessor for the same singleton EmDash uses internally) so
+  anonymous renders also reach the DB; query for the canonical composite
+  doc id `${collection}::${entryId}` (mirrored from `src/plugin.ts §
+  layoutDocId`, the same key the plugin runtime writes rows under). The
+  lookup is now single-row deterministic, no scan, no orphan-row
+  collision. Builder-enabled pages render builder content instead of
+  falling back to the host theme's static template. Files: `src/components/db.ts`,
+  `tests/getBuilderLayout.test.ts` (+2 regression cases — the Novapera
+  multi-row scenario and the orphan-only short-circuit), `.claude/prd-frontend.md`.
 
 - **F3.5.6 — rewrite `RightPanel.tsx` on the declarative pipeline.**
   `RightPanel.tsx` is now a thin shell on top of the

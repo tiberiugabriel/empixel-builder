@@ -39,7 +39,41 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 *(empty)*
 
+## 2026-05-09 18:30 · fix/F3.4-frontend-empty started
+
+- Branch: `fix/F3.4-frontend-empty` off latest main (b091819).
+- Goal: P0 hotfix — `getBuilderLayout` returns empty on host pages even though `_plugin_storage` has properly-shaped rows; frontend renders the host theme's static template instead of builder content.
+- **Root cause** identified by reading `node_modules/emdash/dist/astro/middleware.mjs`:
+  - On **anonymous frontend page renders** (no session cookie), the EmDash middleware sets `locals.emdash = { collectPageMetadata, collectPageFragments, getPublicMediaUrl }` — note: **no `db` field**. The `db` accessor is only attached on the authenticated/admin branch (line 2037).
+  - F3.4's reader gates the entire storage read on `astro.locals.emdash.db` being a Kysely instance (`isMinimalKysely(handle)`), so on every public page view it short-circuits to `{ sections: null, cacheHint }`.
+  - Result: the `BuilderWrapper.astro` falls through to `<slot />` (the host's static template), which is exactly the symptom on Novapera.
+- **Secondary issue** in the same path: even when `db` was present (admin previews), `readFromStorage()` filtered only on `(plugin_id, collection)` and called `executeTakeFirst()` — that returns the first arbitrary plugin row, not necessarily the entry the page is asking for. The data check `parsed.collection !== collection || parsed.entryId !== entryId` then forced null. With 4 valid rows + 2 orphan rows on Novapera, the orphan path was likely hit first. The deterministic doc-id (`${collection}::${entryId}`, F3.2's `layoutDocId`) is the right key — single-row lookup, no orphan collision.
+- **Fix plan**:
+  1. Resolve a Kysely handle: try `Astro.locals.emdash.db` first; on miss (anonymous request), fall back to `await getDb()` from `emdash/runtime` — that's the singleton `Kysely<Database>` EmDash uses internally for everything else, exposed via the public `emdash/runtime` package export. This is the same handle the admin path gets, just resolved through the runtime accessor instead of the locals shortcut.
+  2. Replace the `executeTakeFirst()` + post-filter dance with a deterministic `where("id", "=", layoutDocId(collection, entryId))` lookup. Drop `findStorageRow` (the multi-row scan was never needed once we filter on the doc id).
+  3. Keep the same `BuilderLayoutResult` / `BuilderLayoutContext` public shape — no API break.
+- Coordination: Agent A is fixing the related backend bug on a parallel branch (`/entries`). Doc-id format `<collection>::<entryId>` is canonical (per `src/plugin.ts:80` `layoutDocId`); A and B's fixes converge on this key. No `interfaces.md` change needed.
+
 ## Done
+
+## 2026-05-09 18:55 · fix/F3.4-frontend-empty done
+
+- Bug fixed: 5 (P0). Builder-enabled host pages now render builder content from `_plugin_storage` instead of falling back to the host theme's static template.
+- Files changed: `src/components/db.ts`, `tests/getBuilderLayout.test.ts`, `CHANGELOG.md`, `.claude/prd-frontend.md`, `.claude/coordination/status/agent-b.md`.
+- Two-pronged fix:
+  1. **Kysely handle resolution.** New `resolveKyselyHandle(astro)` helper. Tries `Astro.locals.emdash.db` first (admin path). On miss, falls back to `await getDb()` from `emdash/runtime` — the public accessor for the same singleton EmDash uses internally. The EmDash middleware exposes `db` on `locals.emdash` only on authenticated/admin requests; anonymous public page renders (the actual host pages the builder targets) get the short-circuited `{ collectPageMetadata, collectPageFragments, getPublicMediaUrl }` payload. Without the runtime fallback, every public render of a builder-enabled page hit `null` sections.
+  2. **Doc-id symmetry.** Replaced the `(plugin_id, collection)` filter + `executeTakeFirst()` + post-fetch JSON guard with a deterministic `where("id", "=", layoutDocId(collection, entryId))` lookup. The doc id `${collection}::${entryId}` is the canonical write key (`src/plugin.ts § layoutDocId`); mirrored locally to keep the frontend bundle clean. Dropped `findStorageRow` (the multi-row scan was a workaround that was no longer needed). Dropped the unused `MinimalSelectBuilder.execute()` cast from earlier.
+- Tests:
+  - Updated all six existing storage-present cases to use `id: docId(collection, entryId)` (was a single-colon `${collection}:${entryId}`).
+  - Two new regression cases under "doc-id symmetry":
+    - "finds the correct row when multiple plugin rows coexist (Novapera scenario)" — three rows in the stub: one orphan keyed on the bare ULID, one different `posts::ULID_B` row, the target `posts::ULID_A` row. Pre-fix the reader would land on the orphan first and force null. Post-fix, the doc-id filter selects the right row.
+    - "returns null when only orphan rows (id != composite doc id) exist for the entry" — documents the orphan-only short-circuit so a future regression can't silently regress to scanning the JSON payload.
+  - Total 200 tests (was 198, +2 net).
+- PRD: `.claude/prd-frontend.md` § "Database Query (db.ts) — getBuilderLayout" updated to describe the new handle-resolution order and the doc-id symmetry. Added a paragraph on why the runtime fallback is required (the middleware behavior on anonymous renders).
+- CHANGELOG: hotfix bullet under `## Unreleased — 0.9.5 prep`.
+- Coordination: no `interfaces.md` change. Doc-id format `<collection>::<entryId>` is canonical, matching `layoutDocId` in `plugin.ts`. Agent A's parallel `/entries` fix converges on this same key.
+- Pipeline: lint + typecheck + 200/200 tests + build all green on first try.
+- Verified manually that the SQL filter chain is symmetric with what `PluginStorageRepository.get` does (`node_modules/emdash/dist/search-DkN-BqsS.mjs:582`): `selectFrom("_plugin_storage").select("data").where("plugin_id", "=", pluginId).where("collection", "=", collection).where("id", "=", id).executeTakeFirst()` — same shape modulo the column list.
 
 ## 2026-05-09 14:55 · F3.4 done
 
