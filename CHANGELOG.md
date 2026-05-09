@@ -5,6 +5,21 @@ SemVer.
 
 ## Unreleased — 0.9.0 prep
 
+- One-shot data migration `migration_to_storage_v1`. Copies every
+  `empixel_builder_layouts` row into `ctx.storage.layouts` on first
+  boot. Idempotent — KV flag `state:migration:to_storage_v1` gates
+  re-runs (and is honored from the legacy `empixel_builder_meta`
+  table for hosts that flipped the flag pre-F3.2). Conflict
+  resolution: newer `updatedAt` wins; ties go to storage. Together
+  with F3.2's storage-first reads, hosts upgrade transparently — no
+  manual steps. Wire-up is a **lazy gate**
+  (`ensureStorageMigrationRan`) called at the top of every route
+  handler that reads or writes layouts. EmDash's `plugin:install` /
+  `plugin:activate` lifecycle hooks only fire on state transitions
+  (not every cold start), so they're not suitable for this migration
+  — the lazy gate runs on the very first request post-upgrade and
+  short-circuits via a process-local cache plus the KV flag for
+  every subsequent call.
 - Refactor every plugin route handler to read/write layouts via
   `ctx.storage.layouts` instead of direct SQL against the legacy
   `empixel_builder_layouts` table. **Writes go only to ctx.storage**;

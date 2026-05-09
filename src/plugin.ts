@@ -4,6 +4,7 @@ import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
 import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
 import { getDb as getSharedDb, type SqliteDb } from "./dbShared.js";
 import type { LayoutRow, StorageLayoutsCollection } from "./storage-types.js";
+import { ensureStorageMigrationRan } from "./migrations/toStorageV1.js";
 
 const KV_ENABLED = "settings:enabledCollections";
 const KV_BREAKPOINTS = "settings:breakpoints";
@@ -701,6 +702,9 @@ export function createPlugin() {
             }
 
             const db = getDb();
+            // F3.3 lazy gate — migrate legacy rows into ctx.storage on first
+            // request post-upgrade. After the KV flag is set this is O(1).
+            await ensureStorageMigrationRan(ctx, db);
             // Fresh-entry case: the host CMS may pass a slug for an entry
             // that has never been saved through the builder before. We still
             // need slug → ULID resolution at the route boundary so the
@@ -736,6 +740,8 @@ export function createPlugin() {
             }
 
             const db = getDb();
+            // F3.3 lazy gate — same as GET. Idempotent + cached after first run.
+            await ensureStorageMigrationRan(ctx, db);
             // Same as GET: slug → ULID at the route boundary so the row is
             // always written under its canonical ULID key. After
             // `runSlugToUlidMigration_v1` no row should remain keyed by
@@ -829,6 +835,9 @@ export function createPlugin() {
           }
 
           const db = getDb();
+          // F3.3 lazy gate — `/entries` is a heavy read so make sure the
+          // storage side is fully populated before merging. Idempotent.
+          await ensureStorageMigrationRan(ctx, db);
 
           // Pull per-entry metadata (enabled flag + timestamps) from
           // ctx.storage.layouts first; merge any legacy rows that haven't yet
@@ -941,6 +950,10 @@ export function createPlugin() {
           }
 
           const db = getDb();
+          // F3.3 lazy gate — toggle is one of the first writes a host hits
+          // post-upgrade, so we want the migration to have run before we
+          // start putting fresh rows alongside un-migrated legacy rows.
+          await ensureStorageMigrationRan(ctx, db);
           // Resolve slug → ULID at the route boundary for fresh entries; on-disk
           // rows are ULID-keyed after `runSlugToUlidMigration_v1`.
           if (!isUlid(entryId)) {
@@ -1021,6 +1034,12 @@ export function createPlugin() {
         ) => {
           const entryId = event.id ?? event.entry?.id;
           if (!event.collection || !entryId) return;
+
+          // F3.3 lazy gate — make sure any legacy row for the about-to-be-
+          // deleted entry has already been migrated to storage so the
+          // cascade delete below removes it from the canonical layer too.
+          // Idempotent + cached.
+          await ensureStorageMigrationRan(ctx, getDb());
 
           // Cascade delete from BOTH layers — pre-F3.3 the row may live in the
           // legacy table only; post-F3.2 writes only land in ctx.storage. Both

@@ -5,8 +5,9 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 
 ## Files
 - `src/index.ts` — Plugin descriptor (entry point)
-- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`) + `storage.layouts` declaration + storage-or-legacy read helpers (`readLayoutFromStorageOrLegacy`, `readLegacyEntryMetaForCollection`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`)
+- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`) + `storage.layouts` declaration + storage-or-legacy read helpers (`readLayoutFromStorageOrLegacy`, `readLegacyEntryMetaForCollection`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`) + lazy gate `ensureStorageMigrationRan` at the top of every layout route + the `content:afterDelete` hook
 - `src/storage-types.ts` — `LayoutRow` + `StorageLayoutsCollection` types for `ctx.storage.layouts` (consumed by Agent B in F3.4)
+- `src/migrations/toStorageV1.ts` — F3.3 one-shot data migration (`runMigrationToStorageV1` + the lazy-gate wrapper `ensureStorageMigrationRan`)
 - `src/types.ts` — Block interfaces + type definitions
 - `src/dbShared.ts` — Shared SQLite handle factory (`getDb()`)
 
@@ -198,16 +199,84 @@ have no async ctx access. The exported helpers are scaffolding for the
 F3.3 ctx.storage row migration, which runs from a route handler entry
 where ctx is available.
 
+### Data migration — F3.3 (`migration_to_storage_v1`)
+
+`src/migrations/toStorageV1.ts` exports two symbols:
+
+- `runMigrationToStorageV1(ctx, db) → Promise<{ migrated, skipped, conflicts }>`
+  is the one-shot migration runner. Copies every row from the legacy
+  `empixel_builder_layouts` table into `ctx.storage.layouts` so existing
+  hosts upgrade transparently. The legacy table is left in place as a
+  fallback for one version (F3.5 drops the fallback and the
+  `better-sqlite3` peer dep).
+- `ensureStorageMigrationRan(ctx, db)` is the **lazy gate** wrapper
+  called from the top of every layout route handler. Idempotent and
+  cheap on the hot path: after the first successful run it
+  short-circuits via a process-local boolean (so subsequent requests in
+  the same Node process don't pay even one `ctx.kv.get`); cold-process
+  callers pay one KV read per request until the flag is honoured.
+
+**Wire-up — lazy gate vs. lifecycle hook.** EmDash exposes
+`plugin:install` and `plugin:activate` lifecycle hooks (verified in
+`node_modules/emdash/dist/index-DjPMOfO0.d.mts:2789` and
+`search-DkN-BqsS.mjs:7560`), but they only fire on state transitions
+(`registered → installed → active`), not on every cold start. An
+existing host that already has the plugin "active" wouldn't trigger
+them when the package is upgraded — exactly the case this migration
+needs to cover. The lazy gate runs on the very first request that
+lands on a layout route after upgrade, costing one `ctx.kv.get` to
+check the flag; subsequent requests within the same process are free
+via the cache. Wired into `/layout` (GET + POST), `/entries` (GET),
+`/toggle` (POST), and the `content:afterDelete` hook in `plugin.ts`.
+
+**Idempotency.** The KV flag `state:migration:to_storage_v1` is the
+**only** gate. Re-running with the flag already set returns zeros and
+does not touch storage or SQLite. The flag is honoured from KV first;
+if KV is empty but the legacy `empixel_builder_meta` table has the
+flag (legacy installs that ran the migration pre-F3.2), the value is
+synced forward to KV via `getMigrationFlag` so the next call avoids
+the SQL lookup entirely.
+
+**Conflict resolution.** If both a legacy row and a storage row exist
+for the same `(collection, entryId)`, prefer the row with the newer
+`updatedAt` (lex-compared — both the SQLite `current_timestamp`
+`YYYY-MM-DD HH:MM:SS` and the modern `new Date().toISOString()`
+formats are monotonic under string compare for a given clock). On
+ties, **storage wins** — storage is the new source of truth post-
+migration, so a tie defaults to "leave the storage row alone".
+Conflict count is incremented in addition to the per-row
+`migrated`/`skipped` count so the telemetry distinguishes "had to pick
+a winner" from "fresh migrate" / "skip-already-newer".
+
+**Failure semantics.** Per-row failures (bad sections JSON, transient
+storage `put` error) are caught, logged via `ctx.log.warn`, and
+recorded in the `skipped` counter — the loop keeps going. The KV flag
+**is** set at the end even if some rows skipped, because the F3.2
+`readLayoutFromStorageOrLegacy` helper still serves the legacy row
+when the storage side is missing, so a partially-migrated state is
+graceful-degraded rather than broken. The flag is **NOT** set when a
+caller of the runner throws before reaching the flag write — for
+example, if the SELECT itself blows up the runner returns to the
+caller with the exception and the gate retries on the next request.
+
+**Rollback story.** No inverse migration exists. The legacy table
+stays populated until F3.5 drops it, so if a host needs to roll back
+to a pre-F3.3 plugin version, the legacy rows are still there. The
+ctx.storage rows would be orphaned, but a future re-run of F3.3 (after
+re-upgrading) would consult the legacy table again and resolve
+conflicts via `updatedAt`.
+
 ### Migration roadmap
 
 - F3.1 — declarative only. Storage collection declared on `definePlugin`.
-- F3.2 (this section) — route handlers go through `ctx.storage.layouts`.
+- F3.2 — route handlers go through `ctx.storage.layouts`.
   Writes are storage-only; reads fall back to the legacy table; deletes
   hit both. Migration flags moved to `ctx.kv`.
-- F3.3 — one-shot migration `migration_to_storage_v1` copies every row
-  from `empixel_builder_layouts` into `ctx.storage.layouts`. Flag stored
-  in `ctx.kv`. Conflict resolution mirrors `runSlugToUlidMigration_v1`:
-  newer `updated_at` wins.
+- F3.3 (this section) — one-shot migration `migration_to_storage_v1`
+  copies every row from `empixel_builder_layouts` into
+  `ctx.storage.layouts`. Flag stored in `ctx.kv`. Conflict resolution:
+  newer `updatedAt` wins; ties go to storage. Wired through the lazy
+  gate `ensureStorageMigrationRan` at the top of every layout route.
 - F3.4 (Agent B) — **done 2026-05-09**. `getBuilderLayout` is now async,
   takes `Astro` (or any `BuilderLayoutContext`) as the first argument,
   and reads through the shared `_plugin_storage` table via
@@ -458,7 +527,7 @@ documented in the README's "Caching builder layouts" section.
 |-----|------|---------|
 | `settings:enabledCollections` | `string[]` | Collections with builder enabled at collection level |
 | `settings:breakpoints` | `BreakpointsConfig` | Global breakpoints config (enabled + px overrides) |
-| `state:migration:<flag>` | `string` | One-shot migration flag (e.g. `state:migration:migration_spacer_v1`). Mirrors the legacy `empixel_builder_meta` row during the F3.2/F3.5 transition. v0.9 — F3.2. |
+| `state:migration:<flag>` | `string` | One-shot migration flag (e.g. `state:migration:migration_spacer_v1`, `state:migration:to_storage_v1`). Mirrors the legacy `empixel_builder_meta` row during the F3.2/F3.5 transition. v0.9 — F3.2/F3.3. |
 
 ## Data Flow
 
