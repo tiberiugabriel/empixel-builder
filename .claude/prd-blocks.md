@@ -57,10 +57,55 @@ interface BlockDef {
   description: string;
   category: "core" | "general";
   defaultConfig: Record<string, any>;
-  fields: FieldDef[];
-  styleFields?: FieldDef[];   // Shown at top of Style tab
+  // F3.5.1: legacy fields kept as deprecated aliases through the F3.5 transition
+  fields: FieldDef[];                 // @deprecated — use fieldsTab
+  styleFields?: FieldDef[];           // @deprecated — folded into styleTab as a leading custom entry
+  // F3.5.1: new declarative schema (replaces imperative branching in RightPanel)
+  fieldsTab?: FieldDef[];
+  styleTab?: StyleSection[];
 }
 ```
+
+### StyleSection (declarative Style tab — F3.5.1)
+
+Replaces the ~9 imperative `block.type === "..."` branches in `RightPanel.tsx`. Each entry maps to one section the panel knows how to render. F3.5.1 introduces the type only — F3.5.2 populates `styleTab` per block, F3.5.3 + F3.5.4 land the `SectionRenderer` / `TabRenderer`, F3.5.6 deletes the imperative branches.
+
+```ts
+type StyleSection =
+  | { kind: "theme" }
+  | { kind: "spacing"; targets?: ("padding" | "margin")[] }
+  | { kind: "background"; modes?: BackgroundMode[] }   // BackgroundMode = BackgroundType from BackgroundControl
+  | { kind: "border" }
+  | { kind: "borderRadius" }
+  | { kind: "boxShadow" }
+  | { kind: "typography"; props?: TypographyProp[] }   // TypographyProp = keyof TypographyValue
+  | { kind: "textStroke" }
+  | { kind: "textShadow" }
+  | { kind: "alignment" }
+  | { kind: "blendMode" }
+  | { kind: "filter" }
+  | { kind: "overflow" }
+  | { kind: "opacity" }
+  | { kind: "imgVisual" }            // image-only — width/height/objectFit/objectPosition/imgStyle
+  | { kind: "videoSource" }          // video-only — aspect-ratio + filter group
+  | { kind: "iconGroup" }            // icon / button / divider — collapsible icon-picker section
+  | { kind: "dividerLine" }          // divider-spacer-only — divider style/width/length/color/align
+  | { kind: "custom"; render: (props: SectionRenderProps) => ReactNode };
+
+interface SectionRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+```
+
+Backwards-compat strategy: `fields` is the alias source — `getBlockDef` returns `def.fieldsTab ?? def.fields` so new declarative consumers can read `def.fieldsTab` directly while old callers keep working unchanged. `styleTab` is opt-in until F3.5.6 (no auto-alias from `styleFields` because the shapes differ — `FieldDef[]` vs `StyleSection[]`).
+
+Deprecation timeline:
+- **F3.5.1** (this PR) — types added, no instances migrated
+- **F3.5.2** — 9 BlockDef instances populate `fieldsTab` + `styleTab` directly
+- **F3.5.3 + .4** — `SectionRenderer.tsx` + `TabRenderer.tsx` consume the declarative lists
+- **F3.5.6** — `RightPanel.tsx` drops imperative branches; `fields` / `styleFields` removed
 
 ### FieldDef interface
 ```ts

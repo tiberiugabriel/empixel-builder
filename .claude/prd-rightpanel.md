@@ -6,10 +6,39 @@ Reusable UI components for editing block properties: fields, controls, and styli
 ## Convention — breakpoint indicator
 Any bp-aware control MUST show the `breakpointIndicator` next to its label on every breakpoint, including `desktop`. Pass `breakpointIndicator={breakpointIndicator}` unconditionally — do NOT gate on `isNonDesktop`. The icon doubles as a "this control is bp-aware" affordance and indicates which breakpoint is currently being edited. Controls that are NOT bp-aware (e.g. `htmlTag`, link fields, plain config-level metadata) must omit the indicator.
 
+## F3.5 — Block Settings Standardization (in progress, 0.9.5 prep)
+
+The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for the Style tab — 9 hardcoded forks across container/text/image/text-editor/video/button/icon/html/divider-spacer. F3.5 replaces this with a declarative `StyleSection[]` list per `BlockDef`.
+
+| Step | Status | Scope |
+|------|--------|-------|
+| F3.5.1 | ✅ shipped (this PR, 0.9.5 prep) | Add `StyleSection` discriminated union + optional `fieldsTab` / `styleTab` on `BlockDef`. Existing `fields` / `styleFields` kept as deprecated aliases. No instances migrated; no panel rewrite. |
+| F3.5.2 | ⬜ planned | Populate `fieldsTab` + `styleTab` on all 9 `BlockDef` entries. |
+| F3.5.3 | ⬜ planned | `right-panel/SectionRenderer.tsx` — switch on `StyleSection.kind`, render the right control. |
+| F3.5.4 | ⬜ planned | `right-panel/TabRenderer.tsx` — consumes `fieldsTab` + `styleTab`, replaces inline branching. |
+| F3.5.5 | ⬜ planned | `right-panel/AdvancedTab.tsx` — extract Advanced tab. |
+| F3.5.6 | ⬜ planned | Drop imperative `block.type ===` branches in `RightPanel.tsx`; retire `fields` / `styleFields` aliases. |
+| F3.5.7 | ⬜ planned | Code-split per-block panels (lazy import). |
+| F3.5.8 | ⬜ planned | Polish + docs sweep. |
+
+`SectionRenderProps` shape (passed to `kind: "custom"` renderers):
+
+```ts
+interface SectionRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+```
+
+Mirrors the top-level `RightPanel` props so custom branches lift out unchanged. Custom renderers handle their own breakpoint routing (writes go to `style.*` or `styleBreakpoints[bpId].*` based on `activeBreakpoint`).
+
+The 19 `StyleSection` variants and the `BackgroundMode` / `TypographyProp` aliases are documented in [prd-blocks.md](prd-blocks.md#stylesection-declarative-style-tab--f351). `BackgroundMode` aliases the existing `BackgroundType` union from `controls/BackgroundControl.tsx`; `TypographyProp` is `keyof TypographyValue` from `controls/TypographyControl.tsx` — neither forks a new shape.
+
 ## Architecture
 
 ```
-RightPanel.tsx (3 tabs: Fields, Style, Advanced)         # 1623 LOC
+RightPanel.tsx (3 tabs: Fields, Style, Advanced)         # 1671 LOC
 ├─ right-panel/                                          # audit M1, conservative slice
 │  ├─ icons.tsx  # IconFields, IconStyle, IconAdvanced, IconStateNormal, IconStateHover
 │  └─ types.ts   # AdvancedConfig — admin-only shape for `config.advanced`

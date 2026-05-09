@@ -3,6 +3,23 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## Unreleased — 0.9.5 prep
+
+- **F3.5.1 — declarative `StyleSection` types + `fieldsTab` /
+  `styleTab` on `BlockDef`.** Adds the discriminated-union schema
+  (`theme` / `spacing` / `background` / `border` / `borderRadius` /
+  `boxShadow` / `typography` / `textStroke` / `textShadow` /
+  `alignment` / `blendMode` / `filter` / `overflow` / `opacity` /
+  `imgVisual` / `videoSource` / `iconGroup` / `dividerLine` /
+  `custom`) plus optional `fieldsTab: FieldDef[]` and
+  `styleTab: StyleSection[]` properties on `BlockDef`. Existing
+  `fields` / `styleFields` are kept as deprecated aliases during the
+  F3.5 transition; `getBlockDef` returns `fieldsTab` aliased from
+  `fields` when an entry doesn't declare it. F3.5.2 migrates the 9
+  `BlockDef` instances to the new schema; F3.5.6 drops the imperative
+  `block.type ===` branches in `RightPanel.tsx`. No behavioral change
+  in 0.9.x — types are additive.
+
 ## 0.9.0 — 2026-05-09
 
 - **Breaking** — drop the `better-sqlite3` peer dependency. Plugin no
