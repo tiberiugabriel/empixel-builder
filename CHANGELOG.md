@@ -3,6 +3,28 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 1.0.4 — 2026-05-09
+
+**Cleanup — drop legacy `empixel_builder_layouts` provisioning from
+`src/add.js` install script.** Plugin storage has lived in EmDash's
+`_plugin_storage` table since 0.9.0 (F3.1+); the legacy
+`empixel_builder_layouts` table was used as a read fallback through
+F3.5peer (1.0.0) but is now fully unreachable from plugin code. The
+CLI installer (`npx empixel-builder add`) was still creating the
+legacy table on install — removed. New installs only need EmDash's
+`ctx.storage` declaration. Patched `[slug].astro` snippet uses the
+2-arg legacy `getBuilderLayout(collection, id)` call (polymorphic
+shim from 1.0.1 still routes it correctly); the deprecated
+`empixel_builder` boolean column reference is gone from the
+generated code. `_require(`better-sqlite3`)` import dropped from
+`add.js` since `createTable` was the only consumer.
+
+Hosts that already ran 0.9.x → 1.0.x can safely
+`DROP TABLE empixel_builder_layouts; DROP TABLE empixel_builder_meta;`
+(the data is in `_plugin_storage` after the F3.3 lazy gate runs;
+the legacy `empixel_builder` boolean column on `ec_<collection>`
+tables is also dead — drop is optional).
+
 ## 1.0.3 — 2026-05-09
 
 **P0 fix — restore double-envelope `{ data: payload }` on GET /layout return.**

@@ -2,10 +2,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 
 const CONFIG_FILE = "astro.config.mjs";
-const _require = createRequire(import.meta.url);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,27 +46,6 @@ function addPlugin(src) {
       return `plugins: [${trimmed}${separator}empixelBuilder()]`;
     }
   );
-}
-
-function createTable(dbPath) {
-  try {
-    const Database = _require("better-sqlite3");
-    const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
-        collection TEXT NOT NULL,
-        entry_id   TEXT NOT NULL,
-        sections   TEXT NOT NULL DEFAULT '[]',
-        created_at TEXT DEFAULT (current_timestamp),
-        updated_at TEXT DEFAULT (current_timestamp),
-        PRIMARY KEY (collection, entry_id)
-      )
-    `);
-    db.close();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── Page file patching ────────────────────────────────────────────────────────
@@ -130,7 +107,7 @@ function patchPageFile(filePath) {
   // 2. Add getBuilderLayout call before closing --- (after Astro.cache.set line)
   frontmatter = frontmatter.replace(
     /(Astro\.cache\.set\([^)]+\);?)/,
-    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", ${entryVar}.data.id, (${entryVar}.data as any).empixel_builder as boolean | undefined);`
+    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", ${entryVar}.data.id);`
   );
 
   // 3. Wrap the content inside <Base> with BuilderWrapper (slot pattern avoids Astro parser issues)
@@ -182,22 +159,7 @@ if (alreadyRegistered(src)) {
   console.log(`✓ empixel-builder added to astro.config.mjs`);
 }
 
-// 2. Create empixel_builder_layouts table in data.db
-const dbPath = path.join(projectDir, "data.db");
-
-if (!fs.existsSync(dbPath)) {
-  console.log("⚠  data.db not found — run `npx emdash dev` first to initialize the database,");
-  console.log("   then run `npx empixel-builder add` again to create the layouts table.");
-  console.log("   The table will also be created automatically on first server start.\n");
-} else {
-  const ok = createTable(dbPath);
-  console.log(ok
-    ? "✓ empixel_builder_layouts table ready in data.db"
-    : "⚠  Could not create table in data.db (will be created automatically on first start)."
-  );
-}
-
-// 3. Patch [slug].astro page files
+// 2. Patch [slug].astro page files (storage table is provisioned by EmDash on first run via ctx.storage)
 const pagesDir = path.join(projectDir, "src", "pages");
 if (fs.existsSync(pagesDir)) {
   const slugFiles = findSlugFiles(pagesDir);
