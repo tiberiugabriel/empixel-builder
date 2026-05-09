@@ -158,7 +158,7 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 
 ## Database Query (db.ts)
 
-### getBuilderLayout(astro, collection, entryId, enabled?) — v0.9 (F3.4 + F3.5)
+### getBuilderLayout — v0.9 (F3.4 + F3.5 + fix/F3.4-backcompat-3arg)
 ```ts
 export interface BuilderLayoutContext {
   locals?: {
@@ -174,6 +174,12 @@ export interface BuilderLayoutResult {
   cacheHint: { tags?: string[]; lastModified?: Date };
 }
 
+// Polymorphic — accepts both call shapes.
+export function getBuilderLayout(
+  collection: string,
+  entryId: string,
+  enabled?: boolean,
+): Promise<BuilderLayoutResult>;
 export function getBuilderLayout(
   astro: BuilderLayoutContext, // Astro itself, or any { locals } shape
   collection: string,
@@ -182,12 +188,39 @@ export function getBuilderLayout(
 ): Promise<BuilderLayoutResult>;
 ```
 
-**Async + Astro-aware (F3.4 breaking change).** Hosts must `await` the
-call and pass `Astro` (or any `{ locals: Astro.locals }` shape) as the
-first argument. `BuilderWrapper.astro` accepts both the resolved value
-and the unawaited Promise on its `sections` prop, so
-`<BuilderWrapper sections={getBuilderLayout(Astro, ...)}>` works
-without an explicit `await` at the page level.
+**Async + polymorphic over two call shapes** (post-fix/F3.4-backcompat-3arg):
+
+- **4-arg (recommended)** — `getBuilderLayout(astro, collection, entryId, enabled?)`.
+  The F3.4 shape. `astro` is `Astro` itself or any
+  `BuilderLayoutContext`. Resolves the Kysely handle through
+  `Astro.locals.emdash.db` first, then falls back to `getDb()` from
+  `emdash/runtime`. Hosts that want `Astro.cache.set(cacheHint)`
+  plumbing should pick this shape — only the 4-arg form has the
+  `Astro` to call into.
+- **3-arg legacy** — `getBuilderLayout(collection, entryId, enabled?)`.
+  The pre-F3.4 / v0.8 signature. Host pages scaffolded by older
+  `npx empixel-builder add` runs (and any host pinned to v0.8, e.g.
+  Novapera at the time of writing) still emit this shape. The reader
+  resolves the Kysely handle exclusively through `getDb()` from
+  `emdash/runtime` — there's no `Astro.locals` to consult — and
+  returns the same `Promise<BuilderLayoutResult>`. The `cacheHint` is
+  still computed and returned, but the legacy host-page frontmatter
+  doesn't pass it to `Astro.cache.set` (the wrapper has no `Astro` to
+  call into). Updating to the 4-arg form is recommended but not
+  required.
+
+Both shapes return `Promise<BuilderLayoutResult>`. `BuilderWrapper.astro`
+accepts both the resolved value and the unawaited Promise on its
+`sections` prop, so `<BuilderWrapper sections={getBuilderLayout(...)}>`
+works without an explicit `await` at the page level under either
+signature.
+
+**Migration story.** Hosts upgrading from v0.8 to v0.9 don't have to
+edit their pages — the 3-arg call keeps working and renders builder
+content correctly. Adopting the 4-arg form is optional and only
+necessary if you want `Astro.cache.set` plumbing through
+`BuilderWrapper` (the wrapper auto-plumbs the cacheHint when the
+result lands on its `sections` prop).
 
 Read path (post-F3.5 — storage-only, with the post-fix/F3.4-frontend-empty handle resolution):
 
@@ -297,7 +330,7 @@ Never use raw hand-built `/_emdash/api/...` URLs. Never assume image is a string
 
 ```astro
 ---
-// In an Astro page (v0.9 — F3.4):
+// Recommended (4-arg form, v0.9 — F3.4):
 import { getBuilderLayout, LayoutRenderer } from "empixel-builder/components";
 
 const { sections, cacheHint } = await getBuilderLayout(
@@ -310,6 +343,22 @@ Astro.cache.set(cacheHint);
 ---
 
 {sections && <LayoutRenderer sections={sections} />}
+```
+
+```astro
+---
+// Legacy 3-arg form (still supported post-fix/F3.4-backcompat-3arg —
+// hosts pinned to the v0.8 shape don't have to migrate):
+import { getBuilderLayout, BuilderWrapper } from "empixel-builder/components";
+const builderLayout = getBuilderLayout(
+  collection,
+  entry.data.id,
+  entry.data.empixel_builder,
+);
+---
+<BuilderWrapper sections={builderLayout}>
+  <slot />
+</BuilderWrapper>
 ```
 
 (Or use `<BuilderWrapper sections={getBuilderLayout(Astro, collection, entry.data.id, entry.data.empixel_builder)}>`

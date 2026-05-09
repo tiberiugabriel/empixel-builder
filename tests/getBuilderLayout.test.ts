@@ -325,4 +325,145 @@ describe("getBuilderLayout (F3.5 — async, storage-only)", () => {
       ]);
     });
   });
+
+  /**
+   * Regression coverage for the F3.4 backcompat retest (Novapera) — the
+   * earlier `fix/F3.4-frontend-empty` patch addressed handle resolution
+   * and doc-id symmetry but still required hosts to call the new 4-arg
+   * `(astro, collection, entryId, enabled?)` form. Host pages scaffolded
+   * by `npx empixel-builder add` (and Novapera, pinned to v0.8) still
+   * call the legacy 3-arg `(collection, entryId, enabled?)`. When the
+   * 3-arg call hit the new function the args slotted into the wrong
+   * positions: `astro = "<collection-name>"` (a string), `collection =
+   * <entry id>` (the actual ULID, uppercase Crockford), `entryId =
+   * <enabled flag>` — and the `COLLECTION_RE.test(collection)` line
+   * rejected the uppercase ULID, returning null sections. `BuilderWrapper`
+   * fell through to `<slot />` and the host theme template rendered
+   * instead of builder content. The function is now polymorphic on the
+   * first argument; both shapes resolve correctly.
+   *
+   * The legacy 3-arg path can ONLY reach the DB through `getDb()` from
+   * `emdash/runtime` (no `Astro.locals` to consult). In the vitest
+   * environment the runtime export is unwired, so the helper returns
+   * `null` and the call short-circuits to `{ sections: null, cacheHint }`.
+   * That's enough to verify the dispatch routing without virtualising
+   * the runtime module — the production code path is exercised
+   * separately by the existing 4-arg tests above (which DO go all the
+   * way to the storage stub).
+   */
+  describe("legacy 3-arg call shape (regression — fix/F3.4-backcompat-3arg)", () => {
+    it("does not short-circuit on the COLLECTION_RE check when entryId is an uppercase ULID (Novapera shape)", async () => {
+      // Real Novapera ULID from the bug report. Uppercase Crockford
+      // base32 — pre-fix this was the SECOND argument going into the
+      // function but with the new 4-arg shape it would have been treated
+      // as `collection` (after a string-typed first arg) and rejected by
+      // `COLLECTION_RE`. With the polymorphic dispatch the string-typed
+      // first arg is recognised as the legacy `collection` slot, so the
+      // ULID stays in the `entryId` slot (which is NOT regex-checked).
+      const NOVAPERA_ULID = "01KPBDEV2JHJ4BT2KNEXA18CS3";
+      // No `astro` available — the runtime fallback returns null in
+      // vitest, so we get null sections WITHOUT hitting the regex
+      // short-circuit. The cache tag confirms the function got past the
+      // regex line: it embeds the unmodified collection / entryId as
+      // received.
+      const result = await getBuilderLayout("posts", NOVAPERA_ULID, true);
+      expect(result.sections).toBeNull();
+      expect(result.cacheHint.tags).toEqual([
+        `empixel:layout:posts:${NOVAPERA_ULID}`,
+      ]);
+    });
+
+    it("respects enabled=false in the legacy 3-arg shape", async () => {
+      const result = await getBuilderLayout("posts", ULID_A, false);
+      expect(result.sections).toBeNull();
+      expect(result.cacheHint.tags).toEqual([
+        `empixel:layout:posts:${ULID_A}`,
+      ]);
+      // No DB lookup attempted — `lastModified` stays undefined.
+      expect(result.cacheHint.lastModified).toBeUndefined();
+    });
+
+    it("rejects an invalid collection name in the legacy 3-arg shape (regex check applies to position 0)", async () => {
+      // The regex check still runs against the legacy `collection` slot.
+      // `PaGeS!!` fails the lowercase-snake regex → null sections, hint
+      // intact.
+      const result = await getBuilderLayout("PaGeS!!", ULID_A);
+      expect(result.sections).toBeNull();
+      expect(result.cacheHint.tags).toEqual([
+        `empixel:layout:PaGeS!!:${ULID_A}`,
+      ]);
+    });
+
+    it("returns null when no Kysely handle is reachable (runtime fallback fails in vitest)", async () => {
+      // The legacy 3-arg path can only reach the DB via `getDb()` from
+      // `emdash/runtime`. In vitest that import either resolves to a
+      // stub without `getDb` or throws — `resolveKyselyHandleViaRuntime`
+      // swallows both and returns null.
+      const result = await getBuilderLayout("posts", ULID_A);
+      expect(result.sections).toBeNull();
+      expect(result.cacheHint.tags).toEqual([
+        `empixel:layout:posts:${ULID_A}`,
+      ]);
+    });
+
+    it("returns null when enabled=undefined and runtime fallback fails (vitest baseline for the 3-arg path)", async () => {
+      // Equivalent to the call Novapera makes:
+      //   getBuilderLayout("posts", post.data.id, post.data.empixel_builder)
+      // …where `empixel_builder` may be undefined for entries that have
+      // never been toggled. Pre-fix this would short-circuit on the
+      // regex line because `astro = "posts"` and `collection = ULID`.
+      // Post-fix it routes correctly: regex passes, runtime fallback
+      // can't resolve in vitest, null sections + tagged hint.
+      const result = await getBuilderLayout("posts", ULID_A, undefined);
+      expect(result.sections).toBeNull();
+      expect(result.cacheHint.tags).toEqual([
+        `empixel:layout:posts:${ULID_A}`,
+      ]);
+    });
+
+    /**
+     * The runtime fallback is mocked by stubbing the dynamic
+     * `import("emdash/runtime")` so the 3-arg call can drive a stub DB
+     * end-to-end. Without this we'd only verify the dispatch routing,
+     * not the storage round-trip in the legacy shape.
+     */
+    it("reads through the runtime singleton when a 3-arg call lands on a real Kysely handle", async () => {
+      const layoutRow: LayoutRow = {
+        collection: "posts",
+        entryId: ULID_A,
+        enabled: 1,
+        sections: [],
+        updatedAt: "2026-05-09T22:30:00.000Z",
+      };
+      const stubRows: StorageStubRow[] = [
+        {
+          plugin_id: "empixel-builder",
+          collection: "layouts",
+          id: docId("posts", ULID_A),
+          data: JSON.stringify(layoutRow),
+          updated_at: "2026-05-09T22:30:00.000Z",
+        },
+      ];
+      const { ctx } = makeStorageStub(stubRows);
+      const fakeDb = ctx.locals?.emdash?.db;
+
+      const { vi } = await import("vitest");
+      vi.doMock("emdash/runtime", () => ({
+        getDb: () => Promise.resolve(fakeDb),
+      }));
+      try {
+        const mod = await import("../src/components/db.js?legacy3arg-runtime");
+        const result = await mod.getBuilderLayout("posts", ULID_A, true);
+        expect(Array.isArray(result.sections)).toBe(true);
+        expect(result.cacheHint.tags).toEqual([
+          `empixel:layout:posts:${ULID_A}`,
+        ]);
+        expect(result.cacheHint.lastModified?.toISOString()).toBe(
+          "2026-05-09T22:30:00.000Z",
+        );
+      } finally {
+        vi.doUnmock("emdash/runtime");
+      }
+    });
+  });
 });

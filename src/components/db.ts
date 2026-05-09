@@ -217,57 +217,42 @@ async function readFromStorage(
 }
 
 /**
- * Read a layout for `(collection, entryId)` and return the section tree
- * plus a `cacheHint` the caller passes to `Astro.cache.set(...)`.
+ * Resolve a Kysely handle without an Astro context — runtime accessor only.
  *
- * **v0.9 — F3.4/F3.5 final shape.** Async, takes `Astro` (or any
- * `BuilderLayoutContext`) as the first argument. Reads route through
- * EmDash's plugin storage (`_plugin_storage`, partitioned under
- * `plugin_id="empixel-builder", collection="layouts"`).
+ * Used by the legacy 3-arg `getBuilderLayout` call shape (host pages
+ * scaffolded by `npx empixel-builder add` or pinned to the v0.8 / pre-F3.4
+ * signature). The caller never passed an `Astro`, so `Astro.locals.emdash.db`
+ * isn't available — the runtime singleton from `emdash/runtime` is the only
+ * route to a Kysely instance.
  *
- * **DB handle resolution (the F3.4 hotfix).** Authenticated requests
- * receive a Kysely instance on `Astro.locals.emdash.db`. Anonymous public
- * page renders — i.e. the actual host pages the builder targets — DO NOT
- * (the EmDash middleware short-circuits the locals payload to
- * `{ collectPageMetadata, collectPageFragments, getPublicMediaUrl }`). The
- * reader therefore falls back to `getDb()` from `emdash/runtime` (the
- * public accessor for the same singleton EmDash uses internally) when
- * `locals.emdash.db` is absent. Pre-0.9 hosts that don't expose either
- * still get `{ sections: null, cacheHint }` — the page renders without a
- * layout but the cache tag is still emitted so a future upgrade busts
- * cleanly.
- *
- * **Doc-id symmetry (the F3.4 hotfix).** Rows are looked up by the same
- * composite doc id the plugin runtime writes them under
- * (`${collection}::${entryId}`, mirrored from `src/plugin.ts § layoutDocId`).
- * The previous F3.4 query filtered only on `(plugin_id, collection)` and
- * called `executeTakeFirst()`, which returned an arbitrary plugin row —
- * the post-fetch `parsed.collection !== collection` guard then forced
- * null even when the right row existed. With the doc-id filter added,
- * the lookup is single-row deterministic.
+ * Returns `null` if the runtime export isn't reachable (test benches,
+ * pre-0.9 EmDash hosts) — caller short-circuits to
+ * `{ sections: null, cacheHint }`.
  */
-export async function getBuilderLayout(
-  astro: BuilderLayoutContext,
+async function resolveKyselyHandleViaRuntime(): Promise<MinimalKysely | null> {
+  try {
+    // Dynamic import — the peer dep (`emdash >= 0.9.0`) guarantees the
+    // export exists on real hosts, but vitest stubs and non-Astro consumers
+    // shouldn't blow up at module load.
+    const runtime = (await import("emdash/runtime")) as { getDb?: () => Promise<unknown> };
+    if (typeof runtime.getDb !== "function") return null;
+    const db = await runtime.getDb();
+    return isMinimalKysely(db) ? db : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shared row-fetch + cache-hint stamping. Both the 3-arg legacy and 4-arg
+ * Astro-aware code paths converge here once a Kysely handle is in hand.
+ */
+async function loadLayoutResult(
+  handle: MinimalKysely,
   collection: string,
   entryId: string,
-  enabled?: boolean,
+  cacheHint: BuilderCacheHint,
 ): Promise<BuilderLayoutResult> {
-  // The cache tag identifies the layout regardless of whether sections
-  // exist on disk yet — admin saving a fresh layout against this entry
-  // still has to invalidate the host page that rendered "no layout".
-  const cacheHint: BuilderCacheHint = {
-    tags: [builderLayoutCacheTag(collection, entryId)],
-  };
-
-  if (enabled === false) return { sections: null, cacheHint };
-  if (!COLLECTION_RE.test(collection)) return { sections: null, cacheHint };
-
-  // Resolve a Kysely handle — `Astro.locals.emdash.db` first (admin path),
-  // `getDb()` from `emdash/runtime` second (anonymous public render path).
-  // Hosts on a pre-0.9 EmDash without either get null sections.
-  const handle = await resolveKyselyHandle(astro);
-  if (!handle) return { sections: null, cacheHint };
-
   const storageRow = await readFromStorage(handle, collection, entryId);
   if (!storageRow) return { sections: null, cacheHint };
 
@@ -282,4 +267,96 @@ export async function getBuilderLayout(
     ? stripUnknownBlocks(storageRow.sections)
     : null;
   return { sections, cacheHint };
+}
+
+/**
+ * Read a layout for `(collection, entryId)` and return the section tree
+ * plus a `cacheHint` the caller passes to `Astro.cache.set(...)`.
+ *
+ * **Polymorphic over two call shapes** (post-fix/F3.4-backcompat-3arg):
+ *
+ *   - **Legacy 3-arg** — `getBuilderLayout(collection, entryId, enabled?)`.
+ *     The pre-F3.4 / v0.8 signature still emitted by host pages scaffolded
+ *     by `npx empixel-builder add` (and any host pinned to that shape, e.g.
+ *     Novapera). No `Astro` to read `locals.emdash.db` from — the reader
+ *     resolves the Kysely handle exclusively via `getDb()` from
+ *     `emdash/runtime`. Hosts on the legacy shape get full functionality
+ *     except the `cacheHint` is never plumbed into `Astro.cache.set` (the
+ *     wrapper has no `Astro` to call into) — updating to the 4-arg shape
+ *     is recommended but not required.
+ *   - **4-arg** — `getBuilderLayout(astro, collection, entryId, enabled?)`.
+ *     The F3.4 shape. `astro` is `Astro` itself or any
+ *     `BuilderLayoutContext = { locals: { emdash?: { db?, getPublicMediaUrl? } } }`.
+ *     Resolves the Kysely handle through `Astro.locals.emdash.db` first
+ *     (admin/authenticated requests), then falls back to `getDb()` from
+ *     `emdash/runtime` (anonymous public renders — the EmDash middleware
+ *     short-circuits the locals payload to `{ collectPageMetadata,
+ *     collectPageFragments, getPublicMediaUrl }` for non-authenticated
+ *     requests, so `locals.emdash.db` is undefined on the actual host
+ *     pages the builder targets).
+ *
+ * Both shapes return `Promise<BuilderLayoutResult>`. `BuilderWrapper.astro`
+ * accepts both the resolved value and the unawaited promise on its
+ * `sections` prop, so neither path requires an explicit `await` at the page
+ * level.
+ *
+ * **Doc-id symmetry (the F3.4 hotfix, retained).** Rows are looked up by
+ * the same composite doc id the plugin runtime writes them under
+ * (`${collection}::${entryId}`, mirrored from `src/plugin.ts § layoutDocId`).
+ * Single-row deterministic — no scan, no orphan-row collision.
+ */
+export async function getBuilderLayout(
+  collection: string,
+  entryId: string,
+  enabled?: boolean,
+): Promise<BuilderLayoutResult>;
+export async function getBuilderLayout(
+  astro: BuilderLayoutContext,
+  collection: string,
+  entryId: string,
+  enabled?: boolean,
+): Promise<BuilderLayoutResult>;
+export async function getBuilderLayout(
+  ...args:
+    | [collection: string, entryId: string, enabled?: boolean]
+    | [astro: BuilderLayoutContext, collection: string, entryId: string, enabled?: boolean]
+): Promise<BuilderLayoutResult> {
+  // Dispatch on the first argument. The 4-arg form passes a
+  // `BuilderLayoutContext` object first; the 3-arg form passes the
+  // collection name (a string).
+  let astro: BuilderLayoutContext | null;
+  let collection: string;
+  let entryId: string;
+  let enabled: boolean | undefined;
+  if (typeof args[0] === "string") {
+    // Legacy 3-arg call — `(collection, entryId, enabled?)`.
+    astro = null;
+    collection = args[0];
+    entryId = args[1] as string;
+    enabled = args[2] as boolean | undefined;
+  } else {
+    // 4-arg call — `(astro, collection, entryId, enabled?)`.
+    astro = args[0] as BuilderLayoutContext;
+    collection = args[1] as string;
+    entryId = args[2] as string;
+    enabled = args[3] as boolean | undefined;
+  }
+
+  // The cache tag identifies the layout regardless of whether sections
+  // exist on disk yet — admin saving a fresh layout against this entry
+  // still has to invalidate the host page that rendered "no layout".
+  const cacheHint: BuilderCacheHint = {
+    tags: [builderLayoutCacheTag(collection, entryId)],
+  };
+
+  if (enabled === false) return { sections: null, cacheHint };
+  if (!COLLECTION_RE.test(collection)) return { sections: null, cacheHint };
+
+  // Resolve a Kysely handle. Astro path tries `locals.emdash.db` first then
+  // the runtime singleton; legacy 3-arg path skips straight to the runtime
+  // (no `Astro.locals` to reach into).
+  const handle = astro ? await resolveKyselyHandle(astro) : await resolveKyselyHandleViaRuntime();
+  if (!handle) return { sections: null, cacheHint };
+
+  return loadLayoutResult(handle, collection, entryId, cacheHint);
 }

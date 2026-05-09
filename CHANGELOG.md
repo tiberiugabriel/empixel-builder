@@ -5,6 +5,32 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **Hotfix follow-up — `getBuilderLayout(...)` is now polymorphic over the
+  3-arg legacy and 4-arg `Astro`-first signatures.** F3.4 (and the earlier
+  `fix/F3.4-frontend-empty` follow-up) changed the signature from
+  `(collection, entryId, enabled)` to `(astro, collection, entryId, enabled)`
+  but host pages scaffolded by `npx empixel-builder add` (and any host that
+  pinned to the v0.8 / pre-F3.4 shape, e.g. Novapera) still call the 3-arg
+  form. When the legacy 3-arg call hit the new function, args slotted in as
+  `astro = "<collection>"` (a string), `collection = <entryId>` (the
+  uppercase Crockford ULID), `entryId = <enabled flag>` — and the
+  `COLLECTION_RE.test(collection)` line then rejected the uppercase ULID,
+  returning null sections. `BuilderWrapper` fell through to `<slot />` and
+  the host theme template rendered instead of builder content (the same
+  visible symptom as the original F3.4 bug, despite the
+  `fix/F3.4-frontend-empty` patch). The new function dispatches on the
+  first argument: if it's a string, treat as legacy (3-arg) and resolve the
+  Kysely handle via `getDb()` from `emdash/runtime` directly — no
+  `Astro.locals.emdash.db` available in that path. The 4-arg form is
+  unchanged. Hosts that want `Astro.cache.set(cacheHint)` plumbing should
+  adopt the 4-arg form, but the 3-arg form continues to render builder
+  content correctly. Theme code (Novapera and other host sites) stays
+  untouched per the hard constraint. Files: `src/components/db.ts`,
+  `tests/getBuilderLayout.test.ts` (+5 cases — Novapera-shape ULID
+  short-circuit absence, enabled=false / undefined / invalid-collection in
+  the legacy shape, end-to-end runtime-singleton round-trip via the legacy
+  shape), `.claude/prd-frontend.md`.
+
 - **Hotfix: `/entries` route now returns the entries the builder is
   enabled for instead of an empty list.** F3.2's storage migration
   produced rows under doc id `<collection>::<entryId>`, but the F3.5
